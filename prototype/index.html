@@ -84,11 +84,6 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--o
 #usageBar .u.saved b{color:var(--c-o)}
 #usageBar .u.halt{color:var(--err);font-weight:600;width:100%}
 #usageBar .u.halt b{color:var(--err);font-size:1.05rem}
-#usageBar .u.budget{gap:8px}
-#usageBar .bar{display:inline-block;width:92px;height:7px;border-radius:4px;
-  background:var(--rule);overflow:hidden;vertical-align:middle}
-#usageBar .bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
-#usageBar .bsub{font-family:var(--font-mono);font-size:.76rem;color:var(--faint)}
 #usageBar .note{font-size:.76rem;color:var(--faint);width:100%;line-height:1.6}
 
 .usage-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
@@ -96,6 +91,9 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--o
 .ucard h4{margin:0 0 9px;font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
   color:var(--faint);font-family:var(--font-mono)}
 .ucard .big{font-family:var(--font-mono);font-size:1.5rem;font-weight:700;color:var(--accent);line-height:1.2}
+.quota-note{margin:0;font-size:.84rem;line-height:1.75;color:var(--muted);
+  background:var(--surface);border:1px dashed var(--rule);border-radius:4px;padding:12px 16px}
+.quota-note b{color:var(--fg)}
 .ucard .sub{font-size:.8rem;color:var(--muted);margin-top:7px;line-height:1.7}
 h3.sec{margin:4px 0 0;font-size:.75rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
   color:var(--muted);font-family:var(--font-mono)}
@@ -335,6 +333,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 
     <div id="view-history" hidden>
       <div class="usage-cards" id="usageCards"></div>
+      <p class="quota-note" id="quotaNote"></p>
       <h3 class="sec">分析紀錄</h3>
       <div id="historyOut"></div>
     </div>
@@ -727,16 +726,10 @@ function showUsage(d){
   }
   if (d.cached) parts.push(`<span class="u saved">快取命中 <b>${d.cached}</b> 句（未重新分析）</span>`);
   if (d.failed) parts.push(`<span class="u">失敗 <b>${d.failed}</b> 句</span>`);
-  const b = d.budget;
-  if (b?.enabled){
-    const pct = Math.min(100, Math.round(b.used / b.limit * 100));
-    parts.push(`<span class="u budget">今日上限 <b>${pct}%</b>
-      <span class="bar"><i style="width:${pct}%"></i></span>
-      <span class="bsub">${nf(b.used)} / ${nf(b.limit)}</span></span>`);
-  }
   if (d.analyzed)
     parts.push(`<span class="note">參考費用是依 Claude API 牌價換算的估算值，用來掌握用量規模。` +
-      `實際分析走本機 Claude 訂閱，不會另外向你收費，但會消耗訂閱額度。</span>`);
+      `實際分析走本機 Claude 訂閱，不會另外向你收費，但會消耗訂閱額度 —— ` +
+      `剩餘額度請在 Claude app → Settings → Usage 查看。</span>`);
   else if (d.cached)
     parts.push(`<span class="note">這段全部命中快取，沒有重新呼叫模型，不消耗任何額度。</span>`);
   usageBar.innerHTML = parts.join('');
@@ -1091,15 +1084,11 @@ async function loadHistory(){
     usageCards.innerHTML = card('今天', d.usage.today) + card('本月', d.usage.month) + card('全部', d.usage.all)
       + `<div class="ucard"><h4>快取</h4><div class="big">${d.usage.all.cached}</div>
          <div class="sub">句直接命中快取<br>省下重新分析的時間與額度</div></div>`
-      + (d.budget?.enabled
-        ? `<div class="ucard"><h4>今日上限</h4>
-             <div class="big">${Math.min(100, Math.round(d.budget.used / d.budget.limit * 100))}%</div>
-             <div class="sub">輸出 ${nf(d.budget.used)} / ${nf(d.budget.limit)} tokens<br>
-               剩餘 ${nf(d.budget.remaining)}</div></div>`
-        : `<div class="ucard"><h4>訂閱額度</h4><div class="big" style="font-size:1rem;line-height:1.5">
-             無法查詢</div>
-             <div class="sub">Claude CLI 沒有提供剩餘額度的介面。<br>
-               可設 DAILY_OUTPUT_TOKENS 自訂每日上限。</div></div>`);
+      ;
+    document.getElementById('quotaNote').innerHTML =
+      `<b>以上是這個工具自己的用量，不是你的 Claude 訂閱額度。</b>
+       真實額度請看 Claude app → Settings → Usage —— 那裡有 5 小時 session 與每週兩種視窗的實際百分比。
+       Claude CLI 沒有提供查詢介面，所以無法顯示在這裡。`;
 
     if (!d.items.length){
       historyOut.innerHTML = '<p class="msg">還沒有分析紀錄。到「分析」貼一段文章就會出現在這裡。</p>';

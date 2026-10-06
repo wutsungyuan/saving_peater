@@ -22,8 +22,6 @@ const CONCURRENCY = Number(process.env.CONCURRENCY || 6);
 const HOST = process.env.HOST || '127.0.0.1';
 const AUTH_TOKEN = process.env.AUTH_TOKEN || '';
 const HISTORY_DAYS = Number(process.env.HISTORY_DAYS || 30);
-// 訂閱額度無法從 CLI 查詢，所以提供自訂的每日上限，至少能擋住失控用量。0 = 不限制。
-const DAILY_OUTPUT_TOKENS = Number(process.env.DAILY_OUTPUT_TOKENS || 0);
 const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
 
 const cache = openCache(join(ROOT, 'data', 'cache.db'));
@@ -52,20 +50,6 @@ async function pool(items, n, fn){
   }));
 }
 
-/** 今日用量與自訂上限的狀態 */
-function budgetState(){
-  const today = cache.usageSummary().today;
-  return {
-    enabled: DAILY_OUTPUT_TOKENS > 0,
-    limit: DAILY_OUTPUT_TOKENS,
-    used: today.output_tokens,
-    remaining: DAILY_OUTPUT_TOKENS ? Math.max(0, DAILY_OUTPUT_TOKENS - today.output_tokens) : null,
-    exceeded: DAILY_OUTPUT_TOKENS > 0 && today.output_tokens >= DAILY_OUTPUT_TOKENS,
-    todayCostUsd: today.cost_usd,
-    todaySentences: today.sentences,
-  };
-}
-
 function authed(req, url){
   if (!AUTH_TOKEN) return true;
   const sent = req.headers['x-auth-token'] || url.searchParams.get('token') || '';
@@ -89,14 +73,6 @@ async function handleAnalyze(req, res, url){
     return res.end(JSON.stringify({ error: `too long`, maxChars: MAX_CHARS, got: text.length }));
   }
 
-  const budget = budgetState();
-  if (budget.exceeded){
-    res.writeHead(429, { 'content-type':'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({ error: 'daily-budget',
-      message: `今天已達自訂的每日上限（輸出 ${budget.limit.toLocaleString()} tokens）。`
-        + `明天會重置，或調整 DAILY_OUTPUT_TOKENS 後重啟。`, budget }));
-  }
-
   let segs = splitSentences(text);
   const truncated = segs.length > MAX_SENTENCES;
   if (truncated) segs = segs.slice(0, MAX_SENTENCES);
@@ -115,7 +91,7 @@ async function handleAnalyze(req, res, url){
   let closed = false;
   req.on('close', () => { closed = true; });
 
-  send('meta', { total: segs.length, truncated, maxSentences: MAX_SENTENCES, model: MODEL, budget });
+  send('meta', { total: segs.length, truncated, maxSentences: MAX_SENTENCES, model: MODEL });
   let halted = null;
 
   // 先把快取命中的推出去（幾乎瞬間），剩下的才去呼叫模型
@@ -161,8 +137,7 @@ async function handleAnalyze(req, res, url){
   const ms = Date.now() - t0;
   cache.log({ chars: text.length, sentences: segs.length, cached, analyzed, ms, text, ...usage });
   if (!closed){
-    send('done', { ms, total: segs.length, cached, analyzed, failed, usage, model: MODEL,
-      halted, budget: budgetState() });
+    send('done', { ms, total: segs.length, cached, analyzed, failed, usage, model: MODEL, halted });
     res.end();
   }
 }
@@ -186,7 +161,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/api/health'){
       res.writeHead(200, { 'content-type':'application/json' });
       return res.end(JSON.stringify({ ok: true, model: MODEL, maxChars: MAX_CHARS,
-        maxSentences: MAX_SENTENCES, authRequired: Boolean(AUTH_TOKEN), budget: budgetState() }));
+        maxSentences: MAX_SENTENCES, authRequired: Boolean(AUTH_TOKEN) }));
     }
     // 出題：從已分析的句子反向生成，不呼叫模型
     if (req.method === 'POST' && url.pathname === '/api/exercises'){
@@ -254,7 +229,6 @@ const server = createServer(async (req, res) => {
       if (id) return res.end(JSON.stringify({ text: cache.historyText(Number(id)) }));
       return res.end(JSON.stringify({
         retainDays: HISTORY_DAYS,
-        budget: budgetState(),
         usage: cache.usageSummary(),
         items: cache.history(40),
       }));
@@ -282,9 +256,7 @@ server.listen(PORT, HOST, () => {
   setInterval(() => cache.pruneHistory(HISTORY_DAYS), 6 * 3600_000).unref();
   console.log(`分析由本機 claude CLI 執行，額度計入這台機器登入的 Claude 帳號。`);
   console.log(`歷史原文保留 ${HISTORY_DAYS} 天後自動清除（分析快取不受影響）。`);
-  console.log(DAILY_OUTPUT_TOKENS
-    ? `每日自訂上限：輸出 ${DAILY_OUTPUT_TOKENS.toLocaleString()} tokens`
-    : `未設每日上限。訂閱額度無法從 CLI 查詢，可用 DAILY_OUTPUT_TOKENS=<數字> 自行設一個防呆上限。`);
+  console.log(`訂閱額度請在 Claude app → Settings → Usage 查看（CLI 沒有提供查詢介面）。`);
   if (isLoopback){
     console.log(`只接受本機連線。要讓區網其他裝置連：HOST=0.0.0.0 AUTH_TOKEN=<自訂字串> npm start`);
   } else if (!AUTH_TOKEN){
