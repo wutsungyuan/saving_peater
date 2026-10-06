@@ -2,7 +2,6 @@
 // 之後若要改走 API key，只需替換 callModel()，其餘邏輯與 schema 完全不動。
 
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -139,8 +138,4 @@ export async function analyze(text, opts = {}) {
     }
   }
   return { data, meta: { usage: res.usage, costUsd: res.costUsd, durationMs: res.durationMs, model: opts.model || MODEL } };
-}
-
-export function loadSystemPrompt() {
-  return readFileSync(SYSTEM_PROMPT_PATH, 'utf8');
 }

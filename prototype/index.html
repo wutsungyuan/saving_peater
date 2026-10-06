@@ -748,7 +748,7 @@ function layoutPosLabels(){
 }
 
 function render(key){
-  if (window.Speech) Speech.stop();
+  Spk.stop();
   const entry = DATA[key];
   if (!entry) return;
   const multi = entry.sentences.length > 1;
@@ -884,7 +884,7 @@ function placeholder(index, original, state){
 
 async function analyzeLive(text){
   goBtn.disabled = true;
-  if (window.Speech) Speech.stop();
+  Spk.stop();
   usageBar.hidden = true;
   out.innerHTML = '<p class="msg">斷句中…</p>';
   const t0 = Date.now();
@@ -1303,6 +1303,13 @@ historyOut.addEventListener('click', async e => {
 
 
 // ===== 朗讀（發聲由 speech.js 提供，可整支抽換） =====
+// speech.js 若沒載入（例如單獨複製 index.html 出去），用這組空殼擋住，
+// 讓頁面其餘功能完全不受影響。
+const Spk = window.Speech || {
+  ready: async () => false, available: () => false, voices: () => [],
+  activeVoice: () => null, settings: { rate: 0.85 }, setSettings: () => {},
+  speak: (_t, o) => o?.onError?.(new Error('朗讀模組未載入')), stop: () => {}, speaking: () => false,
+};
 const spkCtl = document.getElementById('spkCtl');
 const spkVoice = document.getElementById('spkVoice');
 const spkRate = document.getElementById('spkRate');
@@ -1331,7 +1338,7 @@ function markWord(card, start, end){
 function toggleSay(card){
   const btn = card.querySelector('.say');
   const text = card.dataset.sent || '';
-  if (sayingCard === card){ Speech.stop(); return; }   // 再點一次＝停止
+  if (sayingCard === card){ Spk.stop(); return; }   // 再點一次＝停止
   clearSaying();
   if (!text) return;
 
@@ -1340,7 +1347,7 @@ function toggleSay(card){
   btn.setAttribute('aria-pressed', 'true');
   btn.querySelector('.txt').textContent = '停止';
 
-  Speech.speak(text, {
+  Spk.speak(text, {
     onWord: ({ start, end }) => { if (sayingCard === card) markWord(card, start, end); },
     onEnd: () => clearSaying(),
     onError: (err) => {
@@ -1355,24 +1362,24 @@ out.addEventListener('click', e => {
   if (b) toggleSay(b.closest('.sent'));
 });
 // 切換分頁、重新分析、離開頁面時都要停下來
-document.addEventListener('keydown', e => { if (e.key === 'Escape') Speech.stop(); });
-window.addEventListener('pagehide', () => Speech.stop());
+document.addEventListener('keydown', e => { if (e.key === 'Escape') Spk.stop(); });
+window.addEventListener('pagehide', () => Spk.stop());
 
 (async () => {
-  await Speech.ready();
-  if (!Speech.available()) return;              // 不支援就讓按鈕維持隱藏
+  await Spk.ready();
+  if (!Spk.available()) return;              // 不支援就讓按鈕維持隱藏
   document.body.classList.add('has-speech');
   spkCtl.hidden = false;
 
-  const list = Speech.voices();
-  const active = Speech.activeVoice();
+  const list = Spk.voices();
+  const active = Spk.activeVoice();
   spkVoice.innerHTML = list.map(v =>
     `<option value="${esc(v.id)}"${v.id === active?.id ? ' selected' : ''}>${esc(v.name)}${
       v.wordEvents ? '' : '（無逐字標示）'}</option>`).join('');
-  spkRate.value = String(Speech.settings.rate);
+  spkRate.value = String(Spk.settings.rate);
 
-  spkVoice.addEventListener('change', () => { Speech.stop(); Speech.setSettings({ voiceId: spkVoice.value }); });
-  spkRate.addEventListener('change', () => { Speech.stop(); Speech.setSettings({ rate: Number(spkRate.value) }); });
+  spkVoice.addEventListener('change', () => { Spk.stop(); Spk.setSettings({ voiceId: spkVoice.value }); });
+  spkRate.addEventListener('change', () => { Spk.stop(); Spk.setSettings({ rate: Number(spkRate.value) }); });
 })();
 
 // ===== 弱點 =====
@@ -1485,7 +1492,7 @@ async function loadWeakness(){
 for (const b of document.querySelectorAll('.tabs button')){
   b.addEventListener('click', () => {
     for (const x of document.querySelectorAll('.tabs button')) x.setAttribute('aria-pressed', String(x === b));
-    if (window.Speech) Speech.stop();
+    Spk.stop();
     const v = b.dataset.view;
     for (const name of ['analyze', 'practice', 'weak', 'history'])
       document.getElementById(`view-${name}`).hidden = name !== v;
