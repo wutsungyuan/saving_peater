@@ -63,9 +63,13 @@ header p{margin:0;color:var(--muted);font-size:.92rem;line-height:1.72;max-width
 header .rule{height:3px;background:var(--accent);width:46px;margin-bottom:14px;border-radius:2px}
 
 .box{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:15px}
-.box label{display:block;font-size:.72rem;font-weight:700;letter-spacing:.09em;
-  color:var(--muted);text-transform:uppercase;margin-bottom:8px;font-family:var(--font-mono)}
-textarea{width:100%;min-height:74px;resize:vertical;background:var(--surface-2);color:var(--fg);
+.box label{display:block;margin:0;font-size:.72rem;font-weight:700;letter-spacing:.09em;
+  color:var(--muted);text-transform:uppercase;font-family:var(--font-mono)}
+.lblrow{margin-bottom:8px}
+      .lblrow{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.count{font-family:var(--font-mono);font-size:.74rem;color:var(--faint);white-space:nowrap}
+.count.near{color:var(--pos-adj)} .count.over{color:var(--err);font-weight:700}
+textarea{width:100%;min-height:74px;max-height:56vh;resize:vertical;overflow-y:hidden;background:var(--surface-2);color:var(--fg);
   border:1px solid var(--rule);border-radius:3px;padding:11px 12px;font-family:var(--font-en);
   font-size:1.05rem;line-height:1.6}
 textarea:focus-visible,button:focus-visible,.w:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -364,7 +368,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 
     <div id="view-analyze">
     <div class="box">
-      <label for="inp">輸入英文</label>
+      <div class="lblrow"><label for="inp">輸入英文</label><span class="count" id="inpCount"></span></div>
       <textarea id="inp" placeholder="Tom played basketball happily in the park yesterday."></textarea>
       <div class="row">
         <button class="primary" id="go">分析</button>
@@ -662,7 +666,7 @@ function render(key){
   if (!entry) return;
   const multi = entry.sentences.length > 1;
   out.innerHTML = entry.sentences.map(s => renderSentence(s, multi)).join('');
-  document.getElementById('inp').value = entry.input;
+  setInput(entry.input);
   for (const c of document.querySelectorAll('.chips-group .chip'))
     c.setAttribute('aria-pressed', String(c.dataset.key === key));
   if (out.dataset.mode === 'full') openAll(true);
@@ -710,6 +714,28 @@ out.addEventListener('click', e => {
 });
 
 
+// 輸入框隨內容自動展開，最高 56vh，超過才出現內部捲軸
+const inpEl = document.getElementById('inp');
+const countEl = document.getElementById('inpCount');
+function autoGrow(){
+  inpEl.style.height = 'auto';
+  const max = Math.max(160, Math.round(window.innerHeight * 0.56));
+  const h = Math.min(inpEl.scrollHeight, max);
+  inpEl.style.height = h + 'px';
+  inpEl.style.overflowY = inpEl.scrollHeight > h + 1 ? 'auto' : 'hidden';
+}
+function updateCount(){
+  const n = [...inpEl.value].length;
+  const max = (API && API.maxChars) || 4000;
+  countEl.textContent = `${n.toLocaleString('en-US')} / ${max.toLocaleString('en-US')} 字`;
+  countEl.classList.toggle('near', n > max * 0.8 && n <= max);
+  countEl.classList.toggle('over', n > max);
+}
+/** 程式設定內容後要手動呼叫，input 事件不會自己觸發 */
+function setInput(text){ inpEl.value = text; autoGrow(); updateCount(); }
+inpEl.addEventListener('input', () => { autoGrow(); updateCount(); });
+window.addEventListener('resize', autoGrow);
+
 const nf = n => Number(n || 0).toLocaleString('en-US');
 const money = n => '$' + Number(n || 0).toFixed(n < 0.01 ? 4 : 3);
 const usageBar = document.getElementById('usageBar');
@@ -753,6 +779,7 @@ try {
 
 fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
   API = h;
+  updateCount();
   hintEl.textContent = h.authRequired && !TOKEN
     ? '這個後端需要存取權杖。請用帶有 ?token=… 的網址開啟。'
     : `已連上分析後端（${h.model}）。可貼上一句話或一段文章，上限 ${h.maxChars} 字 / ${h.maxSentences} 句。`;
@@ -908,7 +935,7 @@ function showInterrupted(n, text){
 }
 
 goBtn.addEventListener('click', () => {
-  const text = document.getElementById('inp').value.trim();
+  const text = inpEl.value.trim();
   if (!text) return;
   if (API){ analyzeLive(text); return; }
   // 展示模式：比對內建範例
@@ -919,7 +946,7 @@ goBtn.addEventListener('click', () => {
     ? '展示模式只能顯示內建範例。要分析任意輸入，請在本機執行 npm start 後開啟 http://127.0.0.1:8787'
     : '正在確認後端連線，請稍候再按一次。';
 });
-document.getElementById('inp').addEventListener('keydown', e => {
+inpEl.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') goBtn.click();
 });
 
@@ -957,6 +984,7 @@ window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(layo
 document.fonts?.ready.then(layoutPosLabels);
 
 render('p1');
+autoGrow(); updateCount();
 
 // ===== 練習 =====
 const QTYPES = [
@@ -1176,7 +1204,7 @@ historyOut.addEventListener('click', async e => {
   const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
   if (!text) return;
   document.querySelector('.tabs button[data-view="analyze"]').click();
-  document.getElementById('inp').value = text;
+  setInput(text);
   analyzeLive(text);   // 全部命中快取，會瞬間完成
 });
 
