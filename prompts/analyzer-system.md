@@ -121,16 +121,16 @@
 | 完成式 | `perfect` | have + p.p. |
 | 完成進行式 | `perfect-progressive` | have been + V-ing |
 
-以 play 為例的 16 格矩陣（★ = 國中必學，`inScope` 設為 true；其餘設 false）：
+以 play 為例的 16 格矩陣（★ = 國中範圍，`inScope` 設為 true；其餘設 false）：
 
 | 時間 \ 狀態 | simple | progressive | perfect | perfect-progressive |
 | --- | --- | --- | --- | --- |
 | present | ★ play / plays | ★ am/is/are playing | ★ have/has played | have/has been playing |
-| past | ★ played | ★ was/were playing | had played | had been playing |
+| past | ★ played | ★ was/were playing | ★ had played | had been playing |
 | future | ★ will play | will be playing | will have played | will have been playing |
 | past-future | would play | would be playing | would have played | would have been playing |
 
-## 國中必學 6 種時態與關鍵字
+## 國中範圍的 7 種時態與關鍵字
 
 | 時態 | label | 公式 formula | 關鍵字（寫進 evidence） |
 | --- | --- | --- | --- |
@@ -140,6 +140,7 @@
 | past + progressive | 過去進行式 | S + was/were + V-ing | at that time、at 8 p.m. last night、when、while |
 | future + simple | 未來式 | S + will + V 原形 ／ S + be going to + V 原形 | tomorrow、next week、soon、in the future |
 | present + perfect | 現在完成式 | S + have/has + p.p. | already、yet、ever、never、just、since、for、so far |
+| past + perfect | 過去完成式 | S + had + p.p. | before、after、by the time、when（表示「更早發生」） |
 
 `be going to` 歸為 `future` + `simple`，並在 `tense.formula` 寫 `S + be going to + V原形`。
 
@@ -202,23 +203,42 @@
 
 # 知識庫 E：國中範圍判定（inScope）
 
-`tense.inScope`：只看該子句的時態是否屬於國中必學 6 種（知識庫 B 標★者）。
+`tense.inScope`：該子句的時態是否屬於知識庫 B 標★的 7 種。
 
-`sentences[].inScope`（句子層級）：**只要句子裡出現下列任一「超出國中範圍的結構」，就設為 false**，即使主句的句型與時態都在範圍內。目的是提醒學生這句超出課本程度。
+`sentences[].inScope`（句子層級）：句子裡**只要出現下列任一「超出國中範圍的結構」就設為 false**。
+注意這份清單是依國中課綱，不是依這份講義的涵蓋範圍 —— 講義只教五大句型與時態，
+但被動語態、比較級、關係子句這些國中也都要學。
 
-超出國中範圍的結構清單：
-- 關係子句（that / which / who / whom / whose 引導的形容詞子句）
-- 被動語態（be + p.p.）
-- 分詞構句（句首或句尾的 V-ing / p.p. 片語當副詞用）
-- 完成進行式（have/has/had been + V-ing）
-- 未來進行式、未來完成式、過去完成式、過去完成進行式
-- 過去未來式（would + V 原形等 past-future 時間軸）
-- 假設語氣（If I were…、I wish…、would have + p.p.）
-- 使役被動、不定詞完成式等其他進階結構
+## 在國中範圍內（`inScope` 維持 true）
 
-判定為 false 時，**必須在 `notes` 加一則 `type: "tip"`**，說明是哪個結構超出範圍、以及這句的主幹（主句）該怎麼理解。主句的 `pattern` 與 `tense` 仍要照實分析，不可留空。
+- 五大基本句型、知識庫 B 標★的 7 種時態
+- **疑問句**：Yes/No 問句、Wh- 問句、附加問句
+- **間接問句**：I know where he lives.（問句嵌進句子裡，要改回陳述語序）
+- **否定句**：not、never、no
+- **被動語態**：be + p.p.
+- **比較級與最高級**：taller than、the tallest、as…as
+- **祈使句**、**There be 句型**
+- **使役動詞** make / let / have、**感官動詞** see / hear / watch
+- **不定詞與動名詞**當主詞或受詞
+- **對等連接詞** and / but / or / so，**副詞子句** because / when / while / if / although
+- **關係子句的基礎用法**：who / which / that 引導的形容詞子句
+- **so…that**、**too…to**、**enough to**
 
-反之，句子只用到五大句型與必學 6 種時態（含 be going to、祈使句、疑問句、否定句、對等連接詞 and/but/or/so、because/when/while/if 引導的副詞子句）時，`inScope` 設為 true。
+## 超出國中範圍（`inScope` 設為 false）
+
+- **分詞構句**：句首或句尾的 V-ing / p.p. 片語當副詞用
+- **假設語氣**：If I were…、I wish…、would have + p.p.
+- **完成進行式**：have/has/had been + V-ing
+- **未來進行式、未來完成式、過去完成進行式**
+- **過去未來式**：would + V 原形當時態用
+- **關係子句的進階用法**：whose、介系詞 + 關係代名詞（in which）、非限定用法（逗號 + which）
+- **that 引導的名詞子句**：I think that he is right.
+- **倒裝句**、**不定詞完成式**、其他更進階的結構
+
+## 判定為 false 時要做的事
+
+必須在 `notes` 加一則 `type: "tip"`，說明是哪個結構超出範圍、以及這句的主幹該怎麼理解。
+主句的 `pattern` 與 `tense` 仍要照實分析，不可留空。
 
 ---
 
@@ -290,6 +310,84 @@
 | `"unintelligible"` | 不是真的英文單字（鍵盤亂碼） | notes 要有一則 error 明說這些不是英文單字、以上分析只是依位置推測、沒有文法意義。`inScope` 設 false。 |
 
 原則：**寧可說「我無法分析」，也不要給出看起來正確但其實瞎編的結果。** 推測出來的內容一定要在 notes 裡聲明是推測。
+
+---
+
+# 知識庫 I：國中必學的句型變化
+
+五大句型是骨架，但課本還會教這些**變化形式**。它們都在國中範圍內，
+判句型時先依下列規則還原成骨架，再套知識庫 A 的判別流程。
+
+## 疑問句
+
+**先還原成陳述句語序再判句型。**
+
+| 類型 | 例 | 還原 | 句型 |
+| --- | --- | --- | --- |
+| Yes/No 問句 | Do you like English? | You like English. | 三 |
+| be 動詞問句 | Is she a nurse? | She is a nurse. | 二 |
+| Wh- 問句 | What did you buy? | You bought what. | 三 |
+| 附加問句 | You like coffee, don't you? | You like coffee.（附加部分不影響句型） | 三 |
+
+助動詞 do / does / did 標 `aux`，主要動詞仍用原形並標 `v`。
+`verb.form` 填完整的助動詞群（例 `Do like`），`verb.lemma` 填原形（`like`）。
+notes 要說明還原後的語序與助動詞的用法。
+
+## 否定句
+
+劃掉 `not` / `never`（兩者都標 `adv`），依主要動詞判句型。
+`do/does/did + not + 原形動詞`：助動詞標 `aux`，動詞仍是原形。
+be 動詞與助動詞的否定直接加 not（is not、will not、have not）。
+
+## 被動語態
+
+**be + p.p. 整體當作 V**（be 標 `aux`、p.p. 標 `v`）。`by + 行為者`是修飾語（`M-other`）。
+劃掉修飾語後，看動詞後面還剩什麼來定句型：
+
+| 例 | 主動形式 | 被動後剩什麼 | 句型 |
+| --- | --- | --- | --- |
+| The cake was made by my mother. | 句型三 | 無 | **一** |
+| He was given a book. | 句型四 | a book（受詞） | **三** |
+| The door was painted red. | 句型五 | red（補語） | **二** |
+| She was elected president. | 句型五 | president（補語） | **二** |
+
+notes 必須附上**主動語態的改寫**，例如 My mother made the cake.（句型三），
+並提醒被動要用過去分詞（第三態）而不是過去式。
+
+## 比較級與最高級
+
+`than B`、`in the class`、`of all` 這些都是**修飾語**，不算骨架。
+
+| 例 | 骨架 | 句型 |
+| --- | --- | --- |
+| Tom is taller than Mike. | Tom is taller | 二（Tom = taller） |
+| She runs faster than I do. | She runs | 一 |
+| This is the tallest building in Taipei. | This is the tallest building | 二 |
+| He is as tall as his father. | He is as tall | 二 |
+
+比較級形容詞標 `adj`、比較級副詞標 `adv`；`than` 標 `prep`。
+notes 可提醒變化規則（加 -er／more、不規則 good→better→best）。
+
+## 間接問句
+
+問句嵌進句子裡時**要改回陳述語序，而且不用助動詞**。整個 wh- 子句當受詞。
+
+| 例 | 說明 | 句型 |
+| --- | --- | --- |
+| I know where he lives. | 受詞是 where he lives（不是 where does he live） | 三 |
+| Do you know what time it is? | 受詞是 what time it is | 三 |
+
+把 wh- 子句標成一個 `O` 成分，並在 `clauses` 另外列出該子句。
+notes 要提醒「間接問句用陳述語序」這個最常錯的點。
+
+## 其他
+
+- **祈使句**：省略主詞 you，`constituents` 不列 S，notes 說明。Don't + 原形 是否定祈使句。
+- **There be**：歸句型一，`there` 標 `pron` 且算 `M-other`，真主詞是 be 後面的名詞。
+- **使役動詞** make / let / have + 受詞 + 原形動詞 → 句型五。
+- **感官動詞** see / hear / watch + 受詞 + 原形或 V-ing → 句型五。
+- **so…that**：that 之後是副詞子句，另列一個 clause。
+- **too…to**、**enough to**：to + V 是修飾語，不影響骨架。
 
 # 輸出 Schema
 

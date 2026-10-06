@@ -37,7 +37,11 @@ async function runCase(c) {
     return {
       id: c.id, src: c.src, text: c.text, ok: true,
       pattern:   { want: c.pattern,   got: gotPattern, pass: gotPattern === c.pattern },
-      tense:     { want: `${c.time}-${c.aspect}`, got: `${gotTime}-${gotAspect}`, pass: gotTime === c.time && gotAspect === c.aspect },
+      tense:     (() => {
+        const got = `${gotTime}-${gotAspect}`;
+        const accept = c.acceptTense ?? [`${c.time}-${c.aspect}`];   // 歧義句可列多個可接受答案
+        return { want: accept.join(' 或 '), got, pass: accept.includes(got) };
+      })(),
       errorCode: { want: c.errorCode, got: gotCodes, pass: c.errorCode ? gotCodes.includes(c.errorCode) : gotCodes.length === 0 },
       inScope:   { want: c.inScope,   got: sent?.inScope ?? null, pass: (sent?.inScope ?? null) === c.inScope },
       alignment: { pass: alignOk, failures: alignFailures },
