@@ -25,6 +25,8 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font-ui);margin:0;
 .page{display:grid;gap:24px;justify-content:center;
   grid-template-columns:[l] 186px [c] minmax(0,900px) [r] 186px}
 .center{grid-column:c;display:flex;flex-direction:column;gap:20px;min-width:0}
+/* 三個分頁各自也要有縱向間距 —— 它們是 .center 的單一子元素，不會繼承 gap */
+[id^="view-"]{display:flex;flex-direction:column;gap:20px;min-width:0}
 .rail{align-self:start;position:sticky;top:calc(env(safe-area-inset-top,0px) + 18px);
   background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:14px}
 .rail-l{grid-column:l} .rail-r{grid-column:r}
