@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { analyze, MODEL } from './analyzer.mjs';
 import { splitSentences } from './segment.mjs';
 import { openCache } from './cache.mjs';
+import { generate, grade, TYPES } from './exercises.mjs';
 import { autoSeed } from './cache-cli.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -23,7 +24,8 @@ const AUTH_TOKEN = process.env.AUTH_TOKEN || '';
 const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
 
 const cache = openCache(join(ROOT, 'data', 'cache.db'));
-const seeded = autoSeed(cache);   // 新機器首次啟動：把版控裡的種子快取載進來
+const seeded = autoSeed(cache);
+const quizzes = new Map();   // quizId -> { questions(含答案), at }   // 新機器首次啟動：把版控裡的種子快取載進來
 
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css',
   '.json':'application/json', '.svg':'image/svg+xml', '.ico':'image/x-icon' };
@@ -141,6 +143,66 @@ const server = createServer(async (req, res) => {
       return res.end(JSON.stringify({ ok: true, model: MODEL, maxChars: MAX_CHARS,
         maxSentences: MAX_SENTENCES, authRequired: Boolean(AUTH_TOKEN) }));
     }
+    // 出題：從已分析的句子反向生成，不呼叫模型
+    if (req.method === 'POST' && url.pathname === '/api/exercises'){
+      if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+      let body = {};
+      try { body = JSON.parse(await readBody(req)) || {}; } catch {}
+      const count = Math.min(Math.max(Number(body.count) || 10, 1), 30);
+      const types = Array.isArray(body.types) && body.types.length
+        ? body.types.filter(t => TYPES.includes(t)) : TYPES;
+      const records = cache.pickSentences(60);
+      if (!records.length){
+        res.writeHead(409, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: 'no-sentences',
+          message: '還沒有分析過任何句子。先到「分析」貼一段文章，就能從那些句子出題。' }));
+      }
+      const questions = generate(records, { count, types });
+      // 答案不隨題目下發，避免在開發者工具裡直接看到
+      const quizId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      quizzes.set(quizId, { questions, at: Date.now() });
+      if (quizzes.size > 200) for (const [k, v] of quizzes) if (Date.now() - v.at > 864e5) quizzes.delete(k);
+      res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({
+        quizId, pool: records.length,
+        questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest),
+      }));
+    }
+
+    // 批改並記錄作答
+    if (req.method === 'POST' && url.pathname === '/api/attempts'){
+      if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+      let body = {};
+      try { body = JSON.parse(await readBody(req)) || {}; } catch {}
+      const quiz = quizzes.get(body.quizId);
+      if (!quiz){
+        res.writeHead(410, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: 'quiz-expired', message: '這份練習已失效，請重新出題。' }));
+      }
+      const userToken = String(body.userToken || 'anon').slice(0, 64);
+      const given = body.answers || {};
+      const results = quiz.questions.map(q => {
+        const g = grade(q, given[q.id] ?? []);
+        cache.recordAttempt({
+          userToken, qtype: q.type, sentenceHash: q.meta.hash,
+          patternId: q.meta.patternId, tenseTime: q.meta.tenseTime,
+          tenseAspect: q.meta.tenseAspect, pos: q.meta.pos,
+          correct: g.correct, answer: g.given.join(' | '), expected: g.expected.join(' | '),
+        });
+        return { id: q.id, correct: g.correct, expected: q.answer, given: g.given, explain: q.explain };
+      });
+      res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({
+        results, correct: results.filter(r => r.correct).length, total: results.length,
+      }));
+    }
+
+    if (url.pathname === '/api/weakness'){
+      const userToken = url.searchParams.get('user') || 'anon';
+      res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+      return res.end(JSON.stringify(cache.weakness(userToken), null, 2));
+    }
+
     if (url.pathname === '/api/stats'){
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify(cache.stats(), null, 2));

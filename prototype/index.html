@@ -75,6 +75,53 @@ button{font-family:var(--font-ui);font-size:.85rem;cursor:pointer;border-radius:
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
 .hint{font-size:.82rem;color:var(--muted);line-height:1.6}
 
+.tabs{display:inline-flex;border:1px solid var(--rule);border-radius:3px;overflow:hidden;align-self:flex-start}
+.tabs button{border:0;border-radius:0;background:var(--surface);padding:9px 22px;font-size:.92rem;
+  color:var(--muted);font-weight:500}
+.tabs button+button{border-left:1px solid var(--rule)}
+.tabs button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);font-weight:700}
+select{font-family:var(--font-ui);font-size:.85rem;padding:6px 10px;border:1px solid var(--rule);
+  border-radius:3px;background:var(--surface-2);color:var(--fg)}
+.tchip{font-size:.8rem;padding:5px 12px;border:1px solid var(--rule);background:var(--surface-2);
+  color:var(--muted);border-radius:999px;cursor:pointer}
+.tchip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);
+  color:var(--on-accent);font-weight:600}
+.wklink{font-size:.78rem;color:var(--muted);margin-left:auto}
+
+.q{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:16px 18px;
+  display:flex;flex-direction:column;gap:11px}
+.q+.q{margin-top:13px}
+.q-head{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap}
+.q-no{font-family:var(--font-mono);font-weight:700;color:var(--accent);font-size:.92rem}
+.q-type{font-family:var(--font-mono);font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--faint);border:1px solid var(--rule);border-radius:999px;padding:2px 9px}
+.q-prompt{font-size:.95rem;color:var(--fg);font-weight:500}
+.q-sent{font-family:var(--font-en);font-size:1.22rem;line-height:1.75;color:var(--fg)}
+.q-sent mark{background:color-mix(in srgb,var(--accent) 20%,transparent);color:inherit;
+  padding:1px 3px;border-radius:2px;font-weight:600}
+.q-hint{font-family:var(--font-en);color:var(--accent);font-size:1rem}
+.q-opts{display:flex;flex-direction:column;gap:7px}
+.q-opt{display:flex;gap:9px;align-items:center;font-size:.92rem;cursor:pointer;
+  border:1px solid var(--rule);border-radius:3px;padding:8px 12px;background:var(--surface-2)}
+.q-opt:hover{border-color:var(--accent)}
+.q-opt input{accent-color:var(--accent);margin:0}
+.q-blanks{display:flex;gap:9px;flex-wrap:wrap}
+.q-blanks input{font-family:var(--font-en);font-size:1rem;padding:8px 11px;border:1px solid var(--rule);
+  border-radius:3px;background:var(--surface-2);color:var(--fg);min-width:140px}
+.q.graded{border-width:2px}
+.q.ok{border-color:var(--c-o)} .q.ng{border-color:var(--err)}
+.q-result{font-size:.88rem;line-height:1.75;padding:11px 13px;border-radius:3px;white-space:pre-line}
+.q.ok .q-result{background:#eaf6ee;border:1px solid var(--c-o);color:var(--muted)}
+.q.ng .q-result{background:var(--err-bg);border:1px solid var(--err);color:var(--muted)}
+.q-verdict{font-weight:700;display:block;margin-bottom:5px}
+.q.ok .q-verdict{color:var(--c-o)} .q.ng .q-verdict{color:var(--err)}
+.q-ans{font-family:var(--font-en);font-weight:700;color:var(--fg)}
+#quizSummary{background:var(--surface);border:2px solid var(--accent);border-radius:4px;
+  padding:15px 18px;margin-bottom:14px}
+.sum-score{font-size:1.35rem;font-weight:700;color:var(--fg)}
+.sum-score b{color:var(--accent);font-size:1.8rem;font-family:var(--font-mono)}
+.sum-break{font-size:.85rem;color:var(--muted);margin-top:8px;line-height:1.8}
+
 .chips-group{display:flex;flex-direction:column;gap:9px}
 .cg{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .cg>b{font-family:var(--font-mono);font-size:.68rem;font-weight:700;letter-spacing:.09em;
@@ -242,6 +289,34 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
       <p>貼上一句話或一段文章，逐句標出五大句型的成分、每個字的詞性、時態與繁體中文翻譯。原句一個字元都不會被改動 —— 成分代號浮在句子上方，詞性標在下方，游標移到任一個字會說明它的詞性與在句中的角色。</p>
     </header>
 
+    <div class="tabs" role="group" aria-label="切換功能">
+      <button data-view="analyze" aria-pressed="true">分析</button>
+      <button data-view="practice" aria-pressed="false">練習</button>
+    </div>
+
+    <div id="view-practice" hidden>
+      <div class="box">
+        <label>練習設定</label>
+        <div class="row" id="qtypes"></div>
+        <div class="row">
+          <span class="hint">題數</span>
+          <select id="qcount">
+            <option>5</option><option selected>10</option><option>15</option><option>20</option>
+          </select>
+          <button class="primary" id="quizStart">出題</button>
+          <span class="hint" id="quizHint">題目從你分析過的句子生成，答案與分析結果一致。</span>
+        </div>
+      </div>
+      <div id="quizSummary" hidden></div>
+      <div id="quizOut"></div>
+      <div class="row" id="quizActions" hidden>
+        <button class="primary" id="quizSubmit">交卷</button>
+        <button id="quizAgain" hidden>再來一份</button>
+        <a class="wklink" href="/api/weakness?user=local" target="_blank" rel="noopener">看弱點統計（JSON）</a>
+      </div>
+    </div>
+
+    <div id="view-analyze">
     <div class="box">
       <label for="inp">輸入英文</label>
       <textarea id="inp" placeholder="Tom played basketball happily in the park yesterday."></textarea>
@@ -272,6 +347,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
     <div class="legend-inline" id="legend-inline"></div>
 
     <main id="out" data-mode="mark" data-pos-mode="content"></main>
+    </div>
 
     <footer>
       成分色線、上方代號與下方詞性都由分析結果的字元座標疊加而成。<code>alignConstituents()</code> 與 <code>alignWords()</code> 會驗證每個片段都是原句的連續子字串，對齊失敗時自動降級為清單顯示，不會動到原句。
@@ -747,4 +823,174 @@ window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(layo
 document.fonts?.ready.then(layoutPosLabels);
 
 render('p1');
+
+// ===== 練習 =====
+const QTYPES = [
+  ['pattern','句型判斷'], ['tense','時態填空'], ['pos','詞性判斷'],
+  ['verb-forms','動詞三態'], ['error-fix','改錯'],
+];
+const USER = (() => {
+  try {
+    let u = localStorage.getItem('analyzer-user');
+    if (!u){ u = 'u' + Math.random().toString(36).slice(2, 10); localStorage.setItem('analyzer-user', u); }
+    return u;
+  } catch { return 'local'; }
+})();
+
+const qtypesEl = document.getElementById('qtypes');
+const quizOut = document.getElementById('quizOut');
+const quizHint = document.getElementById('quizHint');
+const quizSummary = document.getElementById('quizSummary');
+const quizActions = document.getElementById('quizActions');
+const quizSubmit = document.getElementById('quizSubmit');
+const quizAgain = document.getElementById('quizAgain');
+let currentQuiz = null;
+
+qtypesEl.innerHTML = QTYPES.map(([v, l]) =>
+  `<button class="tchip" data-t="${v}" aria-pressed="true">${l}</button>`).join('');
+qtypesEl.addEventListener('click', e => {
+  const b = e.target.closest('.tchip'); if (!b) return;
+  const on = b.getAttribute('aria-pressed') !== 'true';
+  // 至少留一個題型
+  if (!on && qtypesEl.querySelectorAll('[aria-pressed="true"]').length <= 1) return;
+  b.setAttribute('aria-pressed', String(on));
+});
+const selectedTypes = () =>
+  [...qtypesEl.querySelectorAll('[aria-pressed="true"]')].map(b => b.dataset.t);
+
+document.querySelector('.wklink').href = `/api/weakness?user=${encodeURIComponent(USER)}`;
+
+/** 把 display 裡要強調的部分包成 <mark> */
+function qDisplay(q){
+  const text = q.display ?? q.sentence ?? '';
+  if (q.highlight && Number.isInteger(q.highlight.start)){
+    const { start, end } = q.highlight;
+    return esc(text.slice(0, start)) + '<mark>' + esc(text.slice(start, end)) + '</mark>' + esc(text.slice(end));
+  }
+  if (q.highlightText && text.includes(q.highlightText)){
+    const i = text.indexOf(q.highlightText);
+    return esc(text.slice(0, i)) + '<mark>' + esc(q.highlightText) + '</mark>'
+      + esc(text.slice(i + q.highlightText.length));
+  }
+  return esc(text);
+}
+
+function renderQuestion(q, n){
+  const typeLabel = Object.fromEntries(QTYPES)[q.type] || q.type;
+  const body = q.inputMode === 'choice'
+    ? `<div class="q-opts">${q.choices.map((c, i) => `
+        <label class="q-opt"><input type="radio" name="${q.id}" value="${esc(c.value)}"> ${esc(c.label)}</label>`).join('')}</div>`
+    : `<div class="q-blanks">${Array.from({ length: q.blanks || 1 }, (_, i) =>
+        `<input type="text" data-q="${q.id}" data-i="${i}" autocomplete="off" spellcheck="false"
+           placeholder="${q.blanks > 1 ? `第 ${i + 1} 格` : '填入答案'}">`).join('')}</div>`;
+
+  return `<article class="q" id="card-${q.id}">
+    <div class="q-head"><span class="q-no">${n}</span><span class="q-type">${esc(typeLabel)}</span>
+      <span class="q-prompt">${esc(q.prompt)}</span></div>
+    <div class="q-sent">${qDisplay(q)}</div>
+    ${q.hint ? `<div class="q-hint">（${esc(q.hint)}）</div>` : ''}
+    ${q.type === 'error-fix' ? '<div class="hint">只要填改正後的那一小段就好，例如 tastes good</div>' : ''}
+    ${body}
+  </article>`;
+}
+
+async function startQuiz(){
+  quizSummary.hidden = true; quizActions.hidden = true; quizAgain.hidden = true;
+  quizSubmit.disabled = false;
+  quizOut.innerHTML = '<p class="msg">出題中…</p>';
+  try {
+    const res = await fetch('/api/exercises', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(TOKEN ? { 'x-auth-token': TOKEN } : {}) },
+      body: JSON.stringify({ count: Number(document.getElementById('qcount').value), types: selectedTypes() }),
+    });
+    const d = await res.json();
+    if (!res.ok){
+      quizOut.innerHTML = `<p class="msg">${esc(d.message || d.error || '出題失敗')}</p>`;
+      return;
+    }
+    if (!d.questions.length){
+      quizOut.innerHTML = '<p class="msg">目前的句子出不了這些題型。先到「分析」多貼幾句，或改選其他題型。</p>';
+      return;
+    }
+    currentQuiz = d;
+    quizOut.innerHTML = d.questions.map((q, i) => renderQuestion(q, i + 1)).join('');
+    quizHint.textContent = `共 ${d.questions.length} 題，題庫 ${d.pool} 句。`;
+    quizActions.hidden = false;
+  } catch (e){
+    quizOut.innerHTML = `<p class="msg">連線失敗：${esc(e.message)}</p>`;
+  }
+}
+
+async function submitQuiz(){
+  if (!currentQuiz) return;
+  quizSubmit.disabled = true;
+  const answers = {};
+  for (const q of currentQuiz.questions){
+    answers[q.id] = q.inputMode === 'choice'
+      ? [quizOut.querySelector(`input[name="${q.id}"]:checked`)?.value ?? '']
+      : [...quizOut.querySelectorAll(`input[data-q="${q.id}"]`)].map(el => el.value);
+  }
+  try {
+    const res = await fetch('/api/attempts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(TOKEN ? { 'x-auth-token': TOKEN } : {}) },
+      body: JSON.stringify({ quizId: currentQuiz.quizId, userToken: USER, answers }),
+    });
+    const d = await res.json();
+    if (!res.ok){
+      quizOut.insertAdjacentHTML('afterbegin', `<p class="msg">${esc(d.message || d.error)}</p>`);
+      quizSubmit.disabled = false;
+      return;
+    }
+
+    const byId = new Map(currentQuiz.questions.map(q => [q.id, q]));
+    const wrongTypes = {};
+    for (const r of d.results){
+      const card = document.getElementById(`card-${r.id}`);
+      if (!card) continue;
+      card.classList.add('graded', r.correct ? 'ok' : 'ng');
+      for (const el of card.querySelectorAll('input')) el.disabled = true;
+      if (!r.correct){
+        const t = byId.get(r.id)?.type;
+        wrongTypes[t] = (wrongTypes[t] || 0) + 1;
+      }
+      card.insertAdjacentHTML('beforeend', `<div class="q-result">
+        <span class="q-verdict">${r.correct ? '✓ 答對了' : '✗ 答錯了'}</span>${
+        r.correct ? '' : `正解：<span class="q-ans">${esc(r.expected.join('　'))}</span>\n`}${esc(r.explain)}</div>`);
+    }
+
+    const pct = Math.round(d.correct / d.total * 100);
+    const labels = Object.fromEntries(QTYPES);
+    quizSummary.innerHTML = `<div class="sum-score"><b>${d.correct}</b> / ${d.total} 答對（${pct}%）</div>` +
+      (Object.keys(wrongTypes).length
+        ? `<div class="sum-break">需要加強：${Object.entries(wrongTypes)
+            .map(([t, n]) => `${labels[t] || t} 錯 ${n} 題`).join('、')}</div>`
+        : `<div class="sum-break">全對。換一份再練，或到「分析」貼新文章擴充題庫。</div>`);
+    quizSummary.hidden = false;
+    quizSummary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    quizAgain.hidden = false;
+  } catch (e){
+    quizSubmit.disabled = false;
+    quizOut.insertAdjacentHTML('afterbegin', `<p class="msg">交卷失敗：${esc(e.message)}</p>`);
+  }
+}
+
+document.getElementById('quizStart').addEventListener('click', startQuiz);
+quizSubmit.addEventListener('click', submitQuiz);
+quizAgain.addEventListener('click', startQuiz);
+
+// 分頁切換
+for (const b of document.querySelectorAll('.tabs button')){
+  b.addEventListener('click', () => {
+    for (const x of document.querySelectorAll('.tabs button')) x.setAttribute('aria-pressed', String(x === b));
+    const practice = b.dataset.view === 'practice';
+    document.getElementById('view-analyze').hidden = practice;
+    document.getElementById('view-practice').hidden = !practice;
+    if (practice && !currentQuiz && API) startQuiz();
+    if (practice && API === false)
+      quizOut.innerHTML = '<p class="msg">練習需要後端。請在本機執行 npm start 後開啟 http://127.0.0.1:8787</p>';
+  });
+}
+
 </script>

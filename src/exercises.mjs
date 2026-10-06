@@ -1,0 +1,203 @@
+// 出題引擎：從已分析的句子「反向」生成練習題。
+// 不呼叫模型 —— 分析結果裡已有句型、成分、時態、關鍵字、詞性、三態、錯誤修正，
+// 由程式產生可保證題目與解答跟分析完全一致，而且零成本、零延遲。
+// 題型與版型比照講義「練習 + 解答表」。
+
+const PATTERN_CHOICES = [
+  { value: 1, label: '句型一　S + V' },
+  { value: 2, label: '句型二　S + V + C' },
+  { value: 3, label: '句型三　S + V + O' },
+  { value: 4, label: '句型四　S + V + IO + DO' },
+  { value: 5, label: '句型五　S + V + O + C' },
+];
+
+const POS_ZH = {
+  n:'名詞', pron:'代名詞', v:'動詞', aux:'助動詞', adj:'形容詞', adv:'副詞',
+  prep:'介系詞', conj:'連接詞', art:'冠詞', num:'數詞', to:'不定詞 to', interj:'感嘆詞',
+};
+// 容易混淆的詞性拿來當誘答選項，才有鑑別度
+const POS_CONFUSE = {
+  adj:['adv','n','v'], adv:['adj','prep','conj'], n:['pron','v','adj'],
+  pron:['n','art','adj'], v:['aux','n','adj'], aux:['v','adv','prep'],
+  prep:['conj','adv','art'], conj:['prep','adv','pron'], art:['pron','prep','num'],
+  num:['art','adj','n'], to:['prep','adv','aux'], interj:['adv','conj','pron'],
+};
+
+const rand = n => Math.floor(Math.random() * n);
+const shuffle = a => { const r = [...a]; for (let i = r.length - 1; i > 0; i--){ const j = rand(i + 1); [r[i], r[j]] = [r[j], r[i]]; } return r; };
+const pick = a => a[rand(a.length)];
+const mainOf = d => d.clauses?.find(c => c.role === 'main') ?? d.clauses?.[0];
+
+/** 把原句的若干區間換成底線，回傳 { display, blanks } */
+function blankOut(original, spans){
+  const ordered = [...spans].sort((a, b) => a.start - b.start);
+  let out = '', pos = 0;
+  for (const sp of ordered){
+    out += original.slice(pos, sp.start) + '______';
+    pos = sp.end;
+  }
+  out += original.slice(pos);
+  return { display: out, blanks: ordered.map(sp => original.slice(sp.start, sp.end)) };
+}
+
+const constituentLine = (cl) => (cl.constituents ?? [])
+  .map(c => `${c.text}（${c.role}）`).join('　');
+
+// ---------- 各題型 ----------
+
+function qPattern({ hash, data }){
+  const cl = mainOf(data);
+  if (!cl?.pattern?.id) return null;
+  const tip = (data.notes ?? []).find(n => n.type === 'tip')?.message;
+  return {
+    type: 'pattern',
+    prompt: '判斷這句屬於第幾句型',
+    sentence: data.original,
+    display: data.original,
+    inputMode: 'choice',
+    choices: PATTERN_CHOICES.map(c => ({ value: String(c.value), label: c.label })),
+    answer: [String(cl.pattern.id)],
+    explain: `成分拆解：${constituentLine(cl)}\n→ ${cl.pattern.name}　${cl.pattern.label}` + (tip ? `\n${tip}` : ''),
+    meta: { hash, patternId: cl.pattern.id },
+  };
+}
+
+function qTense({ hash, data }){
+  const cl = mainOf(data);
+  const vs = (cl?.constituents ?? []).filter(c => c.role === 'V' && Number.isInteger(c.start));
+  if (!vs.length || !cl?.verb?.lemma || !cl?.tense) return null;
+  const { display, blanks } = blankOut(data.original, vs);
+  const ev = (cl.tense.evidence ?? []).filter(e => !blanks.some(b => b.includes(e)));
+  return {
+    type: 'tense',
+    prompt: `用括號裡動詞的正確形式填空`,
+    sentence: data.original,
+    display,
+    hint: cl.verb.lemma,
+    inputMode: 'text',
+    blanks: blanks.length,
+    answer: blanks,
+    explain: (ev.length ? `關鍵字 ${ev.join('、')} → ` : '') +
+      `${cl.tense.label}（${cl.tense.formula}）` +
+      (cl.verb.irregular ? `\n${cl.verb.lemma} 是不規則動詞：${cl.verb.forms?.base} / ${cl.verb.forms?.past} / ${cl.verb.forms?.pastParticiple}` : ''),
+    meta: { hash, tenseTime: cl.tense.time, tenseAspect: cl.tense.aspect },
+  };
+}
+
+function qPos({ hash, data }){
+  const words = (data.words ?? []).filter(w => POS_ZH[w.pos] && Number.isInteger(w.start));
+  if (!words.length) return null;
+  // 優先問形容詞／副詞 —— 這是講義裡最常錯的地方
+  const hot = words.filter(w => w.pos === 'adj' || w.pos === 'adv');
+  const w = hot.length && Math.random() < 0.6 ? pick(hot) : pick(words);
+  const distractors = (POS_CONFUSE[w.pos] ?? Object.keys(POS_ZH)).filter(p => p !== w.pos).slice(0, 3);
+  return {
+    type: 'pos',
+    prompt: `「${w.text}」在這句裡是什麼詞性？`,
+    sentence: data.original,
+    display: data.original,
+    highlight: { start: w.start, end: w.end },
+    inputMode: 'choice',
+    choices: shuffle([w.pos, ...distractors]).map(p => ({ value: p, label: `${p}　${POS_ZH[p]}` })),
+    answer: [w.pos],
+    explain: `${w.text} 是${POS_ZH[w.pos]}（${w.pos}）。` +
+      (w.pos === 'adj' ? '形容詞修飾名詞，或當補語說明主詞怎麼樣；連結動詞後面要接形容詞。'
+       : w.pos === 'adv' ? '副詞修飾動詞、形容詞或另一個副詞，不能當連結動詞的補語。' : ''),
+    meta: { hash, pos: w.pos },
+  };
+}
+
+function qVerbForms({ hash, data }){
+  // 排除 be —— 它的過去式是「was / were」兩個，不適合當單一填空答案
+  const cl = (data.clauses ?? []).find(c =>
+    c.verb?.irregular && c.verb?.forms?.past &&
+    c.verb.forms.base !== 'be' && !/[/,]/.test(c.verb.forms.past));
+  if (!cl) return null;
+  const f = cl.verb.forms;
+  return {
+    type: 'verb-forms',
+    prompt: `寫出 ${f.base} 的過去式與過去分詞`,
+    sentence: data.original,
+    display: `${f.base}　→　______　→　______`,
+    inputMode: 'text',
+    blanks: 2,
+    answer: [f.past, f.pastParticiple],
+    explain: `${f.base} / ${f.past} / ${f.pastParticiple}（不規則變化）\n` +
+      `現在分詞 ${f.ing}　第三人稱單數 ${f.third}\n例句：${data.original}`,
+    meta: { hash },
+  };
+}
+
+function qErrorFix({ hash, data }){
+  const n = (data.notes ?? []).find(x => x.type === 'error' && x.correction && x.span);
+  if (!n) return null;
+  return {
+    type: 'error-fix',
+    prompt: '這句有一個文法問題，把錯的地方改正確',
+    sentence: data.original,
+    display: data.original,
+    highlightText: n.span,
+    inputMode: 'text',
+    blanks: 1,
+    answer: [n.correction],
+    alsoAccept: [data.original.replace(n.span, n.correction)],
+    explain: `${n.message}\n${n.span} → ${n.correction}`,
+    meta: { hash, errorCode: n.errorCode },
+  };
+}
+
+const BUILDERS = {
+  'pattern': qPattern, 'tense': qTense, 'pos': qPos,
+  'verb-forms': qVerbForms, 'error-fix': qErrorFix,
+};
+export const TYPES = Object.keys(BUILDERS);
+
+/** 從已分析的句子生成題目。records = [{ hash, data }] */
+export function generate(records, { count = 10, types = TYPES } = {}){
+  const wanted = types.filter(t => BUILDERS[t]);
+  if (!wanted.length || !records.length) return [];
+
+  // 每句 × 每題型，先把所有「做得出來」的候選題列出來，再抽樣
+  const candidates = [];
+  for (const rec of shuffle(records))
+    for (const t of wanted){
+      const q = BUILDERS[t](rec);
+      if (q) candidates.push(q);
+    }
+  if (!candidates.length) return [];
+
+  // 盡量讓題型分佈平均，也避免同一句連續出現
+  const byType = new Map(wanted.map(t => [t, []]));
+  for (const q of shuffle(candidates)) byType.get(q.type)?.push(q);
+
+  const out = [];
+  const usedHash = new Set();
+  let guard = 0;
+  while (out.length < count && guard++ < count * 12){
+    for (const t of shuffle(wanted)){
+      if (out.length >= count) break;
+      const bucket = byType.get(t);
+      if (!bucket?.length) continue;
+      const idx = bucket.findIndex(q => !usedHash.has(q.meta.hash));
+      const q = bucket.splice(idx === -1 ? 0 : idx, 1)[0];
+      if (!q) continue;
+      usedHash.add(q.meta.hash);
+      out.push({ ...q, id: `q${out.length + 1}` });
+    }
+    if (wanted.every(t => !byType.get(t)?.length)) break;
+    if (usedHash.size >= records.length) usedHash.clear();   // 句子用完就允許重複
+  }
+  return out.slice(0, count);
+}
+
+/** 批改：大小寫、前後空白、重複空白、句尾標點都不計較 */
+const norm = s => String(s ?? '').trim().toLowerCase()
+  .replace(/\s+/g, ' ').replace(/[.!?,;:]+$/, '');
+
+export function grade(question, given){
+  const got = Array.isArray(given) ? given : [given];
+  const exact = question.answer.length === got.length &&
+    question.answer.every((a, i) => norm(a) === norm(got[i]));
+  const alt = (question.alsoAccept ?? []).some(a => norm(a) === norm(got.join(' ')));
+  return { correct: exact || alt, expected: question.answer, given: got };
+}

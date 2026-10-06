@@ -27,6 +27,24 @@ npm start          # http://127.0.0.1:8787
 超出國中範圍的結構（關係子句、被動、分詞構句、假設語氣…）會標示 `超出國中範圍`，但仍分析主幹。
 非英文、不完整片語、無意義字串會標 `issue` 並明說無法分析，不會硬掰。
 
+## 練習模式
+
+介面上方切到「練習」，從**你分析過的句子**反向生成題目。五種題型：
+
+| 題型 | 形式 | 範例 |
+| --- | --- | --- |
+| 句型判斷 | 五選一 | `Last week our teacher gave us a difficult test.` → 句型四 |
+| 時態填空 | 填空（給原形） | `The news ______ his parents proud.`（make）→ made |
+| 詞性判斷 | 四選一 | 「confident」在這句是什麼詞性？→ adj |
+| 動詞三態 | 兩格填空 | `give → ______ → ______` → gave, given |
+| 改錯 | 填空 | `The soup tastes well.` → tastes good |
+
+**出題不呼叫模型。** 分析結果裡已有句型、成分、時態關鍵字、詞性、三態與錯誤修正，
+由程式反向生成，所以零成本、1 毫秒完成，而且題目與解答必然和分析一致。
+
+解答沿用講義的解說語言（等號測試、關鍵字 → 時態、三態表）。
+答案不隨題目下發，交卷時才由後端批改並記錄，批改時大小寫、空白、句尾標點都不計較。
+
 ## 架構
 
 ```
@@ -34,6 +52,7 @@ prompts/analyzer-system.md   知識庫 A–H：句型判別流程、時態矩陣
 src/analyzer.mjs             呼叫模型 + 成分/詞性座標對齊（模型只回文字，座標由程式算）
 src/segment.mjs              英文斷句（處理 Mr. / U.S. / 3.14 / 引號）
 src/cache.mjs                逐句 SQLite 快取（key = 正規化後 SHA-256）
+src/exercises.mjs            出題引擎（純程式，不呼叫模型）
 src/server.mjs               HTTP + SSE 串流 API
 prototype/index.html         前端（單檔，無後端時自動降級為範例展示模式）
 eval/                        60 案例黃金測試集 ＋ 評測腳本
@@ -46,12 +65,30 @@ fixtures/samples.json        12 組預先分析好的範例，給靜態展示用
 | --- | --- |
 | `GET /api/health` | 回報模型與上限 |
 | `POST /api/analyze` | `{"text":"..."}` → SSE 串流，每分析完一句推一句 |
+| `POST /api/exercises` | `{"count":10,"types":[...]}` → 題目（不含答案） |
+| `POST /api/attempts` | `{"quizId","userToken","answers"}` → 批改結果並記錄 |
+| `GET /api/weakness?user=` | 弱點統計：依題型／句型／時態／詞性的正確率 |
 | `GET /api/stats` | 快取統計與句型／時態分佈 |
 
 SSE 事件：`meta`（總句數）→ `sentence`（單句結果，附 `cached`）→ `progress` → `done`。
 快取命中的句子會在毫秒內先推出，其餘才送去分析。
 
-環境變數：`PORT`(8787)、`MAX_CHARS`(4000)、`MAX_SENTENCES`(25)、`CONCURRENCY`(6)、`ANALYZER_MODEL`(opus)。
+環境變數：`PORT`(8787)、`HOST`(127.0.0.1)、`AUTH_TOKEN`(無)、`MAX_CHARS`(4000)、
+`MAX_SENTENCES`(25)、`CONCURRENCY`(6)、`ANALYZER_MODEL`(opus)。
+
+### 額度與對外開放
+
+分析由本機 `claude` CLI 執行，**額度計入執行這台機器上登入的 Claude 帳號**。
+程式碼不含任何憑證，別人 clone 後要自己 `claude login`，花的是他們自己的額度。
+
+因此伺服器預設**只監聽 127.0.0.1**。要讓區網其他裝置連線：
+
+```bash
+HOST=0.0.0.0 AUTH_TOKEN=你自訂的字串 npm start
+```
+
+分享網址時帶上 `?token=你自訂的字串`，前端會記住。
+未設 `AUTH_TOKEN` 就對外開放時，啟動訊息會警告 —— 任何連得到的人都能無限消耗你的額度。
 
 ## 快取與搬遷
 
