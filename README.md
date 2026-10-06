@@ -45,6 +45,43 @@ npm start          # http://127.0.0.1:8787
 解答沿用講義的解說語言（等號測試、關鍵字 → 時態、三態表）。
 答案不隨題目下發，交卷時才由後端批改並記錄，批改時大小寫、空白、句尾標點都不計較。
 
+## 朗讀
+
+每句卡片右上角有朗讀按鈕，點下去唸該句，**唸到哪個字那個字就亮起來** ——
+底下的句型色線與詞性標示仍然看得見，聽到 `made` 的同時看得到它被標成 `v°`。
+工具列可選語音與速度（慢 0.6／適中 0.85／正常 1.0），設定存在 localStorage。
+
+**完全不消耗任何 API 額度**，也不需要網路 —— 用的是瀏覽器內建的 Web Speech API。
+
+### 發聲層是可抽換模組
+
+`prototype/speech.js` 是獨立的一支，介面固定：
+
+```js
+Speech.ready()                  // 等語音清單載入（Chrome 是非同步的）
+Speech.available()              // 這個瀏覽器能不能發聲
+Speech.voices()                 // [{ id, name, lang, local, wordEvents }]
+Speech.settings / setSettings({ voiceId, rate })
+Speech.speak(text, { onWord, onStart, onEnd, onError })
+Speech.stop() / Speech.speaking()
+```
+
+`onWord({ start, end })` 的字元座標與分析結果的 `words[].start/end` 同一套，
+所以逐字標示不需要額外對齊。之後要換成 Kokoro-82M 等本機神經網路 TTS，
+只要替換這一支並維持同樣介面，呼叫端完全不用動。
+
+### 跨平台的語音選擇
+
+不寫死語音名稱（`Samantha` 在 Windows 不存在）。選擇順序：
+
+1. **只挑本機語音** —— 實測雲端語音（Google US English）**完全不發逐字事件**，
+   選到就會失去逐字標示
+2. 依偏好清單：macOS 的 Samantha / Alex / Daniel…、Windows 的 Microsoft Zira / David / Mark…
+3. 過濾掉 macOS 的趣味語音（Bells、Boing、Zarvox…）
+4. 都沒有就取第一個英語本機語音
+
+選單裡不支援逐字的語音會標示「（無逐字標示）」。
+
 ## 弱點統計
 
 「弱點」分頁統計各維度的正確率，依**五大句型、必學 6 時態、詞性、題型**四組呈現：
