@@ -31,11 +31,19 @@ export function callModel(userPrompt, { model = MODEL, timeoutMs = 120_000 } = {
     child.on('error', e => { clearTimeout(timer); reject(e); });
     child.on('close', code => {
       clearTimeout(timer);
-      if (code !== 0) return reject(new Error(`claude exited ${code}: ${err.slice(0, 500)}`));
+      if (code !== 0){
+        const e = new Error(`claude exited ${code}: ${err.slice(0, 500)}`);
+        e.kind = classifyError(err);
+        return reject(e);
+      }
       let env;
       try { env = JSON.parse(out); }
       catch { return reject(new Error(`CLI 回傳非 JSON: ${out.slice(0, 300)}`)); }
-      if (env.is_error) return reject(new Error(`模型回報錯誤: ${env.result}`));
+      if (env.is_error){
+        const e = new Error(`模型回報錯誤: ${env.result}`);
+        e.kind = classifyError(env.result);
+        return reject(e);
+      }
       resolve({
         text: env.result,
         usage: env.usage,
@@ -44,6 +52,17 @@ export function callModel(userPrompt, { model = MODEL, timeoutMs = 120_000 } = {
       });
     });
   });
+}
+
+/** 把 CLI 的錯誤訊息分類，讓上層能給使用者看得懂的提示 */
+export function classifyError(message){
+  const m = String(message || '').toLowerCase();
+  if (/rate.?limit|usage limit|quota|too many requests|\b429\b|limit reached|resets? at/.test(m))
+    return 'rate-limit';
+  if (/unauthor|not logged in|authentication|invalid api key|credential|\b401\b|\b403\b/.test(m))
+    return 'auth';
+  if (/timeout|timed out|etimedout/.test(m)) return 'timeout';
+  return 'other';
 }
 
 /** 容錯解析：去掉可能的 markdown fence、抓第一個 JSON 物件 */

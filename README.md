@@ -75,7 +75,7 @@ SSE 事件：`meta`（總句數）→ `sentence`（單句結果，附 `cached`�
 快取命中的句子會在毫秒內先推出，其餘才送去分析。
 
 環境變數：`PORT`(8787)、`HOST`(127.0.0.1)、`AUTH_TOKEN`(無)、`MAX_CHARS`(4000)、
-`MAX_SENTENCES`(25)、`CONCURRENCY`(6)、`ANALYZER_MODEL`(opus)、`HISTORY_DAYS`(30)。
+`MAX_SENTENCES`(25)、`CONCURRENCY`(6)、`ANALYZER_MODEL`(opus)、`HISTORY_DAYS`(30)、`DAILY_OUTPUT_TOKENS`(0＝不限)。
 
 ### 額度與對外開放
 
@@ -108,6 +108,29 @@ HOST=0.0.0.0 AUTH_TOKEN=你自訂的字串 npm start
 
 歷史**原文**保留 `HISTORY_DAYS`（預設 30）天後自動清除，啟動時與每 6 小時各清一次。
 分析快取本身不受影響，那是可以重複利用的資產。
+
+### 訂閱額度查不到，但可以自訂上限
+
+Claude CLI **沒有提供查詢剩餘訂閱額度的介面** —— 沒有 `usage` 子指令，
+`--output-format json` 的回傳欄位裡也沒有任何 rate limit / quota 欄位。
+所以畫面上無法顯示「還剩多少額度」。
+
+替代方案有兩個：
+
+**1. 自訂每日上限**（防失控用量）
+
+```bash
+DAILY_OUTPUT_TOKENS=50000 npm start
+```
+
+超過時 `/api/analyze` 回 429 並附說明，畫面上也會顯示用量進度條。
+隔天自動重置（以本機日期為準）。預設 0 ＝ 不限制。
+
+**2. 額度用盡時明確告知**
+
+CLI 回報 rate limit 或認證失效時，伺服器會**立即中止**其餘句子的分析
+（這類錯誤重試沒有意義），畫面顯示「訂閱額度似乎已用盡」或「請重新 claude 登入」，
+已完成的句子仍保留在快取。
 
 ## 快取與搬遷
 

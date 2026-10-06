@@ -82,6 +82,13 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--o
 #usageBar .u b{font-family:var(--font-mono);font-weight:700;color:var(--fg);font-size:.92rem}
 #usageBar .u.cost b{color:var(--accent)}
 #usageBar .u.saved b{color:var(--c-o)}
+#usageBar .u.halt{color:var(--err);font-weight:600;width:100%}
+#usageBar .u.halt b{color:var(--err);font-size:1.05rem}
+#usageBar .u.budget{gap:8px}
+#usageBar .bar{display:inline-block;width:92px;height:7px;border-radius:4px;
+  background:var(--rule);overflow:hidden;vertical-align:middle}
+#usageBar .bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
+#usageBar .bsub{font-family:var(--font-mono);font-size:.76rem;color:var(--faint)}
 #usageBar .note{font-size:.76rem;color:var(--faint);width:100%;line-height:1.6}
 
 .usage-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
@@ -720,6 +727,13 @@ function showUsage(d){
   }
   if (d.cached) parts.push(`<span class="u saved">快取命中 <b>${d.cached}</b> 句（未重新分析）</span>`);
   if (d.failed) parts.push(`<span class="u">失敗 <b>${d.failed}</b> 句</span>`);
+  const b = d.budget;
+  if (b?.enabled){
+    const pct = Math.min(100, Math.round(b.used / b.limit * 100));
+    parts.push(`<span class="u budget">今日上限 <b>${pct}%</b>
+      <span class="bar"><i style="width:${pct}%"></i></span>
+      <span class="bsub">${nf(b.used)} / ${nf(b.limit)}</span></span>`);
+  }
   if (d.analyzed)
     parts.push(`<span class="note">參考費用是依 Claude API 牌價換算的估算值，用來掌握用量規模。` +
       `實際分析走本機 Claude 訂閱，不會另外向你收費，但會消耗訂閱額度。</span>`);
@@ -820,6 +834,13 @@ async function analyzeLive(text){
             <div class="body"><p class="line">${esc(d.original)}</p>
             <p class="fallback">${esc(d.message)}</p></div></article>`);
           paint();
+        } else if (ev === 'halted'){
+          const msg = d.kind === 'rate-limit'
+            ? 'Claude 訂閱額度似乎已用盡，剩下的句子沒有送出。等額度重置後再試，已完成的句子仍會保留在快取。'
+            : 'Claude 認證失效。請在終端機執行 claude 重新登入後再試。';
+          usageBar.innerHTML = `<span class="u halt"><b>⚠</b> ${esc(msg)}</span>
+            <span class="note">原始訊息：${esc(d.message)}</span>`;
+          usageBar.hidden = false;
         } else if (ev === 'progress'){
           done = d.done;
           hintEl.textContent = `分析中 ${done} / ${d.total} 句…`;
@@ -1069,7 +1090,16 @@ async function loadHistory(){
         輸出 ${nf(x.output_tokens)} tokens</div></div>`;
     usageCards.innerHTML = card('今天', d.usage.today) + card('本月', d.usage.month) + card('全部', d.usage.all)
       + `<div class="ucard"><h4>快取</h4><div class="big">${d.usage.all.cached}</div>
-         <div class="sub">句直接命中快取<br>省下重新分析的時間與額度</div></div>`;
+         <div class="sub">句直接命中快取<br>省下重新分析的時間與額度</div></div>`
+      + (d.budget?.enabled
+        ? `<div class="ucard"><h4>今日上限</h4>
+             <div class="big">${Math.min(100, Math.round(d.budget.used / d.budget.limit * 100))}%</div>
+             <div class="sub">輸出 ${nf(d.budget.used)} / ${nf(d.budget.limit)} tokens<br>
+               剩餘 ${nf(d.budget.remaining)}</div></div>`
+        : `<div class="ucard"><h4>訂閱額度</h4><div class="big" style="font-size:1rem;line-height:1.5">
+             無法查詢</div>
+             <div class="sub">Claude CLI 沒有提供剩餘額度的介面。<br>
+               可設 DAILY_OUTPUT_TOKENS 自訂每日上限。</div></div>`);
 
     if (!d.items.length){
       historyOut.innerHTML = '<p class="msg">還沒有分析紀錄。到「分析」貼一段文章就會出現在這裡。</p>';
