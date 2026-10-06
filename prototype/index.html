@@ -493,6 +493,14 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
 
+// speech.js 若沒載入（例如單獨複製 index.html 出去），用這組空殼擋住，
+// 讓頁面其餘功能完全不受影響。
+const Spk = window.Speech || {
+  ready: async () => false, available: () => false, voices: () => [],
+  activeVoice: () => null, settings: { rate: 0.85 }, setSettings: () => {},
+  speak: (_t, o) => o?.onError?.(new Error('朗讀模組未載入')), stop: () => {}, speaking: () => false,
+};
+
 const ROLE = {
   S:{code:'S',zh:'主詞',kind:'core',why:'做動作的人或事物'},
   V:{code:'V',zh:'動詞',kind:'core',why:'動作或狀態，含助動詞'},
@@ -1303,13 +1311,6 @@ historyOut.addEventListener('click', async e => {
 
 
 // ===== 朗讀（發聲由 speech.js 提供，可整支抽換） =====
-// speech.js 若沒載入（例如單獨複製 index.html 出去），用這組空殼擋住，
-// 讓頁面其餘功能完全不受影響。
-const Spk = window.Speech || {
-  ready: async () => false, available: () => false, voices: () => [],
-  activeVoice: () => null, settings: { rate: 0.85 }, setSettings: () => {},
-  speak: (_t, o) => o?.onError?.(new Error('朗讀模組未載入')), stop: () => {}, speaking: () => false,
-};
 const spkCtl = document.getElementById('spkCtl');
 const spkVoice = document.getElementById('spkVoice');
 const spkRate = document.getElementById('spkRate');
