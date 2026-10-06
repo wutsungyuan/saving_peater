@@ -172,7 +172,8 @@ select{font-family:var(--font-ui);font-size:.85rem;padding:6px 10px;border:1px s
   color:var(--muted);border-radius:999px;cursor:pointer}
 .tchip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);
   color:var(--on-accent);font-weight:600}
-.wklink{font-size:.78rem;color:var(--muted);margin-left:auto}
+.wklink{font-size:.8rem;color:var(--accent);margin-left:auto;background:none;border:0;
+  padding:4px 0;border-bottom:1.5px solid currentColor;border-radius:0;font-weight:600}
 
 .q{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:16px 18px;
   display:flex;flex-direction:column;gap:11px}
@@ -433,7 +434,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
       <div class="row" id="quizActions" hidden>
         <button class="primary" id="quizSubmit">交卷</button>
         <button id="quizAgain" hidden>再來一份</button>
-        <a class="wklink" href="/api/weakness?user=local" target="_blank" rel="noopener">看弱點統計（JSON）</a>
+        <button class="wklink" type="button" id="toWeak">看弱點統計</button>
       </div>
     </div>
 
@@ -1107,7 +1108,9 @@ qtypesEl.addEventListener('click', e => {
 const selectedTypes = () =>
   [...qtypesEl.querySelectorAll('[aria-pressed="true"]')].map(b => b.dataset.t);
 
-document.querySelector('.wklink').href = `/api/weakness?user=${encodeURIComponent(USER)}`;
+document.getElementById('toWeak').addEventListener('click', () => {
+  document.querySelector('.tabs button[data-view="weak"]').click();
+});
 
 /** 把 display 裡要強調的部分包成 <mark> */
 function qDisplay(q){
