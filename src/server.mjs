@@ -85,6 +85,12 @@ async function handleAnalyze(req, res, url){
   });
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
+  // 心跳：分析長句時中間可能二十幾秒沒有任何事件，前端無法分辨「還在跑」和「後端死了」。
+  // 每 8 秒送一次，讓前端的停滯偵測有依據。
+  const beat = setInterval(() => { if (!res.writableEnded) res.write(': ping\n\n'); }, 8000);
+  const stopBeat = () => clearInterval(beat);
+  res.on('close', stopBeat);
+
   const t0 = Date.now();
   let cached = 0, analyzed = 0, failed = 0;
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 };
@@ -134,6 +140,7 @@ async function handleAnalyze(req, res, url){
     if (!closed) send('progress', { done: cached + analyzed + failed, total: segs.length });
   });
 
+  stopBeat();
   const ms = Date.now() - t0;
   cache.log({ chars: text.length, sentences: segs.length, cached, analyzed, ms, text, ...usage });
   if (!closed){

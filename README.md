@@ -74,6 +74,11 @@ fixtures/samples.json        12 組預先分析好的範例，給靜態展示用
 SSE 事件：`meta`（總句數）→ `sentence`（單句結果，附 `cached`）→ `progress` → `done`。
 快取命中的句子會在毫秒內先推出，其餘才送去分析。
 
+分析途中後端每 8 秒送一次心跳（`: ping`）。瀏覽器的 fetch 串流在後端消失時不一定會結束
+（實測砍掉後端後 `read()` 會一直懸著，`AbortController` 也打不斷已開始讀取的 body），
+所以前端讓每次讀取跟 30 秒逾時賽跑：有心跳就代表後端還在，30 秒無聲才判定中斷。
+中斷時未完成的句子會標示出來並提供「重新分析」—— 已完成的句子都在快取裡，不會重跑。
+
 環境變數：`PORT`(8787)、`HOST`(127.0.0.1)、`AUTH_TOKEN`(無)、`MAX_CHARS`(4000)、
 `MAX_SENTENCES`(25)、`CONCURRENCY`(6)、`ANALYZER_MODEL`(opus)、`HISTORY_DAYS`(30)。
 

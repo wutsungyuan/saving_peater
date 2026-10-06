@@ -84,6 +84,8 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--o
 #usageBar .u.saved b{color:var(--c-o)}
 #usageBar .u.halt{color:var(--err);font-weight:600;width:100%}
 #usageBar .u.halt b{color:var(--err);font-size:1.05rem}
+#usageBar .retry{font-size:.82rem;padding:6px 14px;background:var(--accent);
+  border-color:var(--accent);color:var(--on-accent);font-weight:600;margin-top:4px}
 #usageBar .note{font-size:.76rem;color:var(--faint);width:100%;line-height:1.6}
 
 .usage-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
@@ -771,8 +773,16 @@ async function analyzeLive(text){
   usageBar.hidden = true;
   out.innerHTML = '<p class="msg">斷句中…</p>';
   const t0 = Date.now();
-  let total = 0, done = 0;
+  let total = 0, done = 0, gotDone = false;
   const slots = new Map();
+  const settled = new Set();      // 已有結果（成功或失敗）的句子
+
+  // 伺服器若中途消失，瀏覽器的 fetch 串流不一定會結束（實測砍掉後端後 read() 會一直懸著，
+  // 且 AbortController 也打不斷已開始讀取的 body），所以讓每次讀取跟逾時賽跑。
+  // 後端每 8 秒送一次心跳，30 秒收不到任何資料就代表後端真的不在了，
+  // 不會誤殺還在分析的長句。
+  const STALL_MS = 30_000;
+  const ctrl = new AbortController();
 
   const paint = () => {
     out.innerHTML = [...slots.entries()].sort((a, b) => a[0] - b[0]).map(([, html]) => html).join('');
@@ -783,6 +793,7 @@ async function analyzeLive(text){
   try {
     const res = await fetch('/api/analyze', {
       method: 'POST',
+      signal: ctrl.signal,
       headers: { 'content-type': 'application/json', ...(TOKEN ? { 'x-auth-token': TOKEN } : {}) },
       body: JSON.stringify({ text }),
     });
@@ -799,8 +810,15 @@ async function analyzeLive(text){
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = '';
+    const readOrStall = () => {
+      let timer;
+      return Promise.race([
+        reader.read(),
+        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('stalled')), STALL_MS); }),
+      ]).finally(() => clearTimeout(timer));
+    };
     for (;;){
-      const { value, done: fin } = await reader.read();
+      const { value, done: fin } = await readOrStall();
       if (fin) break;
       buf += dec.decode(value, { stream: true });
       const parts = buf.split('\n\n');
@@ -820,12 +838,14 @@ async function analyzeLive(text){
             : `共 ${total} 句，分析中…`;
         } else if (ev === 'sentence'){
           slots.set(d.index, renderSentence(d.sentence, total > 1));
+          settled.add(d.index);
           paint();
         } else if (ev === 'failed'){
           slots.set(d.index, `<article class="sent"><div class="badges">
             <span class="badge idx">${d.index + 1}</span><span class="badge warn">分析失敗</span></div>
             <div class="body"><p class="line">${esc(d.original)}</p>
             <p class="fallback">${esc(d.message)}</p></div></article>`);
+          settled.add(d.index);
           paint();
         } else if (ev === 'halted'){
           const msg = d.kind === 'rate-limit'
@@ -834,20 +854,57 @@ async function analyzeLive(text){
           usageBar.innerHTML = `<span class="u halt"><b>⚠</b> ${esc(msg)}</span>
             <span class="note">原始訊息：${esc(d.message)}</span>`;
           usageBar.hidden = false;
+          markUnfinished(slots, settled, total, '沒有送出分析');
+          paint();
         } else if (ev === 'progress'){
           done = d.done;
           hintEl.textContent = `分析中 ${done} / ${d.total} 句…`;
         } else if (ev === 'done'){
+          gotDone = true;
           showUsage(d);
           hintEl.textContent = '可以再貼新的一段，或切到「練習」從這些句子出題。';
         }
       }
     }
+    if (!gotDone && total && settled.size < total){
+      markUnfinished(slots, settled, total, '分析被中斷');
+      paint();
+      showInterrupted(total - settled.size, text);
+    }
   } catch (e){
-    out.innerHTML = `<p class="msg">連線中斷：${esc(e.message)}</p>`;
+    if (total && settled.size < total){
+      markUnfinished(slots, settled, total, '分析中斷');
+      paint();
+      showInterrupted(total - settled.size, text);
+    } else {
+      out.innerHTML = `<p class="msg">連線失敗：${esc(e.message)}。` +
+        `請確認後端有在執行（npm start）後再試一次。</p>`;
+    }
   } finally {
+    try { ctrl.abort(); } catch { /* 釋放連線，失敗無妨 */ }
     goBtn.disabled = false;
   }
+}
+
+/** 把還在轉圈的句子換成「未完成」狀態，不要讓它永遠轉下去 */
+function markUnfinished(slots, settled, total, reason){
+  for (let i = 0; i < total; i++){
+    if (settled.has(i)) continue;
+    slots.set(i, `<article class="sent"><div class="badges">
+      <span class="badge idx">${i + 1}</span><span class="badge warn">${esc(reason)}</span></div>
+      <div class="body"><p class="zh" style="border:0;padding:0;margin:0">
+        這句還沒分析完。按下方的「重新分析」即可補上 —— 已完成的句子都在快取裡，不會重跑。
+      </p></div></article>`);
+  }
+}
+
+function showInterrupted(n, text){
+  usageBar.innerHTML = `<span class="u halt"><b>⚠</b> 分析在完成前中斷，還有 ${n} 句沒有結果。</span>
+    <span class="note">最常見的原因是後端重新啟動或停止。已完成的句子都存進快取了，
+      按「重新分析」只會處理剩下那幾句。</span>
+    <button class="retry" type="button">重新分析</button>`;
+  usageBar.hidden = false;
+  usageBar.querySelector('.retry')?.addEventListener('click', () => analyzeLive(text));
 }
 
 goBtn.addEventListener('click', () => {
