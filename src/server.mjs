@@ -178,20 +178,28 @@ const server = createServer(async (req, res) => {
       const count = Math.min(Math.max(Number(body.count) || 10, 1), 30);
       const types = Array.isArray(body.types) && body.types.length
         ? body.types.filter(t => TYPES.includes(t)) : TYPES;
+      const userToken = String(body.userToken || 'anon').slice(0, 64);
+      const focusWeak = body.focusWeak !== false;      // 預設開啟弱點加權
+      const acc = focusWeak ? cache.accuracyMap(userToken) : null;
       const records = cache.pickSentences(60);
       if (!records.length){
         res.writeHead(409, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error: 'no-sentences',
           message: '還沒有分析過任何句子。先到「分析」貼一段文章，就能從那些句子出題。' }));
       }
-      const questions = generate(records, { count, types });
+      const questions = generate(records, { count, types, acc });
       // 答案不隨題目下發，避免在開發者工具裡直接看到
       const quizId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
       quizzes.set(quizId, { questions, at: Date.now() });
       if (quizzes.size > 200) for (const [k, v] of quizzes) if (Date.now() - v.at > 864e5) quizzes.delete(k);
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify({
-        quizId, pool: records.length,
+        quizId, pool: records.length, focusWeak,
+        weakDims: acc ? {
+          patterns: Object.entries(acc.patterns).filter(([, a]) => a < 0.7).map(([k]) => Number(k)),
+          tenses: Object.entries(acc.tenses).filter(([, a]) => a < 0.7).map(([k]) => k),
+          pos: Object.entries(acc.pos).filter(([, a]) => a < 0.7).map(([k]) => k),
+        } : null,
         questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest),
       }));
     }

@@ -165,6 +165,23 @@ export function openCache(file = 'data/cache.db'){
       };
     },
 
+    /** 各維度的正確率，給出題加權用。沒作答過的維度回 null（視為中性） */
+    accuracyMap(userToken){
+      const toMap = (rows, key) => Object.fromEntries(rows
+        .filter(r => r.total >= 2)                       // 樣本太少不足以判斷強弱
+        .map(r => [key(r), r.correct / r.total]));
+      const q = sql => db.prepare(sql).all(userToken);
+      return {
+        patterns: toMap(q(`SELECT pattern_id, COUNT(*) total, SUM(correct) correct FROM attempts
+          WHERE user_token = ? AND pattern_id IS NOT NULL GROUP BY pattern_id`), r => r.pattern_id),
+        tenses: toMap(q(`SELECT tense_time, tense_aspect, COUNT(*) total, SUM(correct) correct FROM attempts
+          WHERE user_token = ? AND tense_time IS NOT NULL GROUP BY tense_time, tense_aspect`),
+          r => `${r.tense_time}-${r.tense_aspect}`),
+        pos: toMap(q(`SELECT pos, COUNT(*) total, SUM(correct) correct FROM attempts
+          WHERE user_token = ? AND pos IS NOT NULL GROUP BY pos`), r => r.pos),
+      };
+    },
+
     /** 取出可出題的句子（之後 M4 可依弱點加權） */
     pickSentences(limit = 40){
       return db.prepare(`SELECT hash, result FROM sentences

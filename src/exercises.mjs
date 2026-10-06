@@ -152,8 +152,33 @@ const BUILDERS = {
 };
 export const TYPES = Object.keys(BUILDERS);
 
-/** 從已分析的句子生成題目。records = [{ hash, data }] */
-export function generate(records, { count = 10, types = TYPES } = {}){
+/** 這題涉及的維度目前正確率多低 → 權重多高。沒資料視為中性 */
+function weightOf(q, acc){
+  if (!acc) return 1;
+  let a = null;
+  if (q.type === 'pattern' && q.meta.patternId != null) a = acc.patterns?.[q.meta.patternId];
+  else if (q.type === 'tense' && q.meta.tenseTime) a = acc.tenses?.[`${q.meta.tenseTime}-${q.meta.tenseAspect}`];
+  else if (q.type === 'pos' && q.meta.pos) a = acc.pos?.[q.meta.pos];
+  if (a == null) return 1;                    // 沒作答過：中性，仍有機會出現
+  return 0.25 + (1 - a) * 2.25;               // 全錯 2.5 倍、全對 0.25 倍
+}
+
+/** 依權重隨機抽一題，並從候選池移除 */
+function weightedTake(bucket, acc){
+  if (!bucket.length) return null;
+  const w = bucket.map(q => weightOf(q, acc));
+  const sum = w.reduce((a, b) => a + b, 0);
+  let r = Math.random() * sum;
+  for (let i = 0; i < bucket.length; i++){
+    r -= w[i];
+    if (r <= 0) return bucket.splice(i, 1)[0];
+  }
+  return bucket.pop();
+}
+
+/** 從已分析的句子生成題目。records = [{ hash, data }]
+ *  acc = 各維度正確率；給了就會優先出弱點題 */
+export function generate(records, { count = 10, types = TYPES, acc = null } = {}){
   const wanted = types.filter(t => BUILDERS[t]);
   if (!wanted.length || !records.length) return [];
 
@@ -178,9 +203,12 @@ export function generate(records, { count = 10, types = TYPES } = {}){
       if (out.length >= count) break;
       const bucket = byType.get(t);
       if (!bucket?.length) continue;
-      const idx = bucket.findIndex(q => !usedHash.has(q.meta.hash));
-      const q = bucket.splice(idx === -1 ? 0 : idx, 1)[0];
+      // 先排除已出過的句子，再依弱點加權抽
+      const fresh = bucket.filter(q => !usedHash.has(q.meta.hash));
+      const q = weightedTake(fresh.length ? fresh : bucket, acc);
       if (!q) continue;
+      const at = bucket.indexOf(q);
+      if (at !== -1) bucket.splice(at, 1);
       usedHash.add(q.meta.hash);
       out.push({ ...q, id: `q${out.length + 1}` });
     }
