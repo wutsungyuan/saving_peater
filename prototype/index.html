@@ -1,0 +1,737 @@
+<title>英文句型解剖</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<style>
+/* 版面：三欄。左側欄=句子成分圖例、中欄=輸入與句子卡片、右側欄=詞性圖例；兩側欄 sticky 常駐。
+   本頁刻意只做淺色主題 — 不隨系統深色模式變換。 */
+:root{
+  color-scheme:light;
+  --bg:#eceff1; --surface:#ffffff; --surface-2:#f2f6f8;
+  --fg:#0f171c; --muted:#3b4951; --faint:#67767f; --rule:#c7d2d9;
+  --accent:#0a615e; --on-accent:#ffffff;
+  --c-s:#11529f; --c-v:#a82a1e; --c-o:#0f6637; --c-c:#642b97;
+  --c-io:#046177; --c-do:#0f6637; --c-mod:#55646e;
+  --err:#a82a1e; --err-bg:#fcebe8; --tip-bg:#e2f0ef;
+  --pos-adj:#8a5300; --pos-adv:#046177; --pos-dim:#39474f;
+  --font-en:'Literata',Georgia,'Times New Roman',serif;
+  --font-ui:'Noto Sans TC',-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-ui);margin:0;
+  padding-inline:16px;padding-block:26px 56px;-webkit-font-smoothing:antialiased}
+
+/* 三欄骨架 */
+.page{display:grid;gap:24px;justify-content:center;
+  grid-template-columns:[l] 186px [c] minmax(0,900px) [r] 186px}
+.center{grid-column:c;display:flex;flex-direction:column;gap:20px;min-width:0}
+.rail{align-self:start;position:sticky;top:calc(env(safe-area-inset-top,0px) + 18px);
+  background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:14px}
+.rail-l{grid-column:l} .rail-r{grid-column:r}
+.rail h3{margin:0 0 11px;font-size:.72rem;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted);font-family:var(--font-mono);
+  padding-bottom:9px;border-bottom:1px solid var(--rule)}
+.rail ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.rail li{display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--muted)}
+.rail li i{width:17px;height:3.5px;border-radius:2px;flex-shrink:0}
+.rail li em{font-family:var(--font-mono);font-style:normal;font-weight:700;font-size:.78rem;
+  color:var(--k);min-width:2.6em;flex-shrink:0}
+.rail li.sub{padding-left:25px;font-size:.8rem;color:var(--faint);gap:7px}
+.rail li.sub em{font-weight:600;min-width:1.6em;font-family:var(--font-ui)}
+.rail .div{height:1px;background:var(--rule);margin:4px 0}
+.rail li.hot{color:var(--fg);font-weight:500}
+.rail .foot{margin-top:11px;padding-top:9px;border-top:1px solid var(--rule);
+  font-size:.74rem;color:var(--faint);line-height:1.6}
+/* 窄螢幕：側欄收起，改用中欄內的橫向圖例 */
+.legend-inline{display:none}
+@media (max-width:1180px){
+  .page{grid-template-columns:minmax(0,900px)}
+  .center{grid-column:1}
+  .rail{display:none}
+  .legend-inline{display:flex;flex-direction:column;gap:7px;
+    padding:11px 13px;background:var(--surface);border:1px solid var(--rule);border-radius:4px}
+  .legend-inline .lrow{display:flex;gap:5px 13px;flex-wrap:wrap;align-items:center;font-size:.8rem;color:var(--muted)}
+  .legend-inline .lrow>b{font-family:var(--font-mono);font-size:.68rem;font-weight:700;
+    letter-spacing:.08em;color:var(--faint);text-transform:uppercase;flex-shrink:0}
+  .legend-inline .lrow span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .legend-inline .lrow i{width:16px;height:3.5px;border-radius:2px;flex-shrink:0}
+  .legend-inline .lrow em{font-family:var(--font-mono);font-style:normal;font-weight:700;font-size:.76rem}
+}
+
+header h1{font-weight:700;font-size:1.6rem;letter-spacing:-.01em;margin:0 0 7px;text-wrap:balance}
+header p{margin:0;color:var(--muted);font-size:.92rem;line-height:1.72;max-width:60ch}
+header .rule{height:3px;background:var(--accent);width:46px;margin-bottom:14px;border-radius:2px}
+
+.box{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:15px}
+.box label{display:block;font-size:.72rem;font-weight:700;letter-spacing:.09em;
+  color:var(--muted);text-transform:uppercase;margin-bottom:8px;font-family:var(--font-mono)}
+textarea{width:100%;min-height:74px;resize:vertical;background:var(--surface-2);color:var(--fg);
+  border:1px solid var(--rule);border-radius:3px;padding:11px 12px;font-family:var(--font-en);
+  font-size:1.05rem;line-height:1.6}
+textarea:focus-visible,button:focus-visible,.w:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:11px}
+button{font-family:var(--font-ui);font-size:.85rem;cursor:pointer;border-radius:3px;
+  border:1px solid var(--rule);background:var(--surface-2);color:var(--fg);padding:7px 13px}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.hint{font-size:.82rem;color:var(--muted);line-height:1.6}
+
+.chips-group{display:flex;flex-direction:column;gap:9px}
+.cg{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.cg>b{font-family:var(--font-mono);font-size:.68rem;font-weight:700;letter-spacing:.09em;
+  color:var(--faint);text-transform:uppercase;flex-shrink:0;min-width:5.2em}
+.chips{display:flex;gap:7px;flex-wrap:wrap}
+.chip{font-size:.82rem;padding:6px 13px;border:1px solid var(--rule);background:var(--surface);
+  color:var(--muted);border-radius:999px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--fg);border-color:var(--fg);color:var(--surface);font-weight:600}
+
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:3px;overflow:hidden;flex-shrink:0}
+.seg button{border:0;border-radius:0;background:var(--surface);padding:7px 14px;font-size:.82rem;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--rule)}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--surface);font-weight:600}
+#posToggle{font-size:.82rem;padding:7px 14px;background:var(--surface);color:var(--muted)}
+#posToggle[aria-pressed="true"]{background:var(--tip-bg);border-color:var(--accent);color:var(--accent);font-weight:600}
+
+.sent{background:var(--surface);border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+.sent+.sent{margin-top:15px}
+.badges{display:flex;gap:7px;flex-wrap:wrap;padding:13px 22px;background:var(--surface-2);
+  border-bottom:1px solid var(--rule);align-items:center}
+.badge{font-size:.78rem;padding:4px 10px;border-radius:3px;border:1px solid var(--rule);
+  background:var(--surface);color:var(--muted);white-space:nowrap}
+.badge b{font-weight:700;color:var(--fg)}
+.badge code{font-family:var(--font-mono);font-size:.73rem;color:var(--accent);margin-left:6px;font-weight:600}
+.badge.warn{border-color:var(--err);color:var(--err);background:var(--err-bg);font-weight:600}
+.badge.idx{font-family:var(--font-mono);border:0;background:none;color:var(--faint);padding:0;font-size:.76rem}
+
+.body{padding:40px 22px 20px}
+/* 三層標註：上=句子成分、中=原句（一字不改）、下=詞性 */
+.line{font-family:var(--font-en);font-size:1.62rem;line-height:3.4;margin:0;color:var(--fg);
+  overflow-wrap:break-word}
+.c{position:relative}
+.c .lbl{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(100% + 2px);
+  font-family:var(--font-mono);font-size:.84rem;font-weight:700;letter-spacing:.02em;
+  white-space:nowrap;pointer-events:none;color:var(--rc)}
+.c.core{background-image:linear-gradient(var(--rc),var(--rc));background-size:100% 3px;
+  background-position:0 calc(100% - 1px);background-repeat:no-repeat;padding-bottom:7px}
+.c.mod{background-image:repeating-linear-gradient(90deg,var(--rc) 0 3px,transparent 3px 6px);
+  background-size:100% 2.5px;background-position:0 calc(100% - 1px);background-repeat:no-repeat;
+  padding-bottom:7px}
+.c[data-role="S"]{--rc:var(--c-s)} .c[data-role="V"]{--rc:var(--c-v)}
+.c[data-role="O"]{--rc:var(--c-o)} .c[data-role="C"]{--rc:var(--c-c)}
+.c[data-role="IO"]{--rc:var(--c-io)} .c[data-role="DO"]{--rc:var(--c-do)}
+.c.mod{--rc:var(--c-mod)}
+.c:hover{background-color:color-mix(in srgb,var(--rc) 14%,transparent);border-radius:3px}
+
+.w{position:relative;cursor:help;border-radius:2px}
+.w .plbl{position:absolute;left:50%;transform:translateX(-50%);top:calc(100% + 9px);
+  font-family:var(--font-mono);font-size:.86rem;font-weight:700;letter-spacing:.01em;
+  white-space:nowrap;pointer-events:none;color:var(--pos-dim)}
+.w[data-pos="adj"] .plbl,.w[data-pos="adv"] .plbl{font-size:.92rem}
+.plbl.lower{top:calc(100% + 26px)}
+.plbl.lower::before{content:'';position:absolute;left:50%;top:-13px;width:1px;height:11px;background:currentColor;opacity:.4}
+.line.has-lower{line-height:4.05;padding-bottom:20px}
+.w[data-pos="adj"] .plbl{color:var(--pos-adj)}
+.w[data-pos="adv"] .plbl{color:var(--pos-adv)}
+.w:hover,.w:focus-visible{background-color:color-mix(in srgb,var(--fg) 13%,transparent)}
+[data-pos-mode="off"] .plbl{display:none}
+[data-pos-mode="off"] .line{line-height:2.6}
+[data-pos-mode="content"] .w[data-fn="1"] .plbl{display:none}
+.w[data-irr="1"] .plbl::after{content:'°';color:var(--c-v);font-weight:700}
+[data-mode="clean"] .lbl,[data-mode="clean"] .plbl{display:none}
+[data-mode="clean"] .line{line-height:2.1}
+[data-mode="clean"] .c{background-image:none;padding-bottom:0}
+[data-mode="clean"] .body{padding-top:18px}
+[data-mode="clean"] .c:hover{background-image:linear-gradient(var(--rc),var(--rc));
+  background-size:100% 3px;background-position:0 100%;background-repeat:no-repeat}
+
+.zh{margin:20px 0 0;font-size:1.08rem;color:var(--muted);line-height:1.78;
+  padding-top:15px;border-top:1px dashed var(--rule)}
+.fallback{margin:10px 0 0;font-size:.82rem;color:var(--err);background:var(--err-bg);
+  border:1px solid var(--err);border-radius:3px;padding:9px 11px;line-height:1.6}
+
+.more{margin:15px 0 0;font-size:.84rem;color:var(--accent);background:none;border:0;padding:4px 0;
+  border-bottom:1.5px solid currentColor;border-radius:0;font-weight:600}
+.detail{margin-top:16px;padding-top:16px;border-top:1px solid var(--rule);
+  display:flex;flex-direction:column;gap:18px}
+.detail h4{margin:0 0 9px;font-size:.72rem;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);font-family:var(--font-mono)}
+
+.wo-scroll{overflow-x:auto}
+table.wo{border-collapse:collapse;font-size:.86rem;min-width:100%}
+table.wo th,table.wo td{border:1px solid var(--rule);padding:7px 11px;text-align:left;white-space:nowrap}
+table.wo th{background:var(--surface-2);font-weight:700;font-size:.8rem;color:var(--muted);width:1%}
+table.wo td{font-family:var(--font-en);color:var(--fg)}
+table.wo td.none{font-family:var(--font-ui);color:var(--faint)}
+
+.poslist{display:flex;gap:6px;flex-wrap:wrap}
+.poschip{display:inline-flex;align-items:baseline;gap:6px;border:1px solid var(--rule);
+  background:var(--surface-2);border-radius:3px;padding:3px 9px;font-size:.86rem}
+.poschip b{font-family:var(--font-en);font-weight:400;color:var(--fg)}
+.poschip em{font-family:var(--font-mono);font-style:normal;font-size:.72rem;color:var(--pos-dim);font-weight:600}
+.poschip[data-pos="adj"]{border-color:var(--pos-adj);background:#fdf4e6}
+.poschip[data-pos="adj"] em{color:var(--pos-adj);font-weight:700}
+.poschip[data-pos="adv"]{border-color:var(--pos-adv);background:var(--tip-bg)}
+.poschip[data-pos="adv"] em{color:var(--pos-adv);font-weight:700}
+
+.cl{border-left:3px solid var(--rule);padding-left:13px}
+.cl+.cl{margin-top:12px}
+.cl-head{font-size:.87rem;color:var(--fg);margin-bottom:6px}
+.cl-head .tag{font-family:var(--font-mono);font-size:.72rem;color:var(--faint);margin-right:7px}
+.kv{font-size:.87rem;color:var(--muted);line-height:1.9}
+.kv b{color:var(--fg)}
+.kv code{font-family:var(--font-mono);font-size:.8rem;color:var(--accent);
+  background:var(--surface-2);padding:2px 6px;border-radius:3px}
+.ev{display:inline-flex;gap:5px;flex-wrap:wrap;vertical-align:middle}
+.ev b{font-family:var(--font-en);font-weight:400;font-size:.84rem;background:var(--tip-bg);
+  color:var(--accent);padding:1px 8px;border-radius:3px;border:1px solid var(--rule)}
+
+.notes{display:flex;flex-direction:column;gap:9px}
+.note{font-size:.88rem;line-height:1.75;padding:10px 12px;border-radius:3px;border:1px solid var(--rule);
+  background:var(--surface-2);color:var(--muted)}
+.note.error{border-color:var(--err);background:var(--err-bg)}
+.note .tag{font-family:var(--font-mono);font-size:.68rem;font-weight:700;letter-spacing:.07em;
+  text-transform:uppercase;display:block;margin-bottom:5px}
+.note.error .tag{color:var(--err)} .note.tip .tag{color:var(--accent)}
+.fix{display:block;margin-top:7px;font-family:var(--font-en);font-size:.95rem}
+.fix s{color:var(--err);text-decoration-thickness:1.5px} .fix b{color:var(--c-o);font-weight:700}
+.fix i{font-style:normal;color:var(--faint);margin:0 8px}
+
+.v3{margin-top:10px}
+.v3-head{font-size:.78rem;color:var(--muted);margin-bottom:6px;display:flex;gap:8px;
+  align-items:center;flex-wrap:wrap}
+.v3-tag{font-size:.7rem;padding:2px 8px;border-radius:999px;border:1px solid var(--c-v);
+  color:var(--c-v);background:#fdeeec;font-weight:600}
+.v3-tag.reg{border-color:var(--rule);color:var(--faint);background:var(--surface-2);font-weight:400}
+table.v3-table td{font-family:var(--font-en);font-size:.92rem;color:var(--muted)}
+table.v3-table td.hit{color:var(--fg);font-weight:600;background:var(--tip-bg);
+  box-shadow:inset 0 -3px 0 var(--accent)}
+#tip .t-v3{font-family:var(--font-en);font-size:.96rem}
+#tip{position:fixed;z-index:50;max-width:min(300px,calc(100vw - 32px));background:var(--fg);
+  color:#fff;font-size:.84rem;line-height:1.6;padding:10px 13px;border-radius:4px;
+  pointer-events:none;opacity:0;transition:opacity .11s;box-shadow:0 8px 26px rgba(15,23,28,.28)}
+#tip[data-show="1"]{opacity:1}
+#tip .t-word{font-family:var(--font-en);font-size:1.12rem;display:block;margin-bottom:7px;font-weight:600}
+#tip .t-ln{display:block}
+#tip .t-ln+.t-ln{margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.22)}
+#tip .t-k{font-family:var(--font-mono);font-size:.72rem;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;opacity:.7;margin-right:7px}
+#tip .t-why{display:block;opacity:.8;font-size:.8rem;margin-top:3px}
+
+.msg{font-size:.9rem;color:var(--muted);background:var(--surface);
+  border:1px dashed var(--rule);border-radius:4px;padding:18px;line-height:1.7}
+.sent.pending{opacity:.72}
+.sent.pending .line{color:var(--faint)}
+.spin{display:inline-block;width:9px;height:9px;margin-right:6px;border-radius:50%;
+  border:2px solid var(--rule);border-top-color:var(--accent);animation:sp .7s linear infinite;
+  vertical-align:-1px}
+@keyframes sp{to{transform:rotate(360deg)}}
+button:disabled{opacity:.5;cursor:default}
+footer{font-size:.82rem;color:var(--muted);line-height:1.8;border-top:1px solid var(--rule);padding-top:16px}
+footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:520px){ .line{font-size:1.3rem} header h1{font-size:1.34rem} }
+</style>
+
+<div class="page">
+  <aside class="rail rail-l" id="rail-c"></aside>
+
+  <div class="center">
+    <header>
+      <div class="rule"></div>
+      <h1>英文句型解剖</h1>
+      <p>貼上一句話或一段文章，逐句標出五大句型的成分、每個字的詞性、時態與繁體中文翻譯。原句一個字元都不會被改動 —— 成分代號浮在句子上方，詞性標在下方，游標移到任一個字會說明它的詞性與在句中的角色。</p>
+    </header>
+
+    <div class="box">
+      <label for="inp">輸入英文</label>
+      <textarea id="inp" placeholder="Tom played basketball happily in the park yesterday."></textarea>
+      <div class="row">
+        <button class="primary" id="go">分析</button>
+        <span class="hint" id="inp-hint">原型版內建 8 組已分析好的範例，可直接點下方標籤切換。</span>
+      </div>
+    </div>
+
+    <nav class="chips-group" aria-label="範例句">
+      <div class="cg"><b>五大句型</b><div class="chips" id="chips-a"></div></div>
+      <div class="cg"><b>其他情境</b><div class="chips" id="chips-b"></div></div>
+    </nav>
+
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="顯示模式">
+        <button data-mode="clean" aria-pressed="false">乾淨</button>
+        <button data-mode="mark" aria-pressed="true">標註</button>
+        <button data-mode="full" aria-pressed="false">詳解</button>
+      </div>
+      <div class="seg" id="posSeg" role="group" aria-label="詞性層">
+        <button data-pm="content" aria-pressed="true">實詞</button>
+        <button data-pm="all" aria-pressed="false">全部詞性</button>
+        <button data-pm="off" aria-pressed="false">關</button>
+      </div>
+    </div>
+
+    <div class="legend-inline" id="legend-inline"></div>
+
+    <main id="out" data-mode="mark" data-pos-mode="content"></main>
+
+    <footer>
+      成分色線、上方代號與下方詞性都由分析結果的字元座標疊加而成。<code>alignConstituents()</code> 與 <code>alignWords()</code> 會驗證每個片段都是原句的連續子字串，對齊失敗時自動降級為清單顯示，不會動到原句。
+    </footer>
+  </div>
+
+  <aside class="rail rail-r" id="rail-p"></aside>
+</div>
+
+<div id="tip" role="tooltip" aria-hidden="true"></div>
+
+<script type="application/json" id="data">{"p1":{"input":"My father works in Taipei.","sentences":[{"index":0,"original":"My father works in Taipei.","translation":"我爸爸在台北工作。","words":[{"text":"My","pos":"pron","start":0,"end":2},{"text":"father","pos":"n","start":3,"end":9},{"text":"works","pos":"v","start":10,"end":15},{"text":"in","pos":"prep","start":16,"end":18},{"text":"Taipei","pos":"n","start":19,"end":25}],"clauses":[{"text":"My father works in Taipei","role":"main","connector":null,"pattern":{"id":1,"label":"S + V","name":"句型一"},"constituents":[{"text":"My father","role":"S","start":0,"end":9},{"text":"works","role":"V","start":10,"end":15},{"text":"in Taipei","role":"M-place","start":16,"end":25}],"tense":{"time":"present","aspect":"simple","label":"現在簡單式","formula":"S + V(s/es)","evidence":["works"],"inScope":true},"verb":{"lemma":"work","form":"works","irregular":false,"forms":{"base":"work","past":"worked","pastParticiple":"worked","ing":"working","third":"works"}},"alignment":{"ok":true,"failures":[]}}],"wordOrder":{"主":"My father","動":"works","賓":null,"方":null,"地":"in Taipei","時":null},"notes":[{"type":"tip","errorCode":null,"span":"in Taipei","message":"work 在這裡是不及物動詞（工作），in Taipei 是表示地點的介系詞片語，屬於修飾語，不是受詞。拿掉修飾語後 V 後面沒有其他成分，所以是句型一。","correction":null},{"type":"tip","errorCode":null,"span":"works","message":"主詞 My father 是第三人稱單數，現在簡單式的動詞要加 s，所以用 works。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}}]},"p2":{"input":"The cake looks delicious.","sentences":[{"index":0,"original":"The cake looks delicious.","translation":"這個蛋糕看起來很好吃。","words":[{"text":"The","pos":"art","start":0,"end":3},{"text":"cake","pos":"n","start":4,"end":8},{"text":"looks","pos":"v","start":9,"end":14},{"text":"delicious","pos":"adj","start":15,"end":24}],"clauses":[{"text":"The cake looks delicious","role":"main","connector":null,"pattern":{"id":2,"label":"S + V + C","name":"句型二"},"constituents":[{"text":"The cake","role":"S","start":0,"end":8},{"text":"looks","role":"V","start":9,"end":14},{"text":"delicious","role":"C","start":15,"end":24}],"tense":{"time":"present","aspect":"simple","label":"現在簡單式","formula":"S + V(s/es)","evidence":["looks"],"inScope":true},"verb":{"lemma":"look","form":"looks","irregular":false,"forms":{"base":"look","past":"looked","pastParticiple":"looked","ing":"looking","third":"looks"}},"alignment":{"ok":true,"failures":[]}}],"wordOrder":{"主":"The cake","動":"looks","賓":null,"方":null,"地":null,"時":null},"notes":[{"type":"tip","errorCode":null,"span":"looks delicious","message":"look 在這裡是五感連結動詞，意思是「看起來」。等號測試：蛋糕 = 好吃的，成立，所以 delicious 是主詞補語，屬於句型二。連結動詞後面要接形容詞，不能接副詞，例如不能說 looks deliciously。","correction":null},{"type":"tip","errorCode":null,"span":"looks","message":"如果是 She looks at the cake.（她看著蛋糕），look 就是一般動詞，at the cake 是介系詞片語（修飾語），這句就變成句型一。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}}]},"p3":{"input":"We want to go home.","sentences":[{"index":0,"original":"We want to go home.","translation":"我們想要回家。","words":[{"text":"We","pos":"pron","start":0,"end":2},{"text":"want","pos":"v","start":3,"end":7},{"text":"to","pos":"to","start":8,"end":10},{"text":"go","pos":"v","start":11,"end":13},{"text":"home","pos":"adv","start":14,"end":18}],"clauses":[{"text":"We want to go home","role":"main","connector":null,"pattern":{"id":3,"label":"S + V + O","name":"句型三"},"constituents":[{"text":"We","role":"S","start":0,"end":2},{"text":"want","role":"V","start":3,"end":7},{"text":"to go home","role":"O","start":8,"end":18}],"tense":{"time":"present","aspect":"simple","label":"現在簡單式","formula":"S + V(s/es)","evidence":["want"],"inScope":true},"verb":{"lemma":"want","form":"want","irregular":false,"forms":{"base":"want","past":"wanted","pastParticiple":"wanted","ing":"wanting","third":"wants"}},"alignment":{"ok":true,"failures":[]}}],"wordOrder":{"主":"We","動":"want","賓":"to go home","方":null,"地":null,"時":null},"notes":[{"type":"tip","errorCode":null,"span":"to go home","message":"want 是及物動詞，後面接「to + 原形動詞」當受詞，所以 to go home 整個是受詞，這句是句型三。","correction":null},{"type":"tip","errorCode":null,"span":"go home","message":"home 在這裡是副詞，意思是「回家；往家裡」，所以要說 go home，不要說 go to home。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}}]},"p4":{"input":"Ms. Lin teaches us English.","sentences":[{"index":0,"original":"Ms. Lin teaches us English.","translation":"林老師教我們英文。","words":[{"text":"Ms.","pos":"n","start":0,"end":3},{"text":"Lin","pos":"n","start":4,"end":7},{"text":"teaches","pos":"v","start":8,"end":15},{"text":"us","pos":"pron","start":16,"end":18},{"text":"English","pos":"n","start":19,"end":26}],"clauses":[{"text":"Ms. Lin teaches us English","role":"main","connector":null,"pattern":{"id":4,"label":"S + V + IO + DO","name":"句型四"},"constituents":[{"text":"Ms. Lin","role":"S","start":0,"end":7},{"text":"teaches","role":"V","start":8,"end":15},{"text":"us","role":"IO","start":16,"end":18},{"text":"English","role":"DO","start":19,"end":26}],"tense":{"time":"present","aspect":"simple","label":"現在簡單式","formula":"S + V(s/es)","evidence":["teaches"],"inScope":true},"verb":{"lemma":"teach","form":"teaches","irregular":true,"forms":{"base":"teach","past":"taught","pastParticiple":"taught","ing":"teaching","third":"teaches"}},"alignment":{"ok":true,"failures":[]}}],"wordOrder":{"主":"Ms. Lin","動":"teaches","賓":"us English","方":null,"地":null,"時":null},"notes":[{"type":"tip","errorCode":null,"span":"us English","message":"用等號測試看看 us = English 是否成立：不成立，所以 us 是間接受詞（人），English 是直接受詞（物），這句是句型四。","correction":null},{"type":"tip","errorCode":null,"span":null,"message":"teach 屬於用 to 的動詞（把東西交給對方）。可以改寫成 Ms. Lin teaches English to us.，這時 to us 是修飾語，整句就變成句型三。","correction":null},{"type":"tip","errorCode":null,"span":"teaches","message":"主詞 Ms. Lin 是第三人稱單數，所以 teach 要加 es 變成 teaches。這裡用現在簡單式，表示經常、固定發生的事。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}}]},"p5":{"input":"We call the dog Lucky.","sentences":[{"index":0,"original":"We call the dog Lucky.","translation":"我們叫這隻狗 Lucky。","words":[{"text":"We","pos":"pron","start":0,"end":2},{"text":"call","pos":"v","start":3,"end":7},{"text":"the","pos":"art","start":8,"end":11},{"text":"dog","pos":"n","start":12,"end":15},{"text":"Lucky","pos":"n","start":16,"end":21}],"clauses":[{"text":"We call the dog Lucky","role":"main","connector":null,"pattern":{"id":5,"label":"S + V + O + C","name":"句型五"},"constituents":[{"text":"We","role":"S","start":0,"end":2},{"text":"call","role":"V","start":3,"end":7},{"text":"the dog","role":"O","start":8,"end":15},{"text":"Lucky","role":"C","start":16,"end":21}],"tense":{"time":"present","aspect":"simple","label":"現在簡單式","formula":"S + V(s/es)","evidence":["call"],"inScope":true},"verb":{"lemma":"call","form":"call","irregular":false,"forms":{"base":"call","past":"called","pastParticiple":"called","ing":"calling","third":"calls"}},"alignment":{"ok":true,"failures":[]}}],"wordOrder":{"主":"We","動":"call","賓":"the dog Lucky","方":null,"地":null,"時":null},"notes":[{"type":"tip","errorCode":null,"span":"the dog Lucky","message":"等號測試：the dog = Lucky 成立，所以 Lucky 是受詞補語，這句是句型五。call、name 這類「稱呼／命名」動詞常用「受詞＋名字」的句型五，例如 They named their baby Ella.。","correction":null},{"type":"tip","errorCode":null,"span":"call","message":"主詞 We 是複數，所以現在簡單式的動詞用原形 call，不加 s。如果主詞換成 He，就要改成 He calls the dog Lucky.。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}}]},"standard":{"input":"Tom played basketball happily in the park yesterday.","sentences":[{"index":0,"original":"Tom played basketball happily in the park yesterday.","translation":"湯姆昨天在公園開心地打籃球。","words":[{"text":"Tom","pos":"n","start":0,"end":3},{"text":"played","pos":"v","start":4,"end":10},{"text":"basketball","pos":"n","start":11,"end":21},{"text":"happily","pos":"adv","start":22,"end":29},{"text":"in","pos":"prep","start":30,"end":32},{"text":"the","pos":"art","start":33,"end":36},{"text":"park","pos":"n","start":37,"end":41},{"text":"yesterday","pos":"adv","start":42,"end":51}],"clauses":[{"text":"Tom played basketball happily in the park yesterday","role":"main","connector":null,"pattern":{"id":3,"label":"S + V + O","name":"句型三"},"constituents":[{"text":"Tom","role":"S","start":0,"end":3},{"text":"played","role":"V","start":4,"end":10},{"text":"basketball","role":"O","start":11,"end":21},{"text":"happily","role":"M-manner","start":22,"end":29},{"text":"in the park","role":"M-place","start":30,"end":41},{"text":"yesterday","role":"M-time","start":42,"end":51}],"tense":{"time":"past","aspect":"simple","label":"過去簡單式","formula":"S + V-ed","evidence":["yesterday","played"],"inScope":true},"verb":{"lemma":"play","form":"played","irregular":false,"forms":{"base":"play","past":"played","pastParticiple":"played","ing":"playing","third":"plays"}},"alignment":{"ok":true,"failures":[]}}],"wordOrder":{"主":"Tom","動":"played","賓":"basketball","方":"happily","地":"in the park","時":"yesterday"},"notes":[{"type":"tip","errorCode":null,"span":null,"message":"這句的語序完全符合「主、動、賓、方、地、時」口訣，可以當成標準範例記下來。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}}]},"compare45":{"input":"She made me a cake.","sentences":[{"index":0,"original":"She made me a cake.","translation":"她做了一個蛋糕給我。","clauses":[{"text":"She made me a cake","role":"main","connector":null,"pattern":{"id":4,"label":"S + V + IO + DO","name":"句型四"},"constituents":[{"text":"She","role":"S","start":0,"end":3},{"text":"made","role":"V","start":4,"end":8},{"text":"me","role":"IO","start":9,"end":11},{"text":"a cake","role":"DO","start":12,"end":18}],"tense":{"time":"past","aspect":"simple","label":"過去簡單式","formula":"S + V-ed","evidence":["made"],"inScope":true},"verb":{"lemma":"make","form":"made","irregular":true,"forms":{"base":"make","past":"made","pastParticiple":"made","ing":"making","third":"makes"}},"alignment":{"ok":true,"failures":[]}}],"words":[{"text":"She","pos":"pron","start":0,"end":3},{"text":"made","pos":"v","start":4,"end":8},{"text":"me","pos":"pron","start":9,"end":11},{"text":"a","pos":"art","start":12,"end":13},{"text":"cake","pos":"n","start":14,"end":18}],"wordOrder":{"主":"She","動":"made","賓":"me a cake","方":null,"地":null,"時":null},"notes":[{"type":"tip","errorCode":null,"span":"me a cake","message":"等號測試：me = a cake 不成立（我不是蛋糕），所以 me 是間接受詞、a cake 是直接受詞，屬於句型四。和 She made me happy.（me = happy 成立，句型五）對照著記。","correction":null},{"type":"tip","errorCode":null,"span":null,"message":"make 屬於「為對方做」的動詞，改寫時用 for：She made a cake for me.，這時 for me 是修飾語，整句變成句型三。","correction":null},{"type":"tip","errorCode":null,"span":"made","message":"make 是不規則動詞，三態為 make / made / made。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}}]},"splitVerb":{"input":"I have never seen so many temples before.","sentences":[{"index":0,"original":"I have never seen so many temples before.","translation":"我以前從來沒看過這麼多寺廟。","words":[{"text":"I","pos":"pron","start":0,"end":1},{"text":"have","pos":"aux","start":2,"end":6},{"text":"never","pos":"adv","start":7,"end":12},{"text":"seen","pos":"v","start":13,"end":17},{"text":"so","pos":"adv","start":18,"end":20},{"text":"many","pos":"adj","start":21,"end":25},{"text":"temples","pos":"n","start":26,"end":33},{"text":"before","pos":"adv","start":34,"end":40}],"clauses":[{"text":"I have never seen so many temples before","role":"main","connector":null,"pattern":{"id":3,"label":"S + V + O","name":"句型三"},"constituents":[{"text":"I","role":"S","start":0,"end":1},{"text":"have","role":"V","start":2,"end":6},{"text":"never","role":"M-freq","start":7,"end":12},{"text":"seen","role":"V","start":13,"end":17},{"text":"so many temples","role":"O","start":18,"end":33},{"text":"before","role":"M-time","start":34,"end":40}],"tense":{"time":"present","aspect":"perfect","label":"現在完成式","formula":"S + have/has + p.p.","evidence":["have","seen","never","before"],"inScope":true},"verb":{"lemma":"see","form":"have seen","irregular":true,"forms":{"base":"see","past":"saw","pastParticiple":"seen","ing":"seeing","third":"sees"}},"alignment":{"ok":true,"failures":[]}}],"wordOrder":{"主":"I","動":"have never seen","賓":"so many temples","方":null,"地":null,"時":"before"},"notes":[{"type":"tip","errorCode":null,"span":"have never seen","message":"這是現在完成式表示「經驗」：have + never + p.p. 表示「從來沒有……過」。頻率副詞 never 要放在助動詞 have 和過去分詞 seen 中間。","correction":null},{"type":"tip","errorCode":null,"span":"before","message":"before 單獨放句尾時表示「以前（到現在為止）」，可以和現在完成式一起用；但 two days ago、yesterday 這類明確的過去時間就不能搭配現在完成式。","correction":null},{"type":"tip","errorCode":null,"span":"seen","message":"see 是不規則動詞，三態為 see / saw / seen，完成式要用過去分詞 seen，不能用 saw。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}}]},"errorCase":{"input":"The soup tastes well.","sentences":[{"index":0,"original":"The soup tastes well.","translation":"這湯嚐起來很好喝。","words":[{"text":"The","pos":"art","start":0,"end":3},{"text":"soup","pos":"n","start":4,"end":8},{"text":"tastes","pos":"v","start":9,"end":15},{"text":"well","pos":"adv","start":16,"end":20}],"clauses":[{"text":"The soup tastes well","role":"main","connector":null,"pattern":{"id":2,"label":"S + V + C","name":"句型二"},"constituents":[{"text":"The soup","role":"S","start":0,"end":8},{"text":"tastes","role":"V","start":9,"end":15},{"text":"well","role":"C","start":16,"end":20}],"tense":{"time":"present","aspect":"simple","label":"現在簡單式","formula":"S + V(s/es)","evidence":["tastes"],"inScope":true},"verb":{"lemma":"taste","form":"tastes","irregular":false,"forms":{"base":"taste","past":"tasted","pastParticiple":"tasted","ing":"tasting","third":"tastes"}},"alignment":{"ok":true,"failures":[]}}],"wordOrder":{"主":"The soup","動":"tastes","賓":null,"方":null,"地":null,"時":null},"notes":[{"type":"error","errorCode":"linking-adverb","span":"tastes well","message":"taste 在這裡是連結動詞（湯 = 好喝的），後面要接形容詞當補語，不能接副詞 well。","correction":"tastes good"},{"type":"tip","errorCode":null,"span":null,"message":"taste 有兩種用法：當連結動詞「嚐起來」時是句型二，例如 The soup tastes good.；當及物動詞「嚐」時是句型三，例如 She tasted the soup.","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}}]},"compound":{"input":"My mother bought me a beautiful hat, and I wore it every day.","sentences":[{"index":0,"original":"My mother bought me a beautiful hat, and I wore it every day.","translation":"我媽媽買了一頂漂亮的帽子給我，而我每天都戴著它。","words":[{"text":"My","pos":"pron","start":0,"end":2},{"text":"mother","pos":"n","start":3,"end":9},{"text":"bought","pos":"v","start":10,"end":16},{"text":"me","pos":"pron","start":17,"end":19},{"text":"a","pos":"art","start":20,"end":21},{"text":"beautiful","pos":"adj","start":22,"end":31},{"text":"hat","pos":"n","start":32,"end":35},{"text":"and","pos":"conj","start":37,"end":40},{"text":"I","pos":"pron","start":41,"end":42},{"text":"wore","pos":"v","start":43,"end":47},{"text":"it","pos":"pron","start":48,"end":50},{"text":"every","pos":"adj","start":51,"end":56},{"text":"day","pos":"n","start":57,"end":60}],"clauses":[{"text":"My mother bought me a beautiful hat","role":"main","connector":null,"pattern":{"id":4,"label":"S + V + IO + DO","name":"句型四"},"constituents":[{"text":"My mother","role":"S","start":0,"end":9},{"text":"bought","role":"V","start":10,"end":16},{"text":"me","role":"IO","start":17,"end":19},{"text":"a beautiful hat","role":"DO","start":20,"end":35}],"tense":{"time":"past","aspect":"simple","label":"過去簡單式","formula":"S + V-ed","evidence":["bought"],"inScope":true},"verb":{"lemma":"buy","form":"bought","irregular":true,"forms":{"base":"buy","past":"bought","pastParticiple":"bought","ing":"buying","third":"buys"}},"alignment":{"ok":true,"failures":[]}},{"text":"I wore it every day","role":"main","connector":"and","pattern":{"id":3,"label":"S + V + O","name":"句型三"},"constituents":[{"text":"I","role":"S","start":41,"end":42},{"text":"wore","role":"V","start":43,"end":47},{"text":"it","role":"O","start":48,"end":50},{"text":"every day","role":"M-freq","start":51,"end":60}],"tense":{"time":"past","aspect":"simple","label":"過去簡單式","formula":"S + V-ed","evidence":["wore"],"inScope":true},"verb":{"lemma":"wear","form":"wore","irregular":true,"forms":{"base":"wear","past":"wore","pastParticiple":"worn","ing":"wearing","third":"wears"}},"alignment":{"ok":true,"failures":[]}}],"wordOrder":{"主":"My mother","動":"bought","賓":"me a beautiful hat","方":null,"地":null,"時":null},"notes":[{"type":"tip","errorCode":null,"span":"bought me a beautiful hat","message":"等號測試：me = a beautiful hat 不成立，所以 me 是間接受詞（人），a beautiful hat 是直接受詞（物），屬於句型四。","correction":null},{"type":"tip","errorCode":null,"span":"bought me a beautiful hat","message":"buy 屬於「為對方做」的動詞，改寫時要用 for：My mother bought a beautiful hat for me.，這時 for me 是修飾語，整句會變成句型三。","correction":"bought a beautiful hat for me"},{"type":"tip","errorCode":null,"span":"wore it every day","message":"every day 常搭配現在簡單式，但這裡用過去式 wore，描述的是「過去那段時間每天都戴」的過去習慣，和前面的 bought 時態一致，是正確的。","correction":null},{"type":"tip","errorCode":null,"span":"and","message":"and 是對等連接詞，連接兩個獨立的主要子句；第二個子句中的 it 指的是前面的 a beautiful hat。wear 是不規則動詞：wear / wore / worn。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}}]},"outOfScope":{"input":"The book that I bought yesterday is interesting.","sentences":[{"index":0,"original":"The book that I bought yesterday is interesting.","translation":"我昨天買的那本書很有趣。","words":[{"text":"The","pos":"art","start":0,"end":3},{"text":"book","pos":"n","start":4,"end":8},{"text":"that","pos":"pron","start":9,"end":13},{"text":"I","pos":"pron","start":14,"end":15},{"text":"bought","pos":"v","start":16,"end":22},{"text":"yesterday","pos":"adv","start":23,"end":32},{"text":"is","pos":"v","start":33,"end":35},{"text":"interesting","pos":"adj","start":36,"end":47}],"clauses":[{"text":"The book that I bought yesterday is interesting","role":"main","connector":null,"pattern":{"id":2,"label":"S + V + C","name":"句型二"},"constituents":[{"text":"The book","role":"S","start":0,"end":8},{"text":"that I bought yesterday","role":"M-other","start":9,"end":32},{"text":"is","role":"V","start":33,"end":35},{"text":"interesting","role":"C","start":36,"end":47}],"tense":{"time":"present","aspect":"simple","label":"現在簡單式","formula":"S + V(s/es)","evidence":["is"],"inScope":true},"verb":{"lemma":"be","form":"is","irregular":true,"forms":{"base":"be","past":"was / were","pastParticiple":"been","ing":"being","third":"is"}},"alignment":{"ok":true,"failures":[]}},{"text":"that I bought yesterday","role":"subordinate","connector":"that","pattern":{"id":3,"label":"S + V + O","name":"句型三"},"constituents":[{"text":"that","role":"O","start":9,"end":13},{"text":"I","role":"S","start":14,"end":15},{"text":"bought","role":"V","start":16,"end":22},{"text":"yesterday","role":"M-time","start":23,"end":32}],"tense":{"time":"past","aspect":"simple","label":"過去簡單式","formula":"S + V-ed","evidence":["yesterday","bought"],"inScope":true},"verb":{"lemma":"buy","form":"bought","irregular":true,"forms":{"base":"buy","past":"bought","pastParticiple":"bought","ing":"buying","third":"buys"}},"alignment":{"ok":true,"failures":[]}}],"wordOrder":{"主":"The book that I bought yesterday","動":"is","賓":null,"方":null,"地":null,"時":null},"notes":[{"type":"tip","errorCode":null,"span":"that I bought yesterday","message":"這句用到關係子句（that 引導的形容詞子句），超出國中基礎範圍。that I bought yesterday 用來修飾 The book，說明是「哪一本書」。先把它拿掉，主幹就是 The book is interesting.（S + V + C，句型二）。","correction":null},{"type":"tip","errorCode":null,"span":"that","message":"關係子句裡的 that 代替 the book，當 bought 的受詞，還原後就是 I bought the book yesterday.（句型三，過去簡單式）。","correction":null},{"type":"tip","errorCode":null,"span":"interesting","message":"interesting 用來形容「事物本身很有趣」；interested 用來形容「人感到有興趣」。例：The book is interesting. ／ I am interested in the book.","correction":null}],"inScope":false,"wordAlignment":{"ok":true,"failures":[]}}]},"paragraph":{"input":"Last summer my family visited Tainan. We stayed there for three days. The weather was very hot, but the old streets looked amazing. Now I am planning my next trip.","sentences":[{"index":0,"original":"Last summer my family visited Tainan.","translation":"去年夏天我的家人去了台南。","clauses":[{"text":"Last summer my family visited Tainan","role":"main","connector":null,"pattern":{"id":3,"label":"S + V + O","name":"句型三"},"constituents":[{"text":"Last summer","role":"M-time","start":0,"end":11},{"text":"my family","role":"S","start":12,"end":21},{"text":"visited","role":"V","start":22,"end":29},{"text":"Tainan","role":"O","start":30,"end":36}],"tense":{"time":"past","aspect":"simple","label":"過去簡單式","formula":"S + V-ed","evidence":["Last summer","visited"],"inScope":true},"verb":{"lemma":"visit","form":"visited","irregular":false,"forms":{"base":"visit","past":"visited","pastParticiple":"visited","ing":"visiting","third":"visits"}},"alignment":{"ok":true,"failures":[]}}],"words":[{"text":"Last","pos":"adj","start":0,"end":4},{"text":"summer","pos":"n","start":5,"end":11},{"text":"my","pos":"pron","start":12,"end":14},{"text":"family","pos":"n","start":15,"end":21},{"text":"visited","pos":"v","start":22,"end":29},{"text":"Tainan","pos":"n","start":30,"end":36}],"wordOrder":{"主":"my family","動":"visited","賓":"Tainan","方":null,"地":null,"時":"Last summer"},"notes":[{"type":"tip","errorCode":null,"span":"Last summer","message":"時間放在句首是為了強調，語序正確。也可以照「主、動、賓、方、地、時」寫成 My family visited Tainan last summer.","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}},{"index":1,"original":"We stayed there for three days.","translation":"我們在那裡待了三天。","clauses":[{"text":"We stayed there for three days","role":"main","connector":null,"pattern":{"id":1,"label":"S + V","name":"句型一"},"constituents":[{"text":"We","role":"S","start":0,"end":2},{"text":"stayed","role":"V","start":3,"end":9},{"text":"there","role":"M-place","start":10,"end":15},{"text":"for three days","role":"M-time","start":16,"end":30}],"tense":{"time":"past","aspect":"simple","label":"過去簡單式","formula":"S + V-ed","evidence":["stayed"],"inScope":true},"verb":{"lemma":"stay","form":"stayed","irregular":false,"forms":{"base":"stay","past":"stayed","pastParticiple":"stayed","ing":"staying","third":"stays"}},"alignment":{"ok":true,"failures":[]}}],"words":[{"text":"We","pos":"pron","start":0,"end":2},{"text":"stayed","pos":"v","start":3,"end":9},{"text":"there","pos":"adv","start":10,"end":15},{"text":"for","pos":"prep","start":16,"end":19},{"text":"three","pos":"num","start":20,"end":25},{"text":"days","pos":"n","start":26,"end":30}],"wordOrder":{"主":"We","動":"stayed","賓":null,"方":null,"地":"there","時":"for three days"},"notes":[{"type":"tip","errorCode":null,"span":"for three days","message":"there 和 for three days 都是修飾語，劃掉後動詞後面沒有成分，所以是句型一。for 加一段時間不一定要用現在完成式；這趟旅行已經結束，用過去簡單式是對的。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}},{"index":2,"original":"The weather was very hot, but the old streets looked amazing.","translation":"天氣非常熱，但是老街看起來很棒。","clauses":[{"text":"The weather was very hot","role":"main","connector":null,"pattern":{"id":2,"label":"S + V + C","name":"句型二"},"constituents":[{"text":"The weather","role":"S","start":0,"end":11},{"text":"was","role":"V","start":12,"end":15},{"text":"very hot","role":"C","start":16,"end":24}],"tense":{"time":"past","aspect":"simple","label":"過去簡單式","formula":"S + was/were","evidence":["was"],"inScope":true},"verb":{"lemma":"be","form":"was","irregular":true,"forms":{"base":"be","past":"was / were","pastParticiple":"been","ing":"being","third":"is"}},"alignment":{"ok":true,"failures":[]}},{"text":"the old streets looked amazing","role":"main","connector":"but","pattern":{"id":2,"label":"S + V + C","name":"句型二"},"constituents":[{"text":"the old streets","role":"S","start":30,"end":45},{"text":"looked","role":"V","start":46,"end":52},{"text":"amazing","role":"C","start":53,"end":60}],"tense":{"time":"past","aspect":"simple","label":"過去簡單式","formula":"S + V-ed","evidence":["looked"],"inScope":true},"verb":{"lemma":"look","form":"looked","irregular":false,"forms":{"base":"look","past":"looked","pastParticiple":"looked","ing":"looking","third":"looks"}},"alignment":{"ok":true,"failures":[]}}],"words":[{"text":"The","pos":"art","start":0,"end":3},{"text":"weather","pos":"n","start":4,"end":11},{"text":"was","pos":"v","start":12,"end":15},{"text":"very","pos":"adv","start":16,"end":20},{"text":"hot","pos":"adj","start":21,"end":24},{"text":"but","pos":"conj","start":26,"end":29},{"text":"the","pos":"art","start":30,"end":33},{"text":"old","pos":"adj","start":34,"end":37},{"text":"streets","pos":"n","start":38,"end":45},{"text":"looked","pos":"v","start":46,"end":52},{"text":"amazing","pos":"adj","start":53,"end":60}],"wordOrder":{"主":"The weather","動":"was","賓":null,"方":null,"地":null,"時":null},"notes":[{"type":"tip","errorCode":null,"span":"looked amazing","message":"look 在這裡是連結動詞（看起來），等號測試 the old streets = amazing 成立，後面要接形容詞 amazing，不能接副詞 amazingly。","correction":null},{"type":"tip","errorCode":null,"span":"but","message":"but 是對等連接詞，連接兩個地位一樣的子句，兩邊都是句型二，時態也都是過去簡單式。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}},{"index":3,"original":"Now I am planning my next trip.","translation":"現在我正在計劃我的下一趟旅行。","clauses":[{"text":"Now I am planning my next trip","role":"main","connector":null,"pattern":{"id":3,"label":"S + V + O","name":"句型三"},"constituents":[{"text":"Now","role":"M-time","start":0,"end":3},{"text":"I","role":"S","start":4,"end":5},{"text":"am planning","role":"V","start":6,"end":17},{"text":"my next trip","role":"O","start":18,"end":30}],"tense":{"time":"present","aspect":"progressive","label":"現在進行式","formula":"S + am/is/are + V-ing","evidence":["Now","am planning"],"inScope":true},"verb":{"lemma":"plan","form":"am planning","irregular":false,"forms":{"base":"plan","past":"planned","pastParticiple":"planned","ing":"planning","third":"plans"}},"alignment":{"ok":true,"failures":[]}}],"words":[{"text":"Now","pos":"adv","start":0,"end":3},{"text":"I","pos":"pron","start":4,"end":5},{"text":"am","pos":"aux","start":6,"end":8},{"text":"planning","pos":"v","start":9,"end":17},{"text":"my","pos":"pron","start":18,"end":20},{"text":"next","pos":"adj","start":21,"end":25},{"text":"trip","pos":"n","start":26,"end":30}],"wordOrder":{"主":"I","動":"am planning","賓":"my next trip","方":null,"地":null,"時":"Now"},"notes":[{"type":"tip","errorCode":null,"span":"planning","message":"plan 是短母音加單一子音結尾，所以要重複字尾 n 再加字尾：planning、planned。","correction":null}],"inScope":true,"wordAlignment":{"ok":true,"failures":[]}}]}}</script>
+<script>
+const DATA = JSON.parse(document.getElementById('data').textContent);
+
+const ROLE = {
+  S:{code:'S',zh:'主詞',kind:'core',why:'做動作的人或事物'},
+  V:{code:'V',zh:'動詞',kind:'core',why:'動作或狀態，含助動詞'},
+  O:{code:'O',zh:'受詞',kind:'core',why:'動作的對象'},
+  C:{code:'C',zh:'補語',kind:'core',why:'補充說明主詞或受詞「是什麼、怎麼樣」'},
+  IO:{code:'IO',zh:'間接受詞',kind:'core',why:'收到東西的人'},
+  DO:{code:'DO',zh:'直接受詞',kind:'core',why:'被給出去的東西'},
+  'M-manner':{code:'方',zh:'方式修飾語',kind:'mod',why:'怎麼做 — 拿掉句子仍完整'},
+  'M-place':{code:'地',zh:'地點修飾語',kind:'mod',why:'在哪裡 — 拿掉句子仍完整'},
+  'M-time':{code:'時',zh:'時間修飾語',kind:'mod',why:'什麼時候 — 拿掉句子仍完整'},
+  'M-freq':{code:'頻',zh:'頻率修飾語',kind:'mod',why:'多常發生 — 拿掉句子仍完整'},
+  'M-other':{code:'修',zh:'修飾語',kind:'mod',why:'判斷句型時先忽略'},
+};
+const POS = {
+  adj:{zh:'形容詞',why:'修飾名詞，或當補語說明主詞怎麼樣。連結動詞後面要接這個'},
+  adv:{zh:'副詞',why:'修飾動詞、形容詞或另一個副詞。不能當連結動詞的補語'},
+  n:{zh:'名詞',why:'人、事、物的名稱'},
+  pron:{zh:'代名詞',why:'代替名詞，當受詞要用受格 me / him / them'},
+  v:{zh:'動詞',why:'動作或狀態'},
+  aux:{zh:'助動詞',why:'幫主要動詞表達時態、否定或疑問'},
+  prep:{zh:'介系詞',why:'後面接名詞組成介系詞片語，整組當修飾語'},
+  conj:{zh:'連接詞',why:'連接單字、片語或子句'},
+  art:{zh:'冠詞',why:'a / an / the，放在名詞前面'},
+  num:{zh:'數詞',why:'表示數量或順序'},
+  to:{zh:'不定詞 to',why:'後面接原形動詞'},
+  interj:{zh:'感嘆詞',why:'表達情緒或引起注意'},
+};
+const SAMPLES_A = [
+  ['p1','句型一 S+V'],['p2','句型二 S+V+C'],['p3','句型三 S+V+O'],
+  ['p4','句型四 S+V+IO+DO'],['p5','句型五 S+V+O+C'],
+];
+const SAMPLES_B = [
+  ['standard','主動賓方地時'],['compare45','句型四／五對照'],['splitVerb','動詞分段'],
+  ['errorCase','含文法錯誤'],['compound','對等連接詞'],['outOfScope','超出範圍'],
+  ['paragraph','整段文章'],
+];
+const SAMPLES = [...SAMPLES_A, ...SAMPLES_B];
+// 實詞：句子下方預設只標這些，虛詞改由游標提示與詳解呈現（短字如 a / I 的標籤會擠在一起）
+const CONTENT_POS = new Set(['n','v','adj','adv','aux']);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---- 左側欄：句子成分 ----
+const CORE = ['S','V','O','C','IO','DO'];
+const MODS = ['M-manner','M-place','M-time','M-freq'];
+document.getElementById('rail-c').innerHTML = `<h3>句子成分</h3><ul>
+  ${CORE.map(r => `<li style="--k:var(--c-${r.toLowerCase()})"><i style="background:var(--c-${r.toLowerCase()})"></i><em>${r}</em>${ROLE[r].zh}</li>`).join('')}
+  <li class="div"></li>
+  <li><i style="background:repeating-linear-gradient(90deg,var(--c-mod) 0 3px,transparent 3px 6px)"></i><em style="--k:var(--c-mod)">修</em>修飾語</li>
+  ${MODS.map(r => `<li class="sub"><em>${ROLE[r].code}</em>${ROLE[r].zh.replace('修飾語','')}</li>`).join('')}
+</ul><div class="foot">判斷句型前先把修飾語劃掉，看動詞後面還剩什麼。</div>`;
+
+// ---- 右側欄：詞性 ----
+const POS_ORDER = ['adj','adv','n','pron','v','aux','prep','conj','art','num','to'];
+document.getElementById('rail-p').innerHTML = `<h3>詞性</h3><ul>
+  ${POS_ORDER.map(p => {
+    const hot = p === 'adj' || p === 'adv';
+    const k = hot ? `var(--pos-${p})` : 'var(--muted)';
+    return `<li class="${hot ? 'hot' : ''}"><em style="--k:${k}">${p}</em>${POS[p].zh}</li>`;
+  }).join('')}
+</ul><div class="foot">形容詞與副詞用顏色標出 —— 連結動詞後面只能接形容詞。<br><br>動詞標成 <b style="color:var(--c-v);font-family:var(--font-mono)">v°</b> 表示不規則變化，展開詳解可看三態。<br><br>目前只標實詞，虛詞（冠詞、介系詞、連接詞、代名詞）改用游標提示。</div>`;
+
+// ---- 窄螢幕的橫向圖例 ----
+document.getElementById('legend-inline').innerHTML = `
+  <div class="lrow"><b>成分</b>${CORE.map(r =>
+    `<span><i style="background:var(--c-${r.toLowerCase()})"></i><em style="color:var(--c-${r.toLowerCase()})">${r}</em>${ROLE[r].zh}</span>`).join('')}
+    <span><i style="background:repeating-linear-gradient(90deg,var(--c-mod) 0 3px,transparent 3px 6px)"></i>修飾語（方／地／時／頻）</span></div>
+  <div class="lrow"><b>詞性</b>
+    <span><em style="color:var(--pos-adj)">adj</em>形容詞</span>
+    <span><em style="color:var(--pos-adv)">adv</em>副詞</span>
+    <span style="color:var(--faint)"><em>n ／ v ／ aux</em>其餘實詞以灰色標示</span><span><em style="color:var(--c-v)">v°</em>不規則動詞</span></div>`;
+
+/** 找出這個字所屬子句的動詞資料（用來顯示三態） */
+function verbInfoFor(sent, w){
+  for (const cl of sent.clauses || []){
+    const v = cl.verb;
+    if (!v?.forms) continue;
+    if (String(v.form || '').split(/\s+/).includes(w.text)) return v;
+  }
+  return null;
+}
+
+/** 把原句切成「純文字」與「成分」交錯的片段 — 原文完整保留，不增不減 */
+function segments(sent){
+  const cs = (sent.clauses || []).flatMap(cl =>
+    (cl.constituents || []).filter(c => Number.isInteger(c.start)));
+  cs.sort((a, b) => a.start - b.start || b.end - a.end);
+  const segs = [];
+  let pos = 0;
+  for (const c of cs){
+    if (c.start < pos) continue;
+    if (c.start > pos) segs.push({ plain:true, from:pos, to:c.start });
+    segs.push({ c, from:c.start, to:c.end });
+    pos = c.end;
+  }
+  if (pos < sent.original.length) segs.push({ plain:true, from:pos, to:sent.original.length });
+  return segs;
+}
+
+/** 渲染原句的 [from,to) 區間：落在區間內的單字包成詞性 span，其餘（空白、標點）原樣輸出 */
+function renderRange(sent, from, to){
+  const ws = (sent.words || []).filter(w => Number.isInteger(w.start) && w.start >= from && w.end <= to);
+  let html = '', pos = from;
+  for (const w of ws){
+    if (w.start > pos) html += esc(sent.original.slice(pos, w.start));
+    const vb = (w.pos === 'v' || w.pos === 'aux') ? verbInfoFor(sent, w) : null;
+    html += `<span class="w" data-pos="${esc(w.pos)}" data-text="${esc(w.text)}" tabindex="0"${
+      CONTENT_POS.has(w.pos) ? '' : ' data-fn="1"'}${
+      vb ? ` data-v3="${esc([vb.forms.base, vb.forms.past, vb.forms.pastParticiple].join(' · '))}"` : ''}${
+      vb?.irregular ? ' data-irr="1"' : ''}
+      ><i class="plbl">${esc(w.pos)}</i>${esc(w.text)}</span>`;
+    pos = w.end;
+  }
+  if (pos < to) html += esc(sent.original.slice(pos, to));
+  return html;
+}
+
+function renderLine(sent){
+  return segments(sent).map(s => {
+    const inner = renderRange(sent, s.from, s.to);
+    if (s.plain) return inner;
+    const r = ROLE[s.c.role] || { code:'?', kind:'mod' };
+    return `<span class="c ${r.kind}" data-role="${esc(s.c.role)}"><i class="lbl">${esc(r.code)}</i>${inner}</span>`;
+  }).join('');
+}
+
+function wordOrderTable(wo){
+  const keys = ['主','動','賓','方','地','時'];
+  if (!wo || keys.every(k => !wo[k])) return '';
+  return `<div><h4>主、動、賓、方、地、時</h4><div class="wo-scroll"><table class="wo"><tr>
+    ${keys.map(k => `<th>${k}</th>`).join('')}</tr><tr>
+    ${keys.map(k => wo[k] ? `<td>${esc(wo[k])}</td>` : `<td class="none">—</td>`).join('')}
+  </tr></table></div></div>`;
+}
+
+function posList(sent){
+  const ws = sent.words || [];
+  if (!ws.length) return '';
+  return `<div><h4>逐字詞性</h4><div class="poslist">${ws.map(w =>
+    `<span class="poschip" data-pos="${esc(w.pos)}"><b>${esc(w.text)}</b><em>${esc(w.pos)}</em></span>`).join('')}</div></div>`;
+}
+
+/** 動詞三態表：句中出現的那一格會被標出來 */
+function verbFormsTable(v){
+  const f = v?.forms; if (!f) return '';
+  const used = String(v.form || '').split(/\s+/);
+  const cols = [['原形','base'],['過去式','past'],['過去分詞','pastParticiple'],['-ing','ing'],['三單','third']];
+  return `<div class="v3${v.irregular ? ' irr' : ''}">
+    <div class="v3-head">動詞三態${v.irregular
+      ? '<span class="v3-tag">不規則變化，要背</span>'
+      : '<span class="v3-tag reg">規則變化（＋ed）</span>'}</div>
+    <div class="wo-scroll"><table class="wo v3-table"><tr>${
+      cols.map(([zh]) => `<th>${zh}</th>`).join('')}</tr><tr>${
+      cols.map(([, k]) => {
+        const val = f[k] || '—';
+        const hit = used.includes(val);
+        return `<td class="${hit ? 'hit' : ''}">${esc(val)}</td>`;
+      }).join('')}</tr></table></div></div>`;
+}
+
+function clauseDetail(cl){
+  const t = cl.tense || {}, v = cl.verb || {};
+  const ev = (t.evidence || []).map(e => `<b>${esc(e)}</b>`).join('');
+  return `<div class="cl">
+    <div class="cl-head"><span class="tag">${cl.role === 'main' ? '主句' : '從屬子句'}${
+      cl.connector ? ` / ${esc(cl.connector)}` : ''}</span><b>${esc(cl.pattern?.name || '')}</b>
+      <code style="font-family:var(--font-mono);font-size:.82rem;color:var(--accent)"> ${esc(cl.pattern?.label || '')}</code></div>
+    <div class="kv">
+      時態：<b>${esc(t.label || '')}</b> <code>${esc(t.formula || '')}</code>
+      ${t.inScope === false ? ' <span style="color:var(--err)">· 超出國中必學 6 種</span>' : ''}<br>
+      ${ev ? `判斷線索：<span class="ev">${ev}</span><br>` : ''}
+      動詞：<b>${esc(v.form || '')}</b> ← 原形 ${esc(v.lemma || '')}
+    </div>
+    ${verbFormsTable(v)}</div>`;
+}
+
+function renderSentence(sent, showIdx){
+  const main = (sent.clauses || []).find(c => c.role === 'main') || (sent.clauses || [])[0] || {};
+  const aligned = (sent.clauses || []).every(c => c.alignment?.ok !== false) && sent.wordAlignment?.ok !== false;
+  const notes = sent.notes || [];
+  const errs = notes.filter(n => n.type === 'error');
+
+  const ISSUE = {
+    'not-english':  '不是英文',
+    'fragment':     '不是完整句子',
+    'unintelligible':'無法辨識',
+  };
+  const badges = [
+    showIdx ? `<span class="badge idx">${(sent.index ?? 0) + 1}</span>` : '',
+    sent.issue ? `<span class="badge warn">${esc(ISSUE[sent.issue] || sent.issue)}</span>` : '',
+    main.pattern?.name ? `<span class="badge"><b>${esc(main.pattern.name)}</b><code>${esc(main.pattern.label || '')}</code></span>` : '',
+    main.tense?.label ? `<span class="badge"><b>${esc(main.tense.label)}</b></span>` : '',
+    errs.length ? `<span class="badge warn">${errs.length} 處文法問題</span>` : '',
+    sent.inScope === false ? `<span class="badge warn">超出國中範圍</span>` : '',
+  ].filter(Boolean).join('');
+
+  const line = aligned
+    ? `<p class="line">${renderLine(sent)}</p>`
+    : `<p class="line">${esc(sent.original)}</p>
+       <p class="fallback">座標對齊失敗，已降級為清單顯示，原句未受影響。<br>${
+         (main.constituents || []).map(c => `${esc(c.text)} — ${esc((ROLE[c.role] || {}).zh || c.role)}`).join('／')}</p>`;
+
+  const noteHtml = notes.length ? `<div><h4>提醒</h4><div class="notes">${notes.map(n => {
+    const isErr = n.type === 'error';
+    return `<div class="note ${isErr ? 'error' : 'tip'}">
+      <span class="tag">${isErr ? `文法問題 · ${esc(n.errorCode || '')}` : '學習提示'}</span>
+      ${esc(n.message)}
+      ${isErr && n.correction ? `<span class="fix"><s>${esc(n.span || '')}</s><i>→</i><b>${esc(n.correction)}</b></span>` : ''}
+    </div>`;
+  }).join('')}</div></div>` : '';
+
+  return `<article class="sent">
+    <div class="badges">${badges}</div>
+    <div class="body">
+      ${line}
+      <p class="zh">${esc(sent.translation || '')}</p>
+      ${(sent.clauses || []).length || (sent.words || []).length || (sent.notes || []).length
+        ? '<button class="more" aria-expanded="false">詳解 ＋</button>' : ''}
+      <div class="detail" hidden>
+        ${wordOrderTable(sent.wordOrder)}
+        ${posList(sent)}
+        ${(sent.clauses || []).length ? `<div><h4>子句拆解</h4>${sent.clauses.map(clauseDetail).join('')}</div>` : ''}
+        ${noteHtml}
+      </div>
+    </div></article>`;
+}
+
+const out = document.getElementById('out');
+
+/** 詞性標籤防重疊：短字（in / the）的標籤會互相黏住，偵測到就錯開到第二列 */
+function layoutPosLabels(){
+  for (const line of out.querySelectorAll('.line')){
+    const labels = [...line.querySelectorAll('.plbl')];
+    for (const l of labels) l.classList.remove('lower');
+    line.classList.remove('has-lower');
+    if (out.dataset.posMode === 'off' || out.dataset.mode === 'clean' || !labels.length) continue;
+
+    let rowRight = [-Infinity, -Infinity], lastTop = null, anyLower = false;
+    for (const l of labels){
+      const r = l.getBoundingClientRect();
+      if (!r.width) continue;                                    // 隱藏的虛詞標籤不參與排版
+      if (lastTop === null || Math.abs(r.top - lastTop) > 6) rowRight = [-Infinity, -Infinity]; // 換行就重置
+      lastTop = r.top;
+      const row = r.left < rowRight[0] + 2 ? 1 : 0;
+      if (row === 1){ l.classList.add('lower'); anyLower = true; }
+      rowRight[row] = r.right;
+    }
+    if (anyLower) line.classList.add('has-lower');
+  }
+}
+
+function render(key){
+  const entry = DATA[key];
+  if (!entry) return;
+  const multi = entry.sentences.length > 1;
+  out.innerHTML = entry.sentences.map(s => renderSentence(s, multi)).join('');
+  document.getElementById('inp').value = entry.input;
+  for (const c of document.querySelectorAll('.chips-group .chip'))
+    c.setAttribute('aria-pressed', String(c.dataset.key === key));
+  if (out.dataset.mode === 'full') openAll(true);
+  layoutPosLabels();
+}
+
+function openAll(open){
+  for (const b of out.querySelectorAll('.more')){
+    b.setAttribute('aria-expanded', String(open));
+    b.textContent = open ? '收起 －' : '詳解 ＋';
+    b.nextElementSibling.hidden = !open;
+  }
+}
+
+const chipHtml = list => list.filter(([k]) => DATA[k])
+  .map(([k, label]) => `<button class="chip" data-key="${k}" aria-pressed="false">${label}</button>`).join('');
+document.getElementById('chips-a').innerHTML = chipHtml(SAMPLES_A);
+document.getElementById('chips-b').innerHTML = chipHtml(SAMPLES_B);
+document.querySelector('.chips-group').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (b) render(b.dataset.key);
+});
+
+for (const b of document.querySelectorAll('.seg button')){
+  b.addEventListener('click', () => {
+    for (const x of document.querySelectorAll('.seg button')) x.setAttribute('aria-pressed', String(x === b));
+    out.dataset.mode = b.dataset.mode;
+    openAll(b.dataset.mode === 'full');
+    layoutPosLabels();
+  });
+}
+
+document.getElementById('posSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  for (const x of document.querySelectorAll('#posSeg button')) x.setAttribute('aria-pressed', String(x === b));
+  out.dataset.posMode = b.dataset.pm;
+  layoutPosLabels();
+});
+
+out.addEventListener('click', e => {
+  const b = e.target.closest('.more'); if (!b) return;
+  const open = b.getAttribute('aria-expanded') !== 'true';
+  b.setAttribute('aria-expanded', String(open));
+  b.textContent = open ? '收起 －' : '詳解 ＋';
+  b.nextElementSibling.hidden = !open;
+});
+
+// ---- 後端連線 ----
+const goBtn = document.getElementById('go');
+const hintEl = document.getElementById('inp-hint');
+let API = null;   // null = 尚未確認, false = 無後端（靜態展示）, true = 可用
+
+fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
+  API = h;
+  hintEl.textContent = `已連上分析後端（${h.model}）。可貼上一句話或一段文章，上限 ${h.maxChars} 字 / ${h.maxSentences} 句。`;
+}).catch(() => {
+  API = false;
+  hintEl.textContent = '展示模式：沒有連上後端，請點下方範例標籤。要分析任意輸入請在本機執行 npm start。';
+});
+
+function placeholder(index, original, state){
+  return `<article class="sent pending" data-index="${index}">
+    <div class="badges"><span class="badge idx">${index + 1}</span>
+      <span class="badge"><span class="spin"></span>${esc(state)}</span></div>
+    <div class="body"><p class="line">${esc(original)}</p></div></article>`;
+}
+
+async function analyzeLive(text){
+  goBtn.disabled = true;
+  out.innerHTML = '<p class="msg">斷句中…</p>';
+  const t0 = Date.now();
+  let total = 0, done = 0;
+  const slots = new Map();
+
+  const paint = () => {
+    out.innerHTML = [...slots.entries()].sort((a, b) => a[0] - b[0]).map(([, html]) => html).join('');
+    if (out.dataset.mode === 'full') openAll(true);
+    layoutPosLabels();
+  };
+
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok){
+      const e = await res.json().catch(() => ({}));
+      out.innerHTML = `<p class="msg">${esc(
+        e.error === 'too long' ? `文章太長了（${e.got} 字），目前上限 ${e.maxChars} 字。請分批貼上。` :
+        e.error === 'empty' ? '請先輸入英文。' : '分析失敗：' + (e.error || res.status))}</p>`;
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;){
+      const { value, done: fin } = await reader.read();
+      if (fin) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const chunk of parts){
+        const ev = /^event: (.+)$/m.exec(chunk)?.[1];
+        const dataLine = /^data: (.+)$/m.exec(chunk)?.[1];
+        if (!ev || !dataLine) continue;
+        const d = JSON.parse(dataLine);
+
+        if (ev === 'meta'){
+          total = d.total;
+          for (let i = 0; i < total; i++) slots.set(i, placeholder(i, '', '分析中'));
+          paint();
+          hintEl.textContent = d.truncated
+            ? `這段文章超過 ${d.maxSentences} 句，只分析前 ${d.maxSentences} 句。`
+            : `共 ${total} 句，分析中…`;
+        } else if (ev === 'sentence'){
+          slots.set(d.index, renderSentence(d.sentence, total > 1));
+          paint();
+        } else if (ev === 'failed'){
+          slots.set(d.index, `<article class="sent"><div class="badges">
+            <span class="badge idx">${d.index + 1}</span><span class="badge warn">分析失敗</span></div>
+            <div class="body"><p class="line">${esc(d.original)}</p>
+            <p class="fallback">${esc(d.message)}</p></div></article>`);
+          paint();
+        } else if (ev === 'progress'){
+          done = d.done;
+          hintEl.textContent = `分析中 ${done} / ${d.total} 句…`;
+        } else if (ev === 'done'){
+          const secs = (d.ms / 1000).toFixed(1);
+          hintEl.textContent = `完成：${d.total} 句，${secs} 秒`
+            + (d.cached ? `（${d.cached} 句來自快取）` : '')
+            + (d.failed ? `，${d.failed} 句失敗` : '');
+        }
+      }
+    }
+  } catch (e){
+    out.innerHTML = `<p class="msg">連線中斷：${esc(e.message)}</p>`;
+  } finally {
+    goBtn.disabled = false;
+  }
+}
+
+goBtn.addEventListener('click', () => {
+  const text = document.getElementById('inp').value.trim();
+  if (!text) return;
+  if (API){ analyzeLive(text); return; }
+  // 展示模式：比對內建範例
+  const norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
+  const hit = Object.keys(DATA).find(k => norm(DATA[k].input) === norm(text));
+  if (hit) render(hit);
+  else hintEl.textContent = API === false
+    ? '展示模式只能顯示內建範例。要分析任意輸入，請在本機執行 npm start 後開啟 http://127.0.0.1:8787'
+    : '正在確認後端連線，請稍候再按一次。';
+});
+document.getElementById('inp').addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') goBtn.click();
+});
+
+const tipEl = document.getElementById('tip');
+function showTip(w){
+  const c = w.closest('.c');
+  const p = POS[w.dataset.pos] || { zh:w.dataset.pos, why:'' };
+  const r = c ? ROLE[c.dataset.role] : null;
+  tipEl.innerHTML = `<span class="t-word">${esc(w.dataset.text)}</span>
+    <span class="t-ln"><span class="t-k">${esc(w.dataset.pos)}</span>${esc(p.zh)}
+      <span class="t-why">${esc(p.why)}</span></span>
+    ${r ? `<span class="t-ln"><span class="t-k">${esc(r.code)}</span>${esc(r.zh)}
+      <span class="t-why">${esc(r.why)}</span></span>` : ''}
+    ${w.dataset.v3 ? `<span class="t-ln"><span class="t-k">三態</span><span class="t-v3">${esc(w.dataset.v3)}</span>
+      <span class="t-why">${w.dataset.irr === '1' ? '不規則變化，要背起來' : '規則變化，過去式與過去分詞都是 ＋ed'}</span></span>` : ''}`;
+  tipEl.dataset.show = '1';
+  const b = w.getBoundingClientRect(), t = tipEl.getBoundingClientRect();
+  let left = b.left + b.width / 2 - t.width / 2;
+  left = Math.max(16, Math.min(left, window.innerWidth - t.width - 16));
+  let top = b.top - t.height - 10;
+  if (top < 8) top = b.bottom + 10;
+  tipEl.style.left = left + 'px';
+  tipEl.style.top = top + 'px';
+}
+const hideTip = () => { tipEl.dataset.show = '0'; };
+out.addEventListener('pointerover', e => { const w = e.target.closest('.w'); w ? showTip(w) : hideTip(); });
+out.addEventListener('pointerleave', hideTip);
+out.addEventListener('focusin', e => { const w = e.target.closest('.w'); if (w) showTip(w); });
+out.addEventListener('focusout', hideTip);
+window.addEventListener('scroll', hideTip, { passive: true });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTip(); });
+
+let rz;
+window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(layoutPosLabels, 120); });
+document.fonts?.ready.then(layoutPosLabels);
+
+render('p1');
+</script>

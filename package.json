@@ -1,0 +1,19 @@
+{
+  "name": "grammar-analyzer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "國中英文句型與時態分析學習工具",
+  "scripts": {
+    "start": "node --no-warnings src/server.mjs",
+    "eval": "node eval/run-eval.mjs --concurrency 5",
+    "eval:quick": "node eval/run-eval.mjs --limit 10 --concurrency 5",
+    "stats": "curl -s http://127.0.0.1:8787/api/stats",
+    "cache": "node --no-warnings src/cache-cli.mjs",
+    "cache:seed": "node --no-warnings src/cache-cli.mjs seed",
+    "cache:info": "node --no-warnings src/cache-cli.mjs info"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

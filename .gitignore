@@ -1,0 +1,12 @@
+node_modules/
+
+# 本機快取資料庫：含使用者貼上的句子原文，不進版控
+data/
+
+# 評測產出
+eval/results/
+
+# 臨時匯出
+cache-export.jsonl
+
+.DS_Store
