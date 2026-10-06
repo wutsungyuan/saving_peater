@@ -44,17 +44,32 @@ export function openCache(file = 'data/cache.db'){
     CREATE TABLE IF NOT EXISTS requests (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       chars      INTEGER, sentences INTEGER, cached INTEGER, analyzed INTEGER,
-      ms         INTEGER, created_at INTEGER NOT NULL
+      ms         INTEGER, created_at INTEGER NOT NULL,
+      text       TEXT,                 -- 原文，供歷史紀錄重新顯示（由 TTL 自動清理）
+      input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,
+      cache_read_tokens INTEGER DEFAULT 0, cost_usd REAL DEFAULT 0
     );
+    CREATE INDEX IF NOT EXISTS idx_requests_time ON requests(created_at DESC);
   `);
+
+  // 既有資料庫補欄位（node:sqlite 沒有 IF NOT EXISTS，用 PRAGMA 檢查）
+  const cols = t => new Set(db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name));
+  const addCol = (t, name, decl) => { if (!cols(t).has(name)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${name} ${decl}`); };
+  for (const [n, d] of [['text','TEXT'], ['input_tokens','INTEGER DEFAULT 0'],
+                        ['output_tokens','INTEGER DEFAULT 0'], ['cache_read_tokens','INTEGER DEFAULT 0'],
+                        ['cost_usd','REAL DEFAULT 0']]) addCol('requests', n, d);
+  for (const [n, d] of [['input_tokens','INTEGER DEFAULT 0'], ['output_tokens','INTEGER DEFAULT 0'],
+                        ['cost_usd','REAL DEFAULT 0']]) addCol('sentences', n, d);
 
   const qGet  = db.prepare('SELECT result FROM sentences WHERE hash = ?');
   const qHit  = db.prepare('UPDATE sentences SET hits = hits + 1 WHERE hash = ?');
   const qPut  = db.prepare(`INSERT OR REPLACE INTO sentences
-    (hash, original, result, model, pattern_id, tense_time, tense_aspect, in_scope, issue, created_at, hits)
-    VALUES (?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT hits FROM sentences WHERE hash = ?), 0))`);
-  const qLog  = db.prepare(`INSERT INTO requests (chars, sentences, cached, analyzed, ms, created_at)
-    VALUES (?,?,?,?,?,?)`);
+    (hash, original, result, model, pattern_id, tense_time, tense_aspect, in_scope, issue, created_at, hits,
+     input_tokens, output_tokens, cost_usd)
+    VALUES (?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT hits FROM sentences WHERE hash = ?), 0), ?,?,?)`);
+  const qLog  = db.prepare(`INSERT INTO requests
+    (chars, sentences, cached, analyzed, ms, created_at, text, input_tokens, output_tokens, cache_read_tokens, cost_usd)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
   const qStats = db.prepare(`SELECT
       (SELECT COUNT(*) FROM sentences) AS sentences,
       (SELECT COALESCE(SUM(hits),0) FROM sentences) AS cache_hits,
@@ -73,14 +88,50 @@ export function openCache(file = 'data/cache.db'){
       qHit.run(h);
       try { return JSON.parse(row.result); } catch { return null; }
     },
-    put(sentence, result, model){
+    put(sentence, result, model, usage = {}){
       const h = hashOf(sentence);
       const main = result?.clauses?.find(c => c.role === 'main') ?? result?.clauses?.[0];
       qPut.run(h, sentence, JSON.stringify(result), model,
         main?.pattern?.id ?? null, main?.tense?.time ?? null, main?.tense?.aspect ?? null,
-        result?.inScope === false ? 0 : 1, result?.issue ?? null, Date.now(), h);
+        result?.inScope === false ? 0 : 1, result?.issue ?? null, Date.now(), h,
+        usage.inputTokens ?? 0, usage.outputTokens ?? 0, usage.costUsd ?? 0);
     },
-    log(row){ qLog.run(row.chars, row.sentences, row.cached, row.analyzed, row.ms, Date.now()); },
+    log(row){
+      qLog.run(row.chars, row.sentences, row.cached, row.analyzed, row.ms, Date.now(),
+        row.text ?? null, row.inputTokens ?? 0, row.outputTokens ?? 0,
+        row.cacheReadTokens ?? 0, row.costUsd ?? 0);
+    },
+
+    /** 分析歷史：最近幾次請求 */
+    history(limit = 30){
+      return db.prepare(`SELECT id, chars, sentences, cached, analyzed, ms, created_at,
+          substr(text, 1, 160) preview, length(text) full_len,
+          input_tokens, output_tokens, cache_read_tokens, cost_usd
+        FROM requests WHERE text IS NOT NULL ORDER BY created_at DESC LIMIT ?`).all(limit);
+    },
+    historyText(id){
+      return db.prepare('SELECT text FROM requests WHERE id = ?').get(id)?.text ?? null;
+    },
+    /** 用量累計：今天 / 本月 / 全部 */
+    usageSummary(){
+      const q = since => db.prepare(`SELECT COUNT(*) requests,
+          COALESCE(SUM(sentences),0) sentences, COALESCE(SUM(analyzed),0) analyzed,
+          COALESCE(SUM(cached),0) cached, COALESCE(SUM(input_tokens),0) input_tokens,
+          COALESCE(SUM(output_tokens),0) output_tokens,
+          COALESCE(SUM(cache_read_tokens),0) cache_read_tokens,
+          COALESCE(SUM(cost_usd),0) cost_usd
+        FROM requests WHERE created_at >= ?`).get(since);
+      const d = new Date(); d.setHours(0,0,0,0);
+      const m = new Date(); m.setDate(1); m.setHours(0,0,0,0);
+      return { today: q(d.getTime()), month: q(m.getTime()), all: q(0) };
+    },
+    /** 定時清理：刪掉超過天數的歷史原文（分析快取本身不動，那是重複利用的資產） */
+    pruneHistory(days){
+      const cutoff = Date.now() - days * 86400_000;
+      const n = db.prepare('SELECT COUNT(*) n FROM requests WHERE created_at < ? AND text IS NOT NULL').get(cutoff).n;
+      db.prepare('UPDATE requests SET text = NULL WHERE created_at < ?').run(cutoff);
+      return n;
+    },
 
     recordAttempt(a){
       db.prepare(`INSERT INTO attempts
@@ -147,7 +198,7 @@ export function openCache(file = 'data/cache.db'){
           qPut.run(r.hash, r.original, JSON.stringify(parsed), r.model || 'unknown',
             main?.pattern?.id ?? null, main?.tense?.time ?? null, main?.tense?.aspect ?? null,
             parsed?.inScope === false ? 0 : 1, parsed?.issue ?? null,
-            r.created_at || Date.now(), r.hash);
+            r.created_at || Date.now(), r.hash, 0, 0, 0);
           cur ? replaced++ : added++;
         }
         db.exec('COMMIT');

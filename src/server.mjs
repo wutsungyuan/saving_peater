@@ -21,6 +21,7 @@ const CONCURRENCY = Number(process.env.CONCURRENCY || 6);
 // 因為每個請求都花執行這台機器的 Claude 訂閱額度。
 const HOST = process.env.HOST || '127.0.0.1';
 const AUTH_TOKEN = process.env.AUTH_TOKEN || '';
+const HISTORY_DAYS = Number(process.env.HISTORY_DAYS || 30);
 const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
 
 const cache = openCache(join(ROOT, 'data', 'cache.db'));
@@ -86,6 +87,7 @@ async function handleAnalyze(req, res, url){
 
   const t0 = Date.now();
   let cached = 0, analyzed = 0, failed = 0;
+  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 };
   let closed = false;
   req.on('close', () => { closed = true; });
 
@@ -103,13 +105,21 @@ async function handleAnalyze(req, res, url){
   await pool(misses, CONCURRENCY, async ({ seg, i }) => {
     if (closed) return;
     try {
-      const { data } = await analyze(seg.text);
+      const { data, meta } = await analyze(seg.text);
       const sentence = data?.sentences?.[0];
       if (!sentence) throw new Error('模型沒有回傳句子');
       sentence.index = i;
-      cache.put(seg.text, sentence, MODEL);
+      const u = meta?.usage ?? {};
+      const one = {
+        inputTokens: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+        outputTokens: u.output_tokens ?? 0,
+        cacheReadTokens: u.cache_read_input_tokens ?? 0,
+        costUsd: meta?.costUsd ?? 0,
+      };
+      for (const k of Object.keys(usage)) usage[k] += one[k];
+      cache.put(seg.text, sentence, MODEL, one);
       analyzed++;
-      if (!closed) send('sentence', { index: i, cached: false, sentence });
+      if (!closed) send('sentence', { index: i, cached: false, sentence, usage: one });
     } catch (e){
       failed++;
       if (!closed) send('failed', { index: i, original: seg.text, message: String(e.message).slice(0, 300) });
@@ -118,8 +128,8 @@ async function handleAnalyze(req, res, url){
   });
 
   const ms = Date.now() - t0;
-  cache.log({ chars: text.length, sentences: segs.length, cached, analyzed, ms });
-  if (!closed){ send('done', { ms, total: segs.length, cached, analyzed, failed }); res.end(); }
+  cache.log({ chars: text.length, sentences: segs.length, cached, analyzed, ms, text, ...usage });
+  if (!closed){ send('done', { ms, total: segs.length, cached, analyzed, failed, usage, model: MODEL }); res.end(); }
 }
 
 async function serveStatic(req, res, url){
@@ -203,6 +213,17 @@ const server = createServer(async (req, res) => {
       return res.end(JSON.stringify(cache.weakness(userToken), null, 2));
     }
 
+    if (url.pathname === '/api/history'){
+      const id = url.searchParams.get('id');
+      res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+      if (id) return res.end(JSON.stringify({ text: cache.historyText(Number(id)) }));
+      return res.end(JSON.stringify({
+        retainDays: HISTORY_DAYS,
+        usage: cache.usageSummary(),
+        items: cache.history(40),
+      }));
+    }
+
     if (url.pathname === '/api/stats'){
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify(cache.stats(), null, 2));
@@ -220,7 +241,11 @@ server.listen(PORT, HOST, () => {
   console.log(`模型 ${MODEL}｜上限 ${MAX_CHARS} 字 / ${MAX_SENTENCES} 句｜併發 ${CONCURRENCY}`);
   if (seeded) console.log(`已從 fixtures/seed-cache.jsonl 載入 ${seeded.added} 句種子快取`);
   else console.log(`快取 ${cache.count()} 句`);
+  const purged = cache.pruneHistory(HISTORY_DAYS);
+  if (purged) console.log(`已清掉 ${purged} 筆超過 ${HISTORY_DAYS} 天的歷史原文`);
+  setInterval(() => cache.pruneHistory(HISTORY_DAYS), 6 * 3600_000).unref();
   console.log(`分析由本機 claude CLI 執行，額度計入這台機器登入的 Claude 帳號。`);
+  console.log(`歷史原文保留 ${HISTORY_DAYS} 天後自動清除（分析快取不受影響）。`);
   if (isLoopback){
     console.log(`只接受本機連線。要讓區網其他裝置連：HOST=0.0.0.0 AUTH_TOKEN=<自訂字串> npm start`);
   } else if (!AUTH_TOKEN){

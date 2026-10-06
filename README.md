@@ -68,13 +68,14 @@ fixtures/samples.json        12 組預先分析好的範例，給靜態展示用
 | `POST /api/exercises` | `{"count":10,"types":[...]}` → 題目（不含答案） |
 | `POST /api/attempts` | `{"quizId","userToken","answers"}` → 批改結果並記錄 |
 | `GET /api/weakness?user=` | 弱點統計：依題型／句型／時態／詞性的正確率 |
+| `GET /api/history` | 用量累計與分析紀錄；帶 `?id=` 取回該筆原文 |
 | `GET /api/stats` | 快取統計與句型／時態分佈 |
 
 SSE 事件：`meta`（總句數）→ `sentence`（單句結果，附 `cached`）→ `progress` → `done`。
 快取命中的句子會在毫秒內先推出，其餘才送去分析。
 
 環境變數：`PORT`(8787)、`HOST`(127.0.0.1)、`AUTH_TOKEN`(無)、`MAX_CHARS`(4000)、
-`MAX_SENTENCES`(25)、`CONCURRENCY`(6)、`ANALYZER_MODEL`(opus)。
+`MAX_SENTENCES`(25)、`CONCURRENCY`(6)、`ANALYZER_MODEL`(opus)、`HISTORY_DAYS`(30)。
 
 ### 額度與對外開放
 
@@ -89,6 +90,24 @@ HOST=0.0.0.0 AUTH_TOKEN=你自訂的字串 npm start
 
 分享網址時帶上 `?token=你自訂的字串`，前端會記住。
 未設 `AUTH_TOKEN` 就對外開放時，啟動訊息會警告 —— 任何連得到的人都能無限消耗你的額度。
+
+## 用量與歷史
+
+每次分析完成後，畫面上會顯示這次用掉的 token 與參考費用：
+
+```
+句數 3   耗時 13.6s   輸入 90,806 tokens   輸出 3,090 tokens   參考費用 $0.306
+```
+
+參考費用是依 Claude API 牌價換算的估算值。實際分析走本機 Claude 訂閱，
+**不會另外收費，但會消耗訂閱額度** —— 這個數字是用來掌握用量規模的。
+全部命中快取時不會呼叫模型，也就不產生任何用量。
+
+「歷史」分頁有今天／本月／全部的累計用量，以及過去的分析紀錄。
+點任一筆會載回原文重新顯示 —— 因為全部命中快取，所以是 0 秒且免費。
+
+歷史**原文**保留 `HISTORY_DAYS`（預設 30）天後自動清除，啟動時與每 6 小時各清一次。
+分析快取本身不受影響，那是可以重複利用的資產。
 
 ## 快取與搬遷
 
