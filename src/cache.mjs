@@ -28,6 +28,19 @@ export function openCache(file = 'data/cache.db'){
       created_at INTEGER NOT NULL,
       hits       INTEGER NOT NULL DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS attempts (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_token TEXT NOT NULL,
+      qtype      TEXT NOT NULL,          -- pattern | tense | pos | verb-forms | error-fix
+      sentence_hash TEXT,
+      pattern_id INTEGER,                -- 作答當下該題涉及的句型（弱點統計用）
+      tense_time TEXT, tense_aspect TEXT,
+      pos        TEXT,
+      correct    INTEGER NOT NULL,
+      answer     TEXT, expected TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_attempts_user ON attempts(user_token, created_at);
     CREATE TABLE IF NOT EXISTS requests (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       chars      INTEGER, sentences INTEGER, cached INTEGER, analyzed INTEGER,
@@ -68,6 +81,47 @@ export function openCache(file = 'data/cache.db'){
         result?.inScope === false ? 0 : 1, result?.issue ?? null, Date.now(), h);
     },
     log(row){ qLog.run(row.chars, row.sentences, row.cached, row.analyzed, row.ms, Date.now()); },
+
+    recordAttempt(a){
+      db.prepare(`INSERT INTO attempts
+        (user_token,qtype,sentence_hash,pattern_id,tense_time,tense_aspect,pos,correct,answer,expected,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+        a.userToken, a.qtype, a.sentenceHash ?? null, a.patternId ?? null,
+        a.tenseTime ?? null, a.tenseAspect ?? null, a.pos ?? null,
+        a.correct ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now());
+    },
+
+    /** 弱點統計：11 個維度（5 句型 + 6 必學時態）＋ 詞性與題型 */
+    weakness(userToken){
+      const q = (sql, ...p) => db.prepare(sql).all(userToken, ...p);
+      const overall = db.prepare(
+        'SELECT COUNT(*) total, COALESCE(SUM(correct),0) correct FROM attempts WHERE user_token = ?').get(userToken);
+      return {
+        overall,
+        byType: q(`SELECT qtype, COUNT(*) total, SUM(correct) correct FROM attempts
+                   WHERE user_token = ? GROUP BY qtype ORDER BY qtype`),
+        byPattern: q(`SELECT pattern_id, COUNT(*) total, SUM(correct) correct FROM attempts
+                      WHERE user_token = ? AND pattern_id IS NOT NULL
+                      GROUP BY pattern_id ORDER BY pattern_id`),
+        byTense: q(`SELECT tense_time, tense_aspect, COUNT(*) total, SUM(correct) correct FROM attempts
+                    WHERE user_token = ? AND tense_time IS NOT NULL
+                    GROUP BY tense_time, tense_aspect`),
+        byPos: q(`SELECT pos, COUNT(*) total, SUM(correct) correct FROM attempts
+                  WHERE user_token = ? AND pos IS NOT NULL GROUP BY pos ORDER BY pos`),
+        recent: q(`SELECT qtype, correct, answer, expected,
+                     datetime(created_at/1000,'unixepoch','localtime') t
+                   FROM attempts WHERE user_token = ? ORDER BY created_at DESC LIMIT 20`),
+      };
+    },
+
+    /** 取出可出題的句子（之後 M4 可依弱點加權） */
+    pickSentences(limit = 40){
+      return db.prepare(`SELECT hash, result FROM sentences
+        WHERE issue IS NULL AND pattern_id IS NOT NULL
+        ORDER BY RANDOM() LIMIT ?`).all(limit)
+        .map(r => { try { return { hash: r.hash, data: JSON.parse(r.result) }; } catch { return null; } })
+        .filter(Boolean);
+    },
 
     /** 匯出成可攜、可進版控、可合併的列陣列（依 hash 排序，git diff 才乾淨） */
     exportAll({ since = 0 } = {}){

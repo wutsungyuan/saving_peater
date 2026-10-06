@@ -594,9 +594,19 @@ const goBtn = document.getElementById('go');
 const hintEl = document.getElementById('inp-hint');
 let API = null;   // null = 尚未確認, false = 無後端（靜態展示）, true = 可用
 
+// 需要權杖時，從網址 ?token= 取得並記住（分享給別人時帶著這個參數）
+let TOKEN = '';
+try {
+  const q = new URLSearchParams(location.search).get('token');
+  if (q){ TOKEN = q; localStorage.setItem('analyzer-token', q); }
+  else TOKEN = localStorage.getItem('analyzer-token') || '';
+} catch { /* 無痕模式等情況，忽略 */ }
+
 fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
   API = h;
-  hintEl.textContent = `已連上分析後端（${h.model}）。可貼上一句話或一段文章，上限 ${h.maxChars} 字 / ${h.maxSentences} 句。`;
+  hintEl.textContent = h.authRequired && !TOKEN
+    ? '這個後端需要存取權杖。請用帶有 ?token=… 的網址開啟。'
+    : `已連上分析後端（${h.model}）。可貼上一句話或一段文章，上限 ${h.maxChars} 字 / ${h.maxSentences} 句。`;
 }).catch(() => {
   API = false;
   hintEl.textContent = '展示模式：沒有連上後端，請點下方範例標籤。要分析任意輸入請在本機執行 npm start。';
@@ -624,14 +634,17 @@ async function analyzeLive(text){
 
   try {
     const res = await fetch('/api/analyze', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(TOKEN ? { 'x-auth-token': TOKEN } : {}) },
       body: JSON.stringify({ text }),
     });
     if (!res.ok){
       const e = await res.json().catch(() => ({}));
       out.innerHTML = `<p class="msg">${esc(
         e.error === 'too long' ? `文章太長了（${e.got} 字），目前上限 ${e.maxChars} 字。請分批貼上。` :
-        e.error === 'empty' ? '請先輸入英文。' : '分析失敗：' + (e.error || res.status))}</p>`;
+        e.error === 'empty' ? '請先輸入英文。' :
+        res.status === 401 ? '存取權杖不正確或未提供。請用帶有 ?token=… 的網址開啟。' :
+        '分析失敗：' + (e.error || res.status))}</p>`;
       return;
     }
 

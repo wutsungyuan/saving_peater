@@ -16,6 +16,11 @@ const PORT = Number(process.env.PORT || 8787);
 const MAX_CHARS = Number(process.env.MAX_CHARS || 4000);
 const MAX_SENTENCES = Number(process.env.MAX_SENTENCES || 25);
 const CONCURRENCY = Number(process.env.CONCURRENCY || 6);
+// 預設只聽 127.0.0.1。要讓區網其他裝置連，必須明確設 HOST=0.0.0.0，
+// 因為每個請求都花執行這台機器的 Claude 訂閱額度。
+const HOST = process.env.HOST || '127.0.0.1';
+const AUTH_TOKEN = process.env.AUTH_TOKEN || '';
+const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
 
 const cache = openCache(join(ROOT, 'data', 'cache.db'));
 const seeded = autoSeed(cache);   // 新機器首次啟動：把版控裡的種子快取載進來
@@ -42,7 +47,18 @@ async function pool(items, n, fn){
   }));
 }
 
-async function handleAnalyze(req, res){
+function authed(req, url){
+  if (!AUTH_TOKEN) return true;
+  const sent = req.headers['x-auth-token'] || url.searchParams.get('token') || '';
+  // 長度相同才比對，避免洩漏長度；這裡是本機小工具，常數時間比對非必要
+  return sent === AUTH_TOKEN;
+}
+
+async function handleAnalyze(req, res, url){
+  if (!authed(req, url)){
+    res.writeHead(401, { 'content-type':'application/json' });
+    return res.end('{"error":"unauthorized"}');
+  }
   let text = '';
   try { text = String(JSON.parse(await readBody(req))?.text ?? ''); }
   catch { res.writeHead(400, { 'content-type':'application/json' }); return res.end('{"error":"bad json"}'); }
@@ -119,10 +135,11 @@ async function serveStatic(req, res, url){
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
-    if (req.method === 'POST' && url.pathname === '/api/analyze') return await handleAnalyze(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/analyze') return await handleAnalyze(req, res, url);
     if (url.pathname === '/api/health'){
       res.writeHead(200, { 'content-type':'application/json' });
-      return res.end(JSON.stringify({ ok: true, model: MODEL, maxChars: MAX_CHARS, maxSentences: MAX_SENTENCES }));
+      return res.end(JSON.stringify({ ok: true, model: MODEL, maxChars: MAX_CHARS,
+        maxSentences: MAX_SENTENCES, authRequired: Boolean(AUTH_TOKEN) }));
     }
     if (url.pathname === '/api/stats'){
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
@@ -136,10 +153,20 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`英文句型解剖 → http://127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`英文句型解剖 → http://${isLoopback ? '127.0.0.1' : HOST}:${PORT}`);
   console.log(`模型 ${MODEL}｜上限 ${MAX_CHARS} 字 / ${MAX_SENTENCES} 句｜併發 ${CONCURRENCY}`);
   if (seeded) console.log(`已從 fixtures/seed-cache.jsonl 載入 ${seeded.added} 句種子快取`);
   else console.log(`快取 ${cache.count()} 句`);
+  console.log(`分析由本機 claude CLI 執行，額度計入這台機器登入的 Claude 帳號。`);
+  if (isLoopback){
+    console.log(`只接受本機連線。要讓區網其他裝置連：HOST=0.0.0.0 AUTH_TOKEN=<自訂字串> npm start`);
+  } else if (!AUTH_TOKEN){
+    console.log(`\n⚠  正在對外開放 (${HOST}) 且未設 AUTH_TOKEN。`);
+    console.log(`   任何連得到這個位址的人都能用，且花的是你的 Claude 額度。`);
+    console.log(`   建議改用：HOST=${HOST} AUTH_TOKEN=<自訂字串> npm start\n`);
+  } else {
+    console.log(`對外開放 (${HOST})，已啟用 AUTH_TOKEN。分享網址時要帶 ?token=<你的字串>`);
+  }
 });
 process.on('SIGINT', () => { cache.checkpoint(); cache.close(); server.close(() => process.exit(0)); });
