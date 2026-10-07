@@ -2451,7 +2451,7 @@ for (const b of document.querySelectorAll('.tabs button')){
       else { loadWordsets(); refreshExamples(); }
     }
     if (v === 'practice'){
-      if (API === false) quizOut.innerHTML = '<p class="msg">練習需要後端。請在本機執行 npm start 後開啟 http://127.0.0.1:8787</p>';
+      if (API === false) quizOut.innerHTML = '<p class="msg">句子練習需要後端。請在本機執行 npm start 後開啟 http://127.0.0.1:8787</p>';
       else if (!currentQuiz && API) startQuiz();
     }
     if (v === 'weak'){
