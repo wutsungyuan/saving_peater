@@ -36,6 +36,7 @@ export function openCache(file = 'data/cache.db'){
       pattern_id INTEGER,                -- 作答當下該題涉及的句型（弱點統計用）
       tense_time TEXT, tense_aspect TEXT,
       pos        TEXT,
+      pron_case  TEXT,
       correct    INTEGER NOT NULL,
       answer     TEXT, expected TEXT,
       created_at INTEGER NOT NULL
@@ -60,6 +61,7 @@ export function openCache(file = 'data/cache.db'){
                         ['cost_usd','REAL DEFAULT 0']]) addCol('requests', n, d);
   for (const [n, d] of [['input_tokens','INTEGER DEFAULT 0'], ['output_tokens','INTEGER DEFAULT 0'],
                         ['cost_usd','REAL DEFAULT 0']]) addCol('sentences', n, d);
+  addCol('attempts', 'pron_case', 'TEXT');
 
   const qGet  = db.prepare('SELECT result FROM sentences WHERE hash = ?');
   const qHit  = db.prepare('UPDATE sentences SET hits = hits + 1 WHERE hash = ?');
@@ -135,10 +137,10 @@ export function openCache(file = 'data/cache.db'){
 
     recordAttempt(a){
       db.prepare(`INSERT INTO attempts
-        (user_token,qtype,sentence_hash,pattern_id,tense_time,tense_aspect,pos,correct,answer,expected,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+        (user_token,qtype,sentence_hash,pattern_id,tense_time,tense_aspect,pos,pron_case,correct,answer,expected,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         a.userToken, a.qtype, a.sentenceHash ?? null, a.patternId ?? null,
-        a.tenseTime ?? null, a.tenseAspect ?? null, a.pos ?? null,
+        a.tenseTime ?? null, a.tenseAspect ?? null, a.pos ?? null, a.pronCase ?? null,
         a.correct ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now());
     },
 
@@ -159,6 +161,8 @@ export function openCache(file = 'data/cache.db'){
                     GROUP BY tense_time, tense_aspect`),
         byPos: q(`SELECT pos, COUNT(*) total, SUM(correct) correct FROM attempts
                   WHERE user_token = ? AND pos IS NOT NULL GROUP BY pos ORDER BY pos`),
+        byCase: q(`SELECT pron_case, COUNT(*) total, SUM(correct) correct FROM attempts
+                   WHERE user_token = ? AND pron_case IS NOT NULL GROUP BY pron_case`),
         recent: q(`SELECT qtype, correct, answer, expected,
                      datetime(created_at/1000,'unixepoch','localtime') t
                    FROM attempts WHERE user_token = ? ORDER BY created_at DESC LIMIT 20`),
@@ -179,6 +183,8 @@ export function openCache(file = 'data/cache.db'){
           r => `${r.tense_time}-${r.tense_aspect}`),
         pos: toMap(q(`SELECT pos, COUNT(*) total, SUM(correct) correct FROM attempts
           WHERE user_token = ? AND pos IS NOT NULL GROUP BY pos`), r => r.pos),
+        cases: toMap(q(`SELECT pron_case, COUNT(*) total, SUM(correct) correct FROM attempts
+          WHERE user_token = ? AND pron_case IS NOT NULL GROUP BY pron_case`), r => r.pron_case),
       };
     },
 

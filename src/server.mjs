@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, extname, normalize as pathNormalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { analyze, MODEL } from './analyzer.mjs';
+import { analyze, fixPronounCase, MODEL } from './analyzer.mjs';
 import { splitSentences } from './segment.mjs';
 import { openCache } from './cache.mjs';
 import { generate, grade, TYPES } from './exercises.mjs';
@@ -104,7 +104,12 @@ async function handleAnalyze(req, res, url){
   const misses = [];
   segs.forEach((seg, i) => {
     const hit = cache.get(seg.text);
-    if (hit){ cached++; send('sentence', { index: i, cached: true, sentence: { ...hit, index: i } }); }
+    if (hit){
+      // 規則更新後，快取裡的舊結果也要補上代名詞格位（校正是冪等的，不必重新分析）
+      if (hit.words) fixPronounCase(hit.words);
+      cached++;
+      send('sentence', { index: i, cached: true, sentence: { ...hit, index: i } });
+    }
     else misses.push({ seg, i });
   });
   send('progress', { done: cached, total: segs.length });
@@ -221,7 +226,7 @@ const server = createServer(async (req, res) => {
         cache.recordAttempt({
           userToken, qtype: q.type, sentenceHash: q.meta.hash,
           patternId: q.meta.patternId, tenseTime: q.meta.tenseTime,
-          tenseAspect: q.meta.tenseAspect, pos: q.meta.pos,
+          tenseAspect: q.meta.tenseAspect, pos: q.meta.pos, pronCase: q.meta.case,
           correct: g.correct, answer: g.given.join(' | '), expected: g.expected.join(' | '),
         });
         return { id: q.id, correct: g.correct, expected: q.answer, given: g.given, explain: q.explain };

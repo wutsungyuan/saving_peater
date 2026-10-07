@@ -12,6 +12,8 @@
   --c-io:#046177; --c-do:#0f6637; --c-mod:#55646e;
   --err:#a82a1e; --err-bg:#fcebe8; --tip-bg:#e2f0ef;
   --pos-adj:#8a5300; --pos-adv:#046177; --pos-dim:#39474f;
+  /* 代名詞格位。經 validate_palette.js 驗證：色盲 ΔE 10.2、文字對比 6.03:1 */
+  --pos-pron:#8a3fb8;
   /* 圖表的狀態色：紅／琥珀／綠。經 validate_palette.js 驗證，
      色盲下相鄰 ΔE 15.1、正常視覺 20.1、對比皆 ≥3:1 */
   --st-bad:#a82a1e; --st-mid:#b8821f; --st-good:#0f6637; --st-none:#9aa8b0;
@@ -288,6 +290,10 @@ body:not(.has-speech) .say{display:none}
 [data-pos-mode="off"] .plbl{display:none}
 [data-pos-mode="off"] .line{line-height:2.6}
 [data-pos-mode="content"] .w[data-fn="1"] .plbl{display:none}
+/* 代名詞模式：只標代名詞，其餘全部隱藏，專心練格位 */
+[data-pos-mode="pron"] .w:not([data-case]) .plbl{display:none}
+.w[data-case] .plbl{color:var(--pos-pron);font-weight:700;font-size:.8rem}
+.w[data-case="possessive"] .plbl,.w[data-case="possessive-pron"] .plbl{font-size:.76rem}
 .w[data-irr="1"] .plbl::after{content:'°';color:var(--c-v);font-weight:700}
 [data-mode="clean"] .lbl,[data-mode="clean"] .plbl{display:none}
 [data-mode="clean"] .line{line-height:2.1}
@@ -322,6 +328,8 @@ table.wo td.none{font-family:var(--font-ui);color:var(--faint)}
 .poschip em{font-family:var(--font-mono);font-style:normal;font-size:.72rem;color:var(--pos-dim);font-weight:600}
 .poschip[data-pos="adj"]{border-color:var(--pos-adj);background:#fdf4e6}
 .poschip[data-pos="adj"] em{color:var(--pos-adj);font-weight:700}
+.poschip[data-case]{border-color:var(--pos-pron);background:#f6eefb}
+.poschip[data-case] em{color:var(--pos-pron);font-weight:700}
 .poschip[data-pos="adv"]{border-color:var(--pos-adv);background:var(--tip-bg)}
 .poschip[data-pos="adv"] em{color:var(--pos-adv);font-weight:700}
 
@@ -461,6 +469,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
       </div>
       <div class="seg" id="posSeg" role="group" aria-label="詞性層">
         <button data-pm="content" aria-pressed="true">實詞</button>
+        <button data-pm="pron" aria-pressed="false">代名詞</button>
         <button data-pm="all" aria-pressed="false">全部詞性</button>
         <button data-pm="off" aria-pressed="false">關</button>
       </div>
@@ -514,6 +523,22 @@ const ROLE = {
   'M-freq':{code:'頻',zh:'頻率修飾語',kind:'mod',why:'多常發生 — 拿掉句子仍完整'},
   'M-other':{code:'修',zh:'修飾語',kind:'mod',why:'判斷句型時先忽略'},
 };
+const CASE = {
+  subject:        { zh:'主格',       short:'主',   why:'當主詞，放在動詞前面' },
+  object:         { zh:'受格',       short:'受',   why:'當動詞或介系詞的受詞' },
+  possessive:     { zh:'所有格',     short:'所有', why:'後面一定接名詞，例如 my book' },
+  'possessive-pron':{ zh:'所有格代名詞', short:'所代', why:'後面不接名詞，自己當名詞用' },
+  reflexive:      { zh:'反身代名詞', short:'反身', why:'強調「自己」，例如 by himself' },
+  other:          { zh:'代名詞',     short:'代',   why:'' },
+};
+// 右側欄的速查表（完整七人稱表太寬，這裡只列最常考的幾個）
+const CASE_TABLE = [
+  ['主',   'I / he / she / they'],
+  ['受',   'me / him / her / them'],
+  ['所有', 'my / his / her / their'],
+  ['所代', 'mine / his / hers / theirs'],
+  ['反身', 'myself / himself / herself'],
+];
 const POS = {
   adj:{zh:'形容詞',why:'修飾名詞，或當補語說明主詞怎麼樣。連結動詞後面要接這個'},
   adv:{zh:'副詞',why:'修飾動詞、形容詞或另一個副詞。不能當連結動詞的補語'},
@@ -560,7 +585,14 @@ document.getElementById('rail-p').innerHTML = `<h3>詞性</h3><ul>
     const k = hot ? `var(--pos-${p})` : 'var(--muted)';
     return `<li class="${hot ? 'hot' : ''}"><em style="--k:${k}">${p}</em>${POS[p].zh}</li>`;
   }).join('')}
-</ul><div class="foot">形容詞與副詞用顏色標出 —— 連結動詞後面只能接形容詞。<br><br>動詞標成 <b style="color:var(--c-v);font-family:var(--font-mono)">v°</b> 表示不規則變化，展開詳解可看三態。<br><br>目前只標實詞，虛詞（冠詞、介系詞、連接詞、代名詞）改用游標提示。</div>`;
+</ul>
+  <h3 style="margin-top:14px">代名詞格位</h3>
+  <ul>${CASE_TABLE.map(([k, v]) =>
+    `<li><em style="--k:var(--pos-pron);min-width:2.8em">${k}</em>
+       <span style="font-family:var(--font-en);font-size:.78rem">${v}</span></li>`).join('')}</ul>
+  <div class="foot">所有格後面一定接名詞（my <b>book</b>），所有格代名詞後面不接（This is <b>mine</b>）。
+    <br>切到「代名詞」模式可以只看格位。</div>
+  <div class="foot" style="border:0;padding-top:4px;margin-top:4px">形容詞與副詞用顏色標出 —— 連結動詞後面只能接形容詞。<br><br>動詞標成 <b style="color:var(--c-v);font-family:var(--font-mono)">v°</b> 表示不規則變化，展開詳解可看三態。<br><br>目前只標實詞，虛詞（冠詞、介系詞、連接詞、代名詞）改用游標提示。</div>`;
 
 // ---- 窄螢幕的橫向圖例 ----
 document.getElementById('legend-inline').innerHTML = `
@@ -570,7 +602,8 @@ document.getElementById('legend-inline').innerHTML = `
   <div class="lrow"><b>詞性</b>
     <span><em style="color:var(--pos-adj)">adj</em>形容詞</span>
     <span><em style="color:var(--pos-adv)">adv</em>副詞</span>
-    <span style="color:var(--faint)"><em>n ／ v ／ aux</em>其餘實詞以灰色標示</span><span><em style="color:var(--c-v)">v°</em>不規則動詞</span></div>`;
+    <span style="color:var(--faint)"><em>n ／ v ／ aux</em>其餘實詞以灰色標示</span><span><em style="color:var(--c-v)">v°</em>不規則動詞</span>
+    <span><em style="color:var(--pos-pron)">主／受／所有／所代</em>代名詞格位</span></div>`;
 
 /** 找出這個字所屬子句的動詞資料（用來顯示三態） */
 function verbInfoFor(sent, w){
@@ -606,12 +639,13 @@ function renderRange(sent, from, to){
   for (const w of ws){
     if (w.start > pos) html += esc(sent.original.slice(pos, w.start));
     const vb = (w.pos === 'v' || w.pos === 'aux') ? verbInfoFor(sent, w) : null;
+    const cs = w.pos === 'pron' ? (CASE[w.case] ? w.case : 'other') : '';
     html += `<span class="w" data-pos="${esc(w.pos)}" data-text="${esc(w.text)}"
-      data-s="${w.start}" data-e="${w.end}" tabindex="0"${
+      data-s="${w.start}" data-e="${w.end}"${cs ? ` data-case="${esc(cs)}"` : ''} tabindex="0"${
       CONTENT_POS.has(w.pos) ? '' : ' data-fn="1"'}${
       vb ? ` data-v3="${esc([vb.forms.base, vb.forms.past, vb.forms.pastParticiple].join(' · '))}"` : ''}${
       vb?.irregular ? ' data-irr="1"' : ''}
-      ><i class="plbl">${esc(w.pos)}</i>${esc(w.text)}</span>`;
+      ><i class="plbl">${esc(cs ? CASE[cs].short : w.pos)}</i>${esc(w.text)}</span>`;
     pos = w.end;
   }
   if (pos < to) html += esc(sent.original.slice(pos, to));
@@ -639,8 +673,11 @@ function wordOrderTable(wo){
 function posList(sent){
   const ws = sent.words || [];
   if (!ws.length) return '';
-  return `<div><h4>逐字詞性</h4><div class="poslist">${ws.map(w =>
-    `<span class="poschip" data-pos="${esc(w.pos)}"><b>${esc(w.text)}</b><em>${esc(w.pos)}</em></span>`).join('')}</div></div>`;
+  return `<div><h4>逐字詞性</h4><div class="poslist">${ws.map(w => {
+    const c = w.pos === 'pron' && CASE[w.case] ? w.case : '';
+    return `<span class="poschip" data-pos="${esc(w.pos)}"${c ? ` data-case="${esc(c)}"` : ''}>` +
+      `<b>${esc(w.text)}</b><em>${esc(c ? CASE[c].zh : w.pos)}</em></span>`;
+  }).join('')}</div></div>`;
 }
 
 /** 動詞三態表：句中出現的那一格會被標出來 */
@@ -1051,9 +1088,10 @@ function showTip(w){
   const c = w.closest('.c');
   const p = POS[w.dataset.pos] || { zh:w.dataset.pos, why:'' };
   const r = c ? ROLE[c.dataset.role] : null;
+  const kase = w.dataset.case ? CASE[w.dataset.case] : null;
   tipEl.innerHTML = `<span class="t-word">${esc(w.dataset.text)}</span>
-    <span class="t-ln"><span class="t-k">${esc(w.dataset.pos)}</span>${esc(p.zh)}
-      <span class="t-why">${esc(p.why)}</span></span>
+    <span class="t-ln"><span class="t-k">${esc(w.dataset.pos)}</span>${esc(kase ? kase.zh : p.zh)}
+      <span class="t-why">${esc(kase ? kase.why : p.why)}</span></span>
     ${r ? `<span class="t-ln"><span class="t-k">${esc(r.code)}</span>${esc(r.zh)}
       <span class="t-why">${esc(r.why)}</span></span>` : ''}
     ${w.dataset.v3 ? `<span class="t-ln"><span class="t-k">三態</span><span class="t-v3">${esc(w.dataset.v3)}</span>
@@ -1086,6 +1124,7 @@ autoGrow(); updateCount();
 const QTYPES = [
   ['pattern','句型判斷'], ['tense','時態填空'], ['pos','詞性判斷'],
   ['verb-forms','動詞三態'], ['error-fix','改錯'],
+  ['pronoun-case','代名詞格位'], ['pronoun-fill','代名詞填空'],
 ];
 const USER = (() => {
   try {
@@ -1401,7 +1440,8 @@ const EXTRA_TENSES = {
   'past-future-perfect':'過去未來完成式', 'past-future-perfect-progressive':'過去未來完成進行式',
 };
 const QTYPE_NAMES = { 'pattern':'句型判斷', 'tense':'時態填空', 'pos':'詞性判斷',
-  'verb-forms':'動詞三態', 'error-fix':'改錯' };
+  'verb-forms':'動詞三態', 'error-fix':'改錯',
+  'pronoun-case':'代名詞格位', 'pronoun-fill':'代名詞填空' };
 const MIN_N = 2;   // 少於這個作答數就標為資料不足，不下判斷
 
 /** 一列：名稱、長條、百分比、分數、狀態標籤。數字與標籤都在，不靠顏色辨識 */
@@ -1470,6 +1510,14 @@ async function loadWeakness(){
     const posRows = (w.byPos || []).sort((a, b) => a.correct / a.total - b.correct / b.total)
       .map(r => wkRow(POS[r.pos]?.zh || r.pos, r.pos, r.correct, r.total)).join('');
 
+    const CASE_ORDER = [['subject','主格'],['object','受格'],['possessive','所有格'],
+      ['possessive-pron','所有格代名詞'],['reflexive','反身代名詞']];
+    const byC = new Map((w.byCase || []).map(r => [r.pron_case, r]));
+    const caseRows = (w.byCase || []).length
+      ? CASE_ORDER.map(([k, zh]) => { const r = byC.get(k);
+          return wkRow(zh, '', r?.correct ?? 0, r?.total ?? 0); }).join('')
+      : '';
+
     const typeRows = (w.byType || []).sort((a, b) => a.correct / a.total - b.correct / b.total)
       .map(r => wkRow(QTYPE_NAMES[r.qtype] || r.qtype, '', r.correct, r.total)).join('');
 
@@ -1477,6 +1525,7 @@ async function loadWeakness(){
       wkSection('五大句型', '五種都列出來，沒作答過的標為無資料。', patternRows) +
       wkSection('時態', '國中必學的 6 種固定列出；超出範圍的作答另外列在下方。',
         tenseRows + extraRows) +
+      (caseRows ? wkSection('代名詞格位', '五種格位固定列出，沒作答過的標為無資料。', caseRows) : '') +
       (posRows ? wkSection('詞性', '依正確率由低到高排序。', posRows) : '') +
       (typeRows ? wkSection('題型', '哪一種題目最常答錯。', typeRows) : '');
 

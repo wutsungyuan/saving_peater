@@ -43,6 +43,24 @@ function blankOut(original, spans){
 const constituentLine = (cl) => (cl.constituents ?? [])
   .map(c => `${c.text}（${c.role}）`).join('　');
 
+
+const CASE_ZH = {
+  subject:'主格', object:'受格', possessive:'所有格',
+  'possessive-pron':'所有格代名詞', reflexive:'反身代名詞',
+};
+// 任一代名詞 → 它的人稱（填空題用主格當提示，就像課本那樣）
+const PERSON = {
+  i:'I', me:'I', my:'I', mine:'I', myself:'I',
+  you:'you', your:'you', yours:'you', yourself:'you', yourselves:'you',
+  he:'he', him:'he', his:'he', himself:'he',
+  she:'she', her:'she', hers:'she', herself:'she',
+  it:'it', its:'it', itself:'it',
+  we:'we', us:'we', our:'we', ours:'we', ourselves:'we',
+  they:'they', them:'they', their:'they', theirs:'they', themselves:'they',
+};
+const pronWords = (data) => (data.words ?? []).filter(w =>
+  w.pos === 'pron' && CASE_ZH[w.case] && Number.isInteger(w.start) && PERSON[w.text.toLowerCase()]);
+
 // ---------- 各題型 ----------
 
 function qPattern({ hash, data }){
@@ -146,9 +164,60 @@ function qErrorFix({ hash, data }){
   };
 }
 
+
+function qPronounCase({ hash, data }){
+  const ws = pronWords(data);
+  if (!ws.length) return null;
+  const w = pick(ws);
+  return {
+    type: 'pronoun-case',
+    prompt: `「${w.text}」在這句裡是哪一種格位？`,
+    sentence: data.original,
+    display: data.original,
+    highlight: { start: w.start, end: w.end },
+    inputMode: 'choice',
+    choices: Object.entries(CASE_ZH).map(([k, zh]) => ({ value: k, label: zh })),
+    answer: [w.case],
+    explain: `${w.text} 是${CASE_ZH[w.case]}。` + (
+      w.case === 'possessive' ? '所有格後面一定接名詞。'
+      : w.case === 'possessive-pron' ? '所有格代名詞後面不接名詞，自己當名詞用。'
+      : w.case === 'object' ? '受格放在動詞或介系詞後面當受詞。'
+      : w.case === 'subject' ? '主格當主詞，放在動詞前面。'
+      : '反身代名詞表示「自己」。'),
+    meta: { hash, case: w.case },
+  };
+}
+
+function qPronounFill({ hash, data }){
+  // 只挑「提示的主格 ≠ 答案」的字，否則 (I) → I 等於直接給答案，沒有練習價值
+  const ws = pronWords(data).filter(w =>
+    PERSON[w.text.toLowerCase()].toLowerCase() !== w.text.toLowerCase());
+  if (!ws.length) return null;
+  const w = pick(ws);
+  const { display, blanks } = blankOut(data.original, [w]);
+  return {
+    type: 'pronoun-fill',
+    prompt: '填入括號裡代名詞的正確形式',
+    sentence: data.original,
+    display,
+    hint: PERSON[w.text.toLowerCase()],
+    inputMode: 'text',
+    blanks: 1,
+    answer: blanks,
+    explain: `這裡要用${CASE_ZH[w.case]} ${w.text}。` + (
+      w.case === 'possessive' ? `後面接名詞，所以用所有格而不是主格。`
+      : w.case === 'possessive-pron' ? `後面沒有名詞，所以用所有格代名詞而不是所有格。`
+      : w.case === 'object' ? `放在動詞或介系詞後面，要用受格。`
+      : w.case === 'subject' ? `當主詞，要用主格。`
+      : `表示「自己」，要用反身代名詞。`),
+    meta: { hash, case: w.case },
+  };
+}
+
 const BUILDERS = {
   'pattern': qPattern, 'tense': qTense, 'pos': qPos,
   'verb-forms': qVerbForms, 'error-fix': qErrorFix,
+  'pronoun-case': qPronounCase, 'pronoun-fill': qPronounFill,
 };
 export const TYPES = Object.keys(BUILDERS);
 
@@ -159,6 +228,7 @@ function weightOf(q, acc){
   if (q.type === 'pattern' && q.meta.patternId != null) a = acc.patterns?.[q.meta.patternId];
   else if (q.type === 'tense' && q.meta.tenseTime) a = acc.tenses?.[`${q.meta.tenseTime}-${q.meta.tenseAspect}`];
   else if (q.type === 'pos' && q.meta.pos) a = acc.pos?.[q.meta.pos];
+  else if (q.type.startsWith('pronoun-') && q.meta.case) a = acc.cases?.[q.meta.case];
   if (a == null) return 1;                    // 沒作答過：中性，仍有機會出現
   return 0.25 + (1 - a) * 2.25;               // 全錯 2.5 倍、全對 0.25 倍
 }

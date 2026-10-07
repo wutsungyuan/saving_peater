@@ -177,6 +177,8 @@
 | `tense-mismatch` | 子句之間時態不一致 | — |
 | `article` | 冠詞缺漏或誤用 | — |
 | `preposition` | 介系詞誤用 | — |
+| `possessive-case` | 所有格與所有格代名詞用錯 | This book is my → mine |
+| `its-vs-its` | its 與 it's 混用 | It's name is Lucky → Its name |
 | `other` | 其他文法問題 | — |
 
 除了錯誤，也可以用 `type: "tip"` 給學習提示（例如指出這是刁鑽的句型 4/5 對照、指出 since 與 for 的差別、指出超出國中範圍的結構）。每句 `notes` 最多 4 則，優先放 `error`。
@@ -389,6 +391,53 @@ notes 要提醒「間接問句用陳述語序」這個最常錯的點。
 - **so…that**：that 之後是副詞子句，另列一個 clause。
 - **too…to**、**enough to**：to + V 是修飾語，不影響骨架。
 
+---
+
+# 知識庫 J：代名詞的格位（case）
+
+詞性是 `pron` 的字，要再標出**格位**，填在 `words[].case`。其他詞性不填這個欄位。
+
+| 格位 `case` | 我 | 你 | 他 | 她 | 它 | 我們 | 他們 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `subject` 主格 | I | you | he | she | it | we | they |
+| `object` 受格 | me | you | him | her | it | us | them |
+| `possessive` 所有格 | my | your | his | her | its | our | their |
+| `possessive-pron` 所有格代名詞 | mine | yours | his | hers | its | ours | theirs |
+| `reflexive` 反身代名詞 | myself | yourself／yourselves | himself | herself | itself | ourselves | themselves |
+
+其他代名詞（this、that、these、those、something、everyone 等）填 `case: "other"`。
+
+## 怎麼分辨（這正是考試的重點）
+
+**最關鍵的一條：所有格後面一定接名詞，所有格代名詞後面不接名詞。**
+
+| 句子 | 字 | 判斷 | `case` |
+| --- | --- | --- | --- |
+| I like **her** lessons. | her | 後面接名詞 lessons | `possessive` |
+| I like **her**. | her | 後面沒有名詞，當 like 的受詞 | `object` |
+| This is **his** book. | his | 後面接名詞 book | `possessive` |
+| This book is **his**. | his | 後面沒有名詞，自己當名詞用 | `possessive-pron` |
+| **She** teaches us. | She | 當主詞 | `subject` |
+| She teaches **us**. | us | 當 teaches 的受詞 | `object` |
+| She did it **herself**. | herself | 反身，強調親自 | `reflexive` |
+
+其他判斷要點：
+
+- **主格**當主詞（句首或子句的主詞），**受格**當動詞或介系詞的受詞（give **me**、for **him**、than **me**）。
+- **`her` 與 `his` 最容易混**：her 可能是受格或所有格；his 可能是所有格或所有格代名詞。一律用「後面有沒有名詞」判斷。
+- **`its` 是所有格**（its name），**`it's` 是 it is 的縮寫** —— 這是最常見的拼寫錯誤，發現 `it's` 用成所有格要標成 error。
+- 所有格後面也可能先接形容詞再接名詞：my **new** book，仍是 `possessive`。
+- 比較句的 than 後面兩種都可接受：than me（口語）／than I（正式），不算錯誤。
+
+## 易錯偵測
+
+除了知識庫 C 既有的 `object-case`，再加這兩個代碼：
+
+| `errorCode` | 問題 | 錯 → 對 |
+| --- | --- | --- |
+| `possessive-case` | 所有格與所有格代名詞用錯 | This book is ~~my~~ → mine／This is ~~mine~~ book → my book |
+| `its-vs-its` | its 與 it's 混用 | ~~It's~~ name is Lucky → Its name is Lucky |
+
 # 輸出 Schema
 
 ```jsonc
@@ -431,7 +480,9 @@ notes 要提醒「間接問句用陳述語序」這個最常錯的點。
         }
       ],
       "words": [                        // 逐字詞性，涵蓋全句，依原句順序，不含標點
-        { "text": "Tom", "pos": "n" }
+        { "text": "Tom", "pos": "n" },
+        // pos 是 pron 時要多填 case，見知識庫 J；其他詞性不填
+        { "text": "her", "pos": "pron", "case": "possessive" }
       ],
       "wordOrder": {
         "主": "string | null",
@@ -474,7 +525,7 @@ notes 要提醒「間接問句用陳述語序」這個最常錯的點。
 
 **輸出（重點：等號測試成立 → 句型五）：**
 ```json
-{"sentences":[{"index":0,"original":"She made me happy.","translation":"她讓我很開心。","words":[{"text":"She","pos":"pron"},{"text":"made","pos":"v"},{"text":"me","pos":"pron"},{"text":"happy","pos":"adj"}],"clauses":[{"text":"She made me happy","role":"main","connector":null,"pattern":{"id":5,"label":"S + V + O + C","name":"句型五"},"constituents":[{"text":"She","role":"S"},{"text":"made","role":"V"},{"text":"me","role":"O"},{"text":"happy","role":"C"}],"tense":{"time":"past","aspect":"simple","label":"過去簡單式","formula":"S + V-ed","evidence":["made"],"inScope":true},"verb":{"lemma":"make","form":"made","irregular":true,"forms":{"base":"make","past":"made","pastParticiple":"made","ing":"making","third":"makes"}}}],"wordOrder":{"主":"She","動":"made","賓":"me happy","方":null,"地":null,"時":null},"notes":[{"type":"tip","errorCode":null,"span":null,"message":"等號測試：me = happy 成立，所以 happy 是受詞補語，屬於句型五。如果是 She made me a cake.（me ≠ a cake）就是句型四。","correction":null}],"inScope":true,"issue":null}]}
+{"sentences":[{"index":0,"original":"She made me happy.","translation":"她讓我很開心。","words":[{"text":"She","pos":"pron","case":"subject"},{"text":"made","pos":"v"},{"text":"me","pos":"pron","case":"object"},{"text":"happy","pos":"adj"}],"clauses":[{"text":"She made me happy","role":"main","connector":null,"pattern":{"id":5,"label":"S + V + O + C","name":"句型五"},"constituents":[{"text":"She","role":"S"},{"text":"made","role":"V"},{"text":"me","role":"O"},{"text":"happy","role":"C"}],"tense":{"time":"past","aspect":"simple","label":"過去簡單式","formula":"S + V-ed","evidence":["made"],"inScope":true},"verb":{"lemma":"make","form":"made","irregular":true,"forms":{"base":"make","past":"made","pastParticiple":"made","ing":"making","third":"makes"}}}],"wordOrder":{"主":"She","動":"made","賓":"me happy","方":null,"地":null,"時":null},"notes":[{"type":"tip","errorCode":null,"span":null,"message":"等號測試：me = happy 成立，所以 happy 是受詞補語，屬於句型五。如果是 She made me a cake.（me ≠ a cake）就是句型四。","correction":null}],"inScope":true,"issue":null}]}
 ```
 
 **輸入：** `The soup tastes well.`

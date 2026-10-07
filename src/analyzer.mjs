@@ -121,6 +121,55 @@ export function alignWords(original, words) {
   return { aligned, ok: failures.length === 0, failures };
 }
 
+// 代名詞是封閉詞表，多數形式只有一種格位，程式就能確定 —— 不該交給模型碰運氣。
+// 只有 her / his / its / it / you 這幾個真有歧義，才看模型或用「後面有沒有名詞」判斷。
+const PRON_CASE = {
+  i:'subject', he:'subject', she:'subject', we:'subject', they:'subject',
+  me:'object', him:'object', us:'object', them:'object',
+  my:'possessive', your:'possessive', our:'possessive', their:'possessive',
+  mine:'possessive-pron', yours:'possessive-pron', hers:'possessive-pron',
+  ours:'possessive-pron', theirs:'possessive-pron',
+};
+const AMBIGUOUS = new Set(['her', 'his', 'its', 'it', 'you']);
+const NOUNISH = new Set(['n', 'adj', 'num']);   // 所有格後面會接的詞性
+
+/**
+ * 補齊並校正代名詞格位。
+ * 明確的形式一律以程式為準（即使模型填了別的），歧義的才採用模型答案，
+ * 模型沒填時用「後面有沒有名詞」的規則補。
+ */
+export function fixPronounCase(words){
+  for (let i = 0; i < words.length; i++){
+    const w = words[i];
+    if (w.pos !== 'pron') { delete w.case; continue; }
+    const lower = String(w.text || '').toLowerCase();
+
+    if (/self$|selves$/.test(lower)) { w.case = 'reflexive'; continue; }
+
+    const fixed = PRON_CASE[lower];
+    if (fixed) { w.case = fixed; continue; }          // 明確形式：程式說了算
+
+    if (AMBIGUOUS.has(lower)){
+      if (w.case) continue;                            // 模型有判就採用
+      // 模型沒填時的後備規則。每個字可能的格位不同，不能一概而論：
+      //   her  受格或所有格        his  所有格或所有格代名詞（沒有受格，受格是 him）
+      //   its  只有所有格          you / it  只有主格或受格（所有格是 your / its）
+      const next = words[i + 1];
+      const followedByNoun = next && NOUNISH.has(next.pos);
+      const prev = words[i - 1];
+      const afterVerbOrPrep = prev && (prev.pos === 'v' || prev.pos === 'prep');
+      w.case =
+        lower === 'its' ? 'possessive'
+      : lower === 'her' ? (followedByNoun ? 'possessive' : 'object')
+      : lower === 'his' ? (followedByNoun ? 'possessive' : 'possessive-pron')
+      : /* you / it */    (afterVerbOrPrep ? 'object' : 'subject');
+      continue;
+    }
+    if (!w.case) w.case = 'other';                     // this / that / something…
+  }
+  return words;
+}
+
 /** 主入口：分析一段英文，回傳 { data, meta } */
 export async function analyze(text, opts = {}) {
   const res = await callModel(text, opts);
@@ -129,7 +178,7 @@ export async function analyze(text, opts = {}) {
   // 對齊每個句子的詞性，以及每個子句的成分
   for (const s of data.sentences ?? []) {
     const w = alignWords(s.original ?? text, s.words ?? []);
-    s.words = w.aligned;
+    s.words = fixPronounCase(w.aligned);
     s.wordAlignment = { ok: w.ok, failures: w.failures };
     for (const cl of s.clauses ?? []) {
       const { aligned, ok, failures } = alignConstituents(s.original ?? text, cl.constituents ?? []);
