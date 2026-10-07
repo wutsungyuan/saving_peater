@@ -504,9 +504,9 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
     </header>
 
     <div class="tabs" role="group" aria-label="切換功能">
-      <button data-view="analyze" aria-pressed="true">分析</button>
       <button data-view="words" aria-pressed="false">單字</button>
-      <button data-view="practice" aria-pressed="false">練習</button>
+      <button data-view="analyze" aria-pressed="true">分析</button>
+      <button data-view="practice" aria-pressed="false">句子練習</button>
       <button data-view="weak" aria-pressed="false">弱點</button>
       <button data-view="history" aria-pressed="false">歷史</button>
     </div>
@@ -1083,7 +1083,7 @@ fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
     b.title = '需要後端才能使用。請在本機執行 npm start 後開啟 http://127.0.0.1:8787';
   }
   document.querySelector('.tabs')?.insertAdjacentHTML('afterend',
-    '<p class="demo-note">「單字」「練習」「弱點」「歷史」需要本機後端才能使用。' +
+    '<p class="demo-note">「單字」「句子練習」「弱點」「歷史」需要本機後端才能使用。' +
     '這個線上版只能看分析範例與試聽朗讀。</p>');
 });
 
@@ -1189,7 +1189,7 @@ async function analyzeLive(text){
         } else if (ev === 'done'){
           gotDone = true;
           showUsage(d);
-          hintEl.textContent = '可以再貼新的一段，或切到「練習」從這些句子出題。';
+          hintEl.textContent = '可以再貼新的一段，或切到「句子練習」從這些句子出題。';
         }
       }
     }
@@ -2048,7 +2048,9 @@ el('wsAnalyze').addEventListener('click', async () => {
 });
 
 // 點例句的「分析」：切到分析頁，命中快取的話瞬間出結果
-el('wsOut').addEventListener('click', e => {
+// 綁在整個分頁上 —— 單字卡渲染在 #wsWords，測驗在 #wsOut，
+// 綁錯容器就等於沒綁（之前就是綁在 #wsOut 上，點了完全沒反應）。
+el('view-words').addEventListener('click', e => {
   const b = e.target.closest('.exan');
   if (!b) return;
   const text = b.dataset.an;
@@ -2297,7 +2299,7 @@ async function loadWeakness(){
     if (!o.total){
       head.innerHTML = '';
       charts.innerHTML = `<div class="wk-empty">還沒有作答紀錄。<br>
-        先到「練習」做一份，這裡就會依句型、時態、詞性、題型統計你的正確率，
+        先到「句子練習」做一份，這裡就會依句型、時態、詞性、題型統計你的正確率，
         並在之後出題時優先挑你最弱的部分。</div>`;
       return;
     }
