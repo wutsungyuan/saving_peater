@@ -490,7 +490,41 @@ button:disabled{opacity:.5;cursor:default}
 footer{font-size:.82rem;color:var(--muted);line-height:1.8;border-top:1px solid var(--rule);padding-top:16px}
 footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-@media (max-width:520px){ .line{font-size:1.3rem} header h1{font-size:1.34rem} }
+/* ---------- 手機 ---------- */
+@media (max-width:560px){
+  body{padding-inline:13px;padding-block:18px 44px}
+  header h1{font-size:1.34rem}
+  /* 開頭說明在手機上會佔掉六行才看得到功能，收成兩行，點了才展開 */
+  header p{font-size:.86rem;line-height:1.65;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  header p.open{-webkit-line-clamp:unset;overflow:visible}
+  header .more{display:inline-block;margin-top:5px;font-size:.82rem;color:var(--accent);
+    background:none;border:0;padding:0;text-decoration:underline;text-underline-offset:3px}
+
+  /* 分頁：不要把字擠成兩行，放不下就橫向捲 */
+  .tabs{display:flex;align-self:stretch;overflow-x:auto;scrollbar-width:none;
+    -webkit-overflow-scrolling:touch}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs button{flex:1 0 auto;white-space:nowrap;padding:10px 13px;font-size:.88rem}
+
+  .body{padding:34px 13px 16px}
+  .line{font-size:1.26rem;line-height:3.2}
+  .line.has-lower{line-height:3.8}
+  .c .lbl{font-size:.76rem}
+  .w .plbl{font-size:.78rem}
+  .w[data-pos="adj"] .plbl,.w[data-pos="adv"] .plbl{font-size:.82rem}
+
+  .box{padding:13px}
+  .usage-cards{grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:9px}
+  .ucard .big{font-size:1.7rem}
+  /* 手指點得到：按鈕與選項的高度拉夠 */
+  button,select{min-height:40px}
+  .q-opt{padding:11px 13px}
+  input[type=text],textarea,select{font-size:16px}   /* iOS 低於 16px 會自動放大整頁 */
+}
+@media (max-width:380px){
+  .tabs button{padding:10px 10px;font-size:.84rem}
+}
 </style>
 
 <div class="page">
@@ -500,7 +534,8 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
     <header>
       <div class="rule"></div>
       <h1>英文句型解剖</h1>
-      <p>貼上一句話或一段文章，逐句標出五大句型的成分、每個字的詞性、時態與繁體中文翻譯。原句一個字元都不會被改動 —— 成分代號浮在句子上方，詞性標在下方，游標移到任一個字會說明它的詞性與在句中的角色。</p>
+      <p id="intro">貼上一句話或一段文章，逐句標出五大句型的成分、每個字的詞性、時態與繁體中文翻譯。原句一個字元都不會被改動 —— 成分代號浮在句子上方，詞性標在下方，游標移到任一個字會說明它的詞性與在句中的角色。</p>
+      <button class="more" id="introMore" hidden>看說明</button>
     </header>
 
     <div class="tabs" role="group" aria-label="切換功能">
@@ -1388,6 +1423,7 @@ async function startQuiz(opts = {}){
     hardenAnswers(quizOut);
     quizHint.textContent = `共 ${d.questions.length} 題，題庫 ${d.pool} 句。`;
     quizActions.hidden = false;
+    scrollToFirstQuestion(quizOut);
   } catch (e){
     quizOut.innerHTML = `<p class="msg">連線失敗：${esc(e.message)}</p>`;
   }
@@ -1846,6 +1882,7 @@ async function startWordQuiz(opts = {}){
     el('wsOut').innerHTML = d.questions.map((q,i) => renderWordQ(q, i+1)).join('');
     hardenAnswers(el('wsOut'));
     el('wsActions').hidden = false;
+    scrollToFirstQuestion(el('wsOut'));
     // 只有第一題本身是聽考才自動唸。先前用 querySelector('.q-speak') 會抓到
     // 整份測驗裡任何一題的聽考鈕，等於提前唸出後面題目的答案。
     const firstQ = d.questions[0];
@@ -2008,6 +2045,32 @@ function quizMsg(actionsId, text){
   p.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 const clearQuizMsg = id => el(id).parentNode.querySelector('.quizmsg')?.remove();
+
+
+
+/** 手機上出完題直接捲到第一題 —— 字表、統計、測驗設定全在上面，
+ *  不捲的話要滑很久才看得到題目。桌機畫面放得下，不動。 */
+function scrollToFirstQuestion(container){
+  if (!matchMedia('(max-width:560px)').matches) return;
+  const first = container.firstElementChild;
+  first?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// 手機上開頭說明收成兩行，點了才展開。桌機不顯示這個鈕。
+(() => {
+  const p = el('intro'), b = el('introMore');
+  const phone = () => matchMedia('(max-width:560px)').matches;
+  const sync = () => {
+    b.hidden = !phone();
+    if (!phone()) p.classList.remove('open');
+  };
+  b.addEventListener('click', () => {
+    const open = p.classList.toggle('open');
+    b.textContent = open ? '收起說明' : '看說明';
+  });
+  sync();
+  matchMedia('(max-width:560px)').addEventListener('change', sync);
+})();
 
 // ---- 例句的句型分析 ----
 // 分析過的句子存在同一個快取裡，所以批次分析過之後，

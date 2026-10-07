@@ -191,6 +191,17 @@ async function handleAnalyze(req, res, url){
   }
 }
 
+// index.html 是給 Artifact 用的格式 —— 發布時平台會自動包上
+// doctype、charset 與 viewport。我們自己送就得補，否則手機上會是
+// quirks 模式加 980px 的版面寬度，整頁縮小到看不清楚。
+// 骨架放這裡而不是寫進檔案，是為了不破壞 Artifact 的發布規則。
+const HEAD = `<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+`;
+
 async function serveStatic(req, res, url){
   let rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
   rel = pathNormalize(rel).replace(/^(\.\.[/\\])+/, '');
@@ -198,8 +209,9 @@ async function serveStatic(req, res, url){
   if (!file.startsWith(WEB)){ res.writeHead(403); return res.end('forbidden'); }
   try {
     const buf = await readFile(file);
+    const isPage = extname(file) === '.html' && !buf.subarray(0, 200).toString().toLowerCase().includes('<!doctype');
     res.writeHead(200, { 'content-type': (MIME[extname(file)] || 'application/octet-stream') + '; charset=utf-8' });
-    res.end(buf);
+    res.end(isPage ? Buffer.concat([Buffer.from(HEAD), buf]) : buf);
   } catch { res.writeHead(404, { 'content-type':'text/plain; charset=utf-8' }); res.end('not found'); }
 }
 
