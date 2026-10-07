@@ -331,18 +331,42 @@ const server = createServer(async (req, res) => {
           res.writeHead(413, { 'content-type':'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ error:'too-many', message:`一次最多 60 個字，這次有 ${items.length} 個。` }));
         }
+        // 加進既有字表：先濾掉那份已經有的字，不用重複花額度充實
+        const appendTo = Number(b.appendTo) || 0;
+        let skippedExisting = 0;
+        let todo = items;
+        if (appendTo){
+          const have = cache.termsOf(appendTo);
+          todo = items.filter(w => !have.has(String(w.term).toLowerCase()));
+          skippedExisting = items.length - todo.length;
+          if (!todo.length){
+            res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+            return res.end(JSON.stringify({ id: appendTo, count: 0, appended: true,
+              skipped: skippedExisting, usage: { costUsd: 0, outputTokens: 0 },
+              message: '這些字那份字表裡都已經有了，沒有新增。' }));
+          }
+        }
         const t0 = Date.now();
         try {
-          const { words, usage } = await enrich(items);
-          const name = b.name || '單字';          // 前端沒填時的後備（日期另外顯示）
-          const id = cache.createWordset(name, words, b.note || null);
+          const { words, usage } = await enrich(todo);
+          let id, name, added;
+          if (appendTo){
+            const r = cache.appendWords(appendTo, words);
+            id = appendTo; added = r.added;
+            name = cache.wordsets('anon').find(x => x.id === appendTo)?.name ?? '字表';
+          } else {
+            name = b.name || '單字';            // 前端沒填時的後備（日期另外顯示）
+            id = cache.createWordset(name, words, b.note || null);
+            added = words.length;
+          }
           // 建字表有呼叫模型，和分析一樣要進歷史紀錄
-          cache.log({ kind:'wordset', refId:id, chars:(b.text||'').length, sentences:items.length,
-            cached:0, analyzed:items.length, ms: Date.now() - t0,
+          cache.log({ kind:'wordset', refId:id, chars:(b.text||'').length, sentences:todo.length,
+            cached:skippedExisting, analyzed:todo.length, ms: Date.now() - t0,
             text: `${name}\n${items.map(w => w.zh ? `${w.term}, ${w.zh}` : w.term).join('\n')}`,
             ...usage });
           res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ id, count: words.length, usage }));
+          return res.end(JSON.stringify({ id, name, count: added, appended: Boolean(appendTo),
+            skipped: skippedExisting, usage }));
         } catch (e){
           const kind = e.kind || 'other';
           res.writeHead(kind === 'rate-limit' ? 429 : 500, { 'content-type':'application/json; charset=utf-8' });
@@ -431,6 +455,8 @@ const server = createServer(async (req, res) => {
         stats: ids.length ? cache.wordStats(ids, userToken) : null,
         // 例句的句型分析狀態：已分析過的點了是瞬間，沒分析過的才要花額度
         examples: { total: exs.length, cached: exs.filter(t => cache.get(t)).length },
+        merged: { sets: ids.length, words: words.length,
+                  dedup: words.filter(w => (w.dupOf ?? []).length).length },
       }));
     }
 

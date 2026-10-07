@@ -270,12 +270,38 @@ export function openCache(file = 'data/cache.db'){
     },
 
     /** 取出一份字表的所有單字，附上該使用者的進度 */
+    /** 把單字加進既有字表。同一份裡已經有的字直接略過（不覆蓋已累積的進度）。 */
+    appendWords(setId, words){
+      const id = Number(setId);
+      const have = new Set(db.prepare('SELECT term FROM words WHERE set_id = ?').all(id)
+        .map(r => r.term.toLowerCase()));
+      const fresh = words.filter(w => !have.has(String(w.term).toLowerCase()));
+      if (!fresh.length) return { added: 0, skipped: words.length };
+      let idx = (db.prepare('SELECT COALESCE(MAX(idx), -1) m FROM words WHERE set_id = ?').get(id).m) + 1;
+      db.exec('BEGIN');
+      try {
+        const ins = db.prepare(`INSERT INTO words
+          (set_id, idx, term, syllables, spell_tip, data) VALUES (?,?,?,?,?,?)`);
+        for (const w of fresh)
+          ins.run(id, idx++, w.term, w.syllables ?? null, w.spellTip ?? null,
+            JSON.stringify({ senses: w.senses ?? [], confusable: w.confusable ?? [], family: w.family ?? [] }));
+        db.exec('COMMIT');
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
+      return { added: fresh.length, skipped: words.length - fresh.length };
+    },
+
+    /** 某份字表已經有哪些字（小寫），用來在呼叫模型之前先濾掉重複的 */
+    termsOf(setId){
+      return new Set(db.prepare('SELECT term FROM words WHERE set_id = ?').all(Number(setId))
+        .map(r => r.term.toLowerCase()));
+    },
+
     /** 可以一次吃多份字表 —— 複習時常常要跨單元一起練 */
     wordsOf(setIds, userToken){
       const ids = (Array.isArray(setIds) ? setIds : [setIds]).map(Number).filter(Number.isFinite);
       if (!ids.length) return [];
       const qs = ids.map(() => '?').join(',');
-      return db.prepare(`SELECT w.id, w.idx, w.set_id, w.term, w.syllables, w.spell_tip, w.data,
+      const rows = db.prepare(`SELECT w.id, w.idx, w.set_id, w.term, w.syllables, w.spell_tip, w.data,
           COALESCE(p.box,0) box, COALESCE(p.due_at,0) due_at,
           COALESCE(p.correct,0) correct, COALESCE(p.total,0) total
         FROM words w LEFT JOIN word_progress p ON p.word_id = w.id AND p.user_token = ?
@@ -284,6 +310,22 @@ export function openCache(file = 'data/cache.db'){
           return { id:r.id, idx:r.idx, setId:r.set_id, term:r.term, syllables:r.syllables,
                    spellTip:r.spell_tip, ...d,
                    box:r.box, dueAt:r.due_at, correct:r.correct, total:r.total }; });
+
+      if (ids.length < 2) return rows;
+      // 跨字表合併時同一個字會出現多次（例如整頁的字表包含了小範圍那份）。
+      // 清單上看兩次、同一輪可能被考兩次，所以按單字去重，
+      // 留下「練過比較多次」的那一筆，進度才不會被沒練過的覆蓋掉。
+      const best = new Map();
+      for (const w of rows){
+        const k = w.term.toLowerCase();
+        const cur = best.get(k);
+        if (!cur || w.total > cur.total || (w.total === cur.total && w.box > cur.box)){
+          best.set(k, { ...w, dupOf: cur ? [...(cur.dupOf ?? []), cur.setId] : (w.dupOf ?? []) });
+        } else {
+          cur.dupOf = [...(cur.dupOf ?? []), w.setId];
+        }
+      }
+      return [...best.values()];
     },
 
     /** 刪字表會連同該字表的作答與熟練度一起刪掉（同一個交易，要嘛全成要嘛全退）。
@@ -325,21 +367,20 @@ export function openCache(file = 'data/cache.db'){
         cur.correct + (a.correct ? 1 : 0), cur.total + 1);
     },
 
+    /** 統計直接由去重後的清單彙總 —— 另外寫一組 SQL 的話，
+     *  跨字表合併時重複的字會被算兩次，卡片上的數字就和清單對不起來。 */
     wordStats(setIds, userToken){
-      const ids = (Array.isArray(setIds) ? setIds : [setIds]).map(Number).filter(Number.isFinite);
-      if (!ids.length) return { words:0, attempts:0, correct:0, mastered:0, weak:0, byWord:[] };
-      const qs = ids.map(() => '?').join(',');
-      const row = db.prepare(`SELECT COUNT(*) words,
-          COALESCE(SUM(p.total),0) attempts, COALESCE(SUM(p.correct),0) correct,
-          COALESCE(SUM(CASE WHEN p.box >= 3 THEN 1 ELSE 0 END),0) mastered,
-          COALESCE(SUM(CASE WHEN p.total > 0 AND COALESCE(p.box,0) = 0 THEN 1 ELSE 0 END),0) weak
-        FROM words w LEFT JOIN word_progress p ON p.word_id = w.id AND p.user_token = ?
-        WHERE w.set_id IN (${qs})`).get(userToken, ...ids);
-      const byWord = db.prepare(`SELECT w.term, COALESCE(p.box,0) box,
-          COALESCE(p.correct,0) correct, COALESCE(p.total,0) total
-        FROM words w LEFT JOIN word_progress p ON p.word_id = w.id AND p.user_token = ?
-        WHERE w.set_id IN (${qs}) ORDER BY COALESCE(p.box,0), w.set_id, w.idx`).all(userToken, ...ids);
-      return { ...row, byWord };
+      const ws = this.wordsOf(setIds, userToken);
+      let attempts = 0, correct = 0, mastered = 0, weak = 0;
+      for (const w of ws){
+        attempts += w.total; correct += w.correct;
+        if (w.box >= 3) mastered++;
+        if (w.total > 0 && w.box === 0) weak++;
+      }
+      const byWord = ws
+        .map(w => ({ term: w.term, box: w.box, correct: w.correct, total: w.total }))
+        .sort((a, b) => a.box - b.box);
+      return { words: ws.length, attempts, correct, mastered, weak, byWord };
     },
 
     /** 匯出成可攜、可進版控、可合併的列陣列（依 hash 排序，git diff 才乾淨） */

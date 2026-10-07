@@ -657,9 +657,10 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
             <span class="hint">也可以把圖片直接拖進來，或按 <b id="pasteKey">⌘V</b> 貼上。辨識完會填進上面的框，核對後再按建立。</span>
           </div>
           <div class="row">
-            <button class="primary" id="wsCreate">建立字表</button>
+            <button class="primary" id="wsAppend" hidden></button>
+            <button class="primary" id="wsCreate">建立新字表</button>
             <button id="wsCancel">取消</button>
-            <span class="hint" id="wsHint">建立時會花一次額度整理詞性、意思、例句與音節；之後測驗都不再花費。</span>
+            <span class="hint" id="wsHint">會建立一份<b>新的</b>字表（不會加進目前選取的）。建立時花一次額度整理詞性、意思、例句與音節；之後測驗都不再花費。</span>
           </div>
         </div>
       </div>
@@ -1843,6 +1844,7 @@ const WMODES = [['zh2en','中考英'],['en2zh','英考中'],['listen','聽考'],
 const WMODE_NAME = Object.fromEntries(WMODES);
 const el = id => document.getElementById(id);
 let wsSel = [];                    // 選取的字表 id（可多選）
+let wsMerged = { dedup: 0 };       // 跨字表合併時有幾個字重複被併起來
 let wsMulti = false;               // 多選模式
 let wsCurrent = null, wsQuiz = null, wsWordsCache = [];
 const selParam = () => wsSel.join(',');
@@ -1907,8 +1909,11 @@ async function selectSet(id, toggle = false){
   for (const b of el('wsList').querySelectorAll('.wchip'))
     b.setAttribute('aria-pressed', String(wsSel.includes(Number(b.dataset.id))));
   renderSelInfo();
+  if (!el('wsForm').hidden) renderFormActions();
   const d = await fetch(`/api/wordset?ids=${selParam()}&user=${encodeURIComponent(USER)}`).then(r => r.json());
   wsWordsCache = d.words || [];
+  wsMerged = d.merged || { dedup: 0 };
+  renderSelInfo();
   wsExamples = d.examples || { total: 0, cached: 0 };
   renderAnalyzeBtn();
   const st = d.stats || { words:0, attempts:0, correct:0, mastered:0, weak:0 };
@@ -2351,6 +2356,50 @@ el('view-words').addEventListener('click', e => {
   analyzeLive(text);
 });
 
+
+/** 只選一份字表時，可以把新的字「加進那一份」而不是另開一份。
+ *  家教每次加幾個字到同一單元，不該每次都開新字表。 */
+function renderFormActions(){
+  const btn = el('wsAppend');
+  const one = wsSel.length === 1 ? wsSel[0] : null;
+  const name = one
+    ? document.querySelector(`.wchip[data-id="${one}"]`)?.firstChild?.textContent?.trim() : '';
+  btn.hidden = !one;
+  if (one){
+    btn.textContent = `加進「${name}」`;
+    btn.dataset.setId = String(one);
+    btn.title = '那份字表已經有的字會自動略過，不會重複，也不會重複花額度。';
+  }
+}
+
+/** 建立或加入。appendTo 有值就是加進既有字表。 */
+async function submitWordset(appendTo){
+  const text = el('wsText').value.trim();
+  if (!text) return;
+  el('wsCreate').disabled = true; el('wsAppend').disabled = true;
+  wsBusy(true, appendTo ? '加入中' : '整理中', '每個字要查詞性、意思、例句與音節，大約一分鐘');
+  el('wsHint').textContent = appendTo ? '加入中…' : '整理中…';
+  try {
+    const d = await fetch('/api/wordsets', {
+      method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
+      body: JSON.stringify({ name: el('wsName').value.trim() || null, text, appendTo: appendTo || undefined }),
+    }).then(r => r.json());
+    if (d.error){ el('wsHint').textContent = d.message || d.error; return; }
+    const dup = d.skipped ? `（有 ${d.skipped} 個字那份已經有了，略過）` : '';
+    el('wsHint').textContent = d.count
+      ? (d.appended ? `已加入 ${d.count} 個字${dup}。` : `建立完成：${d.count} 個字。`)
+      : (d.message || `沒有新增${dup}。`);
+    if (d.count){
+      el('wsText').value = ''; el('wsName').value = '';
+      el('wsForm').hidden = true; el('wsNew').textContent = '＋ 新增字表';
+    }
+    wsSel = [d.id]; wsCurrent = d.id;
+    await loadWordsets();
+  } catch (e){ el('wsHint').textContent = (appendTo ? '加入' : '建立') + '失敗：' + e.message; }
+  finally { wsBusy(false); el('wsCreate').disabled = false; el('wsAppend').disabled = false;
+            el('wsPhoto').disabled = false; }
+}
+
 /** 預設名稱。同名就加序號 —— 字表上已經獨立顯示建立日期，名稱不用再重複。 */
 let wsNames = [];
 function defaultSetName(){
@@ -2478,32 +2527,21 @@ wordsView.addEventListener('paste', e => {
 
 el('wsNew').addEventListener('click', () => {
   const f = el('wsForm'); f.hidden = !f.hidden;
-  if (!f.hidden) fillDefaultName();
+  if (!f.hidden){
+    // 建立的永遠是一份新字表，和目前選取哪幾份無關。
+    // 讓多選開著會讓人以為是「加進選取的字表」，所以直接關掉。
+    if (wsMulti){ wsMulti = false; renderSelInfo(); }
+    fillDefaultName();
+    renderFormActions();
+  }
   el('wsNew').textContent = f.hidden ? '＋ 新增字表' : '收起';
 });
 el('wsCancel').addEventListener('click', () => {
   el('wsForm').hidden = true; el('wsNew').textContent = '＋ 新增字表';
 });
-el('wsCreate').addEventListener('click', async () => {
-  const text = el('wsText').value.trim();
-  if (!text) return;
-  el('wsCreate').disabled = true;
-  wsBusy(true, '整理中', '每個字要查詞性、意思、例句與音節，大約一分鐘');
-  el('wsHint').textContent = '整理中…';
-  try {
-    const d = await fetch('/api/wordsets', {
-      method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
-      body: JSON.stringify({ name: el('wsName').value.trim() || null, text }),
-    }).then(r => r.json());
-    if (d.error){ el('wsHint').textContent = d.message || d.error; return; }
-    el('wsHint').textContent = `建立完成：${d.count} 個字。`;
-    el('wsText').value = ''; el('wsName').value = '';
-    el('wsForm').hidden = true; el('wsNew').textContent = '＋ 新增字表';
-    wsSel = [d.id]; wsCurrent = d.id;
-    await loadWordsets();
-  } catch (e){ el('wsHint').textContent = '建立失敗：' + e.message; }
-  finally { wsBusy(false); el('wsCreate').disabled = false; el('wsPhoto').disabled = false; }
-});
+el('wsCreate').addEventListener('click', () => submitWordset(0));
+el('wsAppend').addEventListener('click', () => submitWordset(Number(el('wsAppend').dataset.setId)));
+
 el('wsMultiBtn').addEventListener('click', () => { wsMulti = !wsMulti; renderSelInfo(); });
 el('wsDel').addEventListener('click', async () => {
   const del = el('wsDel');
@@ -2543,7 +2581,8 @@ const delLabel = () => wsSel.length > 1 ? `刪除選取的 ${wsSel.length} 份` 
 function renderSelInfo(){
   const info = el('wsSelInfo');
   if (info) info.textContent = wsSel.length > 1
-    ? `已選 ${wsSel.length} 份字表，清單與測驗都會合在一起。`
+    ? `已選 ${wsSel.length} 份字表，清單與測驗合在一起` +
+      (wsMerged.dedup ? `（有 ${wsMerged.dedup} 個字重複出現，已合併成一個）。` : '。')
     : (wsMulti ? '多選模式：點字表可以加入或移除，至少要留一份。' : '');
   const d = el('wsDel');
   if (d && d.dataset.armed !== '1') d.textContent = delLabel();
