@@ -494,6 +494,19 @@ button:disabled{opacity:.5;cursor:default}
 footer{font-size:.82rem;color:var(--muted);line-height:1.8;border-top:1px solid var(--rule);padding-top:16px}
 footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* 新增表單：先問清楚要加到哪裡，否則看不出是新建還是加進既有字表 */
+.dest{border:1px solid var(--rule);border-radius:4px;padding:11px 13px 13px;margin:12px 0 0}
+.dest legend{font-family:var(--font-mono);font-size:.7rem;font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--muted);padding:0 6px}
+/* .box label 是全大寫等寬的區塊標題樣式，這裡是選項文字，要蓋掉 */
+.dest label{display:flex;align-items:center;gap:9px;font-size:.9rem;color:var(--fg);
+  padding:7px 9px;border-radius:3px;cursor:pointer;line-height:1.5;
+  text-transform:none;font-family:var(--font-ui);font-weight:400;letter-spacing:0}
+.dest label:hover{background:var(--surface-2)}
+.dest label input{accent-color:var(--accent);margin:0;flex-shrink:0}
+.dest label .n{font-size:.78rem;color:var(--faint);font-family:var(--font-mono)}
+.dest #wsName{margin-top:7px;width:100%}
+.dest #wsName[disabled]{opacity:.45}
 /* 字表下方的功能列：和字表本身用一條細線分開，
    否則「多選」「刪除」混在字表之間會被當成另一個字表。 */
 .setbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
@@ -633,14 +646,16 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
           <button id="wsMultiBtn" class="linky" aria-pressed="false">多選</button>
           <button id="wsNew" class="linky">＋ 新增字表</button></div>
         <div class="chips" id="wsList"></div>
-        <div class="setbar">
+        <div class="setbar" id="wsBar">
           <span class="hint" id="wsSelInfo"></span>
           <button class="linky danger" id="wsDel">刪除目前字表</button>
         </div>
         <div id="wsForm" hidden>
-          <div class="row" style="margin-top:12px">
-            <input type="text" id="wsName" placeholder="字表名稱" style="flex:1;min-width:200px">
-          </div>
+          <fieldset class="dest">
+            <legend>這些字要加到哪裡</legend>
+            <div id="wsDest"></div>
+            <input type="text" id="wsName" placeholder="新字表的名稱，例如 Unit 3">
+          </fieldset>
           <div class="ta-wrap">
             <textarea id="wsText" rows="8"
               placeholder="一行一個單字，可以用逗號接中文：&#10;lesson, 課；課程&#10;difficult, 困難的&#10;teach, 教導&#10;&#10;沒有中文也可以，系統會自動補上意思與例句。"></textarea>
@@ -657,7 +672,6 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
             <span class="hint">也可以把圖片直接拖進來，或按 <b id="pasteKey">⌘V</b> 貼上。辨識完會填進上面的框，核對後再按建立。</span>
           </div>
           <div class="row">
-            <button class="primary" id="wsAppend" hidden></button>
             <button class="primary" id="wsCreate">建立新字表</button>
             <button id="wsCancel">取消</button>
             <span class="hint" id="wsHint">會建立一份<b>新的</b>字表（不會加進目前選取的）。建立時花一次額度整理詞性、意思、例句與音節；之後測驗都不再花費。</span>
@@ -1845,6 +1859,7 @@ const WMODE_NAME = Object.fromEntries(WMODES);
 const el = id => document.getElementById(id);
 let wsSel = [];                    // 選取的字表 id（可多選）
 let wsMerged = { dedup: 0 };       // 跨字表合併時有幾個字重複被併起來
+let wsAllSets = [];                // 全部字表，新增表單要列出來當目標
 let wsMulti = false;               // 多選模式
 let wsCurrent = null, wsQuiz = null, wsWordsCache = [];
 const selParam = () => wsSel.join(',');
@@ -1864,6 +1879,7 @@ async function loadWordsets(){
   try {
     const d = await fetch(`/api/wordsets?user=${encodeURIComponent(USER)}`).then(r => r.json());
     wsNames = d.sets.map(x => x.name);
+    wsAllSets = d.sets;
     if (!d.sets.length){
       el('wsList').innerHTML = '<span class="hint">還沒有字表。按「＋ 新增字表」貼上老師給的範圍。</span>';
       el('wsPanel').hidden = true;
@@ -2360,23 +2376,36 @@ el('view-words').addEventListener('click', e => {
 /** 只選一份字表時，可以把新的字「加進那一份」而不是另開一份。
  *  家教每次加幾個字到同一單元，不該每次都開新字表。 */
 function renderFormActions(){
-  const btn = el('wsAppend');
-  const one = wsSel.length === 1 ? wsSel[0] : null;
-  const name = one
-    ? document.querySelector(`.wchip[data-id="${one}"]`)?.firstChild?.textContent?.trim() : '';
-  btn.hidden = !one;
-  if (one){
-    btn.textContent = `加進「${name}」`;
-    btn.dataset.setId = String(one);
-    btn.title = '那份字表已經有的字會自動略過，不會重複，也不會重複花額度。';
-  }
+  const box = el('wsDest');
+  if (!box) return;
+  const cur = box.querySelector('input:checked')?.value ?? 'new';
+  box.innerHTML =
+    `<label><input type="radio" name="wsdest" value="new" ${cur === 'new' ? 'checked' : ''}>
+       建立一份新字表</label>` +
+    wsAllSets.map(x =>
+    `<label><input type="radio" name="wsdest" value="${x.id}" ${cur === String(x.id) ? 'checked' : ''}>
+       加進「${esc(x.name)}」<span class="n">${x.word_count} 字</span></label>`).join('');
+  syncDest();
+}
+
+/** 選了哪個目標，名稱框與送出鍵就跟著變 */
+function syncDest(){
+  const v = el('wsDest').querySelector('input:checked')?.value ?? 'new';
+  const isNew = v === 'new';
+  el('wsName').disabled = !isNew;
+  el('wsName').placeholder = isNew ? '新字表的名稱，例如 Unit 3' : '加進既有字表時不用取名';
+  const set = wsAllSets.find(x => String(x.id) === v);
+  el('wsCreate').textContent = isNew ? '建立新字表' : `加進「${set?.name ?? ''}」`;
+  el('wsHint').textContent = isNew
+    ? '建立時花一次額度整理詞性、意思、例句與音節；之後測驗都不再花費。'
+    : '那份已經有的字會自動略過，不會重複，也不會重複花額度。';
 }
 
 /** 建立或加入。appendTo 有值就是加進既有字表。 */
 async function submitWordset(appendTo){
   const text = el('wsText').value.trim();
   if (!text) return;
-  el('wsCreate').disabled = true; el('wsAppend').disabled = true;
+  el('wsCreate').disabled = true;
   wsBusy(true, appendTo ? '加入中' : '整理中', '每個字要查詞性、意思、例句與音節，大約一分鐘');
   el('wsHint').textContent = appendTo ? '加入中…' : '整理中…';
   try {
@@ -2391,13 +2420,13 @@ async function submitWordset(appendTo){
       : (d.message || `沒有新增${dup}。`);
     if (d.count){
       el('wsText').value = ''; el('wsName').value = '';
-      el('wsForm').hidden = true; el('wsNew').textContent = '＋ 新增字表';
+      el('wsForm').hidden = true; el('wsBar').hidden = false;
+      el('wsNew').textContent = '＋ 新增字表';
     }
     wsSel = [d.id]; wsCurrent = d.id;
     await loadWordsets();
   } catch (e){ el('wsHint').textContent = (appendTo ? '加入' : '建立') + '失敗：' + e.message; }
-  finally { wsBusy(false); el('wsCreate').disabled = false; el('wsAppend').disabled = false;
-            el('wsPhoto').disabled = false; }
+  finally { wsBusy(false); el('wsCreate').disabled = false; el('wsPhoto').disabled = false; }
 }
 
 /** 預設名稱。同名就加序號 —— 字表上已經獨立顯示建立日期，名稱不用再重複。 */
@@ -2411,10 +2440,9 @@ function defaultSetName(){
   }
 }
 /** 開表單時填上預設名稱；使用者已經打了字就不要蓋掉 */
-function fillDefaultName(){
-  const box = el('wsName');
-  if (!box.value.trim()) box.value = defaultSetName();
-}
+/** 名稱不預填 —— 使用者本來就會自己取（Unit1、Unit2…），
+ *  預填「單字」只是多一步刪除。送出時沒填才用後備名稱。 */
+function fillDefaultName(){ /* 保留空實作，開表單時不再塞預設值 */ }
 
 /** 輸入框上的進度指示。模型要跑十秒到一分鐘，沒有動的東西會讓人以為當掉了。 */
 let busyTimer = null;
@@ -2527,6 +2555,7 @@ wordsView.addEventListener('paste', e => {
 
 el('wsNew').addEventListener('click', () => {
   const f = el('wsForm'); f.hidden = !f.hidden;
+  el('wsBar').hidden = !f.hidden;        // 編輯中不要讓刪除／多選在旁邊
   if (!f.hidden){
     // 建立的永遠是一份新字表，和目前選取哪幾份無關。
     // 讓多選開著會讓人以為是「加進選取的字表」，所以直接關掉。
@@ -2537,10 +2566,14 @@ el('wsNew').addEventListener('click', () => {
   el('wsNew').textContent = f.hidden ? '＋ 新增字表' : '收起';
 });
 el('wsCancel').addEventListener('click', () => {
-  el('wsForm').hidden = true; el('wsNew').textContent = '＋ 新增字表';
+  el('wsForm').hidden = true; el('wsBar').hidden = false;
+  el('wsNew').textContent = '＋ 新增字表';
 });
-el('wsCreate').addEventListener('click', () => submitWordset(0));
-el('wsAppend').addEventListener('click', () => submitWordset(Number(el('wsAppend').dataset.setId)));
+el('wsCreate').addEventListener('click', () => {
+  const v = el('wsDest').querySelector('input:checked')?.value ?? 'new';
+  submitWordset(v === 'new' ? 0 : Number(v));
+});
+el('wsDest').addEventListener('change', syncDest);
 
 el('wsMultiBtn').addEventListener('click', () => { wsMulti = !wsMulti; renderSelInfo(); });
 el('wsDel').addEventListener('click', async () => {
