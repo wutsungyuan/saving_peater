@@ -205,6 +205,18 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .wsense .exz{color:var(--faint);font-size:.84rem;display:block}
 .wtip{margin-top:9px;font-size:.82rem;color:var(--st-mid);line-height:1.6}
 .wextra{margin-top:7px;font-size:.8rem;color:var(--faint);line-height:1.7}
+.sayx{display:inline-flex;align-items:center;justify-content:center;
+  width:22px;height:22px;padding:0;border-radius:50%;flex-shrink:0;
+  background:var(--surface-2);border:1px solid var(--rule);color:var(--muted);
+  vertical-align:middle;margin-left:7px;cursor:pointer}
+.sayx:hover{border-color:var(--accent);color:var(--accent);background:var(--tip-bg)}
+.sayx .ico{width:0;height:0;border-style:solid;border-width:4px 0 4px 6px;
+  border-color:transparent transparent transparent currentColor;margin-left:1px}
+.sayx.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.sayx.on .ico{width:6px;height:6px;border:0;border-radius:1px;background:currentColor;margin:0}
+.wcard .top .sayx{margin-left:4px}
+.wsense .ex .sayx{margin-left:6px}
+.q-speak.on .ico{width:9px;height:9px;border:0;border-radius:1px;background:currentColor}
 .q-speak{display:inline-flex;align-items:center;gap:7px;font-size:.9rem;padding:9px 18px;
   border-radius:999px;background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
 .q-speak .ico{width:0;height:0;border-style:solid;border-width:6px 0 6px 10px;
@@ -1569,6 +1581,13 @@ async function selectSet(id){
   renderWordList();
 }
 
+/** 小朗讀鈕。沒有語音能力時不產生，避免出現按了沒反應的按鈕 */
+function sayBtn(text, label){
+  if (!Spk.available()) return '';
+  return `<button class="sayx" type="button" data-say="${esc(text)}"
+    aria-label="${esc(label)}" title="${esc(label)}"><span class="ico"></span></button>`;
+}
+
 function renderWordList(){
   el('wsWords').innerHTML = `<div class="wlist">${wsWordsCache.map(w => {
     const tag = w.total === 0 ? '<span class="box-tag">還沒考過</span>'
@@ -1576,9 +1595,10 @@ function renderWordList(){
       : `<span class="box-tag hot">再加強 ${w.correct}/${w.total}</span>`;
     return `<div class="wcard"><div class="top">
       <span class="term">${esc(w.term)}</span>
-      ${w.syllables ? `<span class="syl">${esc(w.syllables)}</span>` : ''}${tag}</div>
+      ${w.syllables ? `<span class="syl">${esc(w.syllables)}</span>` : ''}
+      ${sayBtn(w.term, '唸這個單字')}${tag}</div>
       ${(w.senses||[]).map(sn => `<div class="wsense"><b>${esc(sn.pos)}</b>${esc(sn.zh)}
-        ${sn.example ? `<span class="ex">${esc(sn.example)}</span>` : ''}
+        ${sn.example ? `<span class="ex">${esc(sn.example)}${sayBtn(sn.example, '朗讀例句')}</span>` : ''}
         ${sn.exampleZh ? `<span class="exz">${esc(sn.exampleZh)}</span>` : ''}</div>`).join('')}
       ${w.spellTip ? `<div class="wtip">拼字：${esc(w.spellTip)}</div>` : ''}
       ${(w.confusable||[]).length ? `<div class="wextra">易混淆：${w.confusable.map(c=>`${esc(c.word)}（${esc(c.zh)}）`).join('、')}</div>` : ''}
@@ -1626,9 +1646,14 @@ async function startWordQuiz(){
   } catch (e){ el('wsOut').innerHTML = `<p class="msg">出題失敗：${esc(e.message)}</p>`; }
 }
 
-el('wsOut').addEventListener('click', e => {
-  const b = e.target.closest('.q-speak');
-  if (b) Spk.speak(b.dataset.say, {});
+// 單字分頁裡所有 data-say 的按鈕統一處理（單字、例句、聽考的播放鈕）
+el('view-words').addEventListener('click', e => {
+  const b = e.target.closest('[data-say]');
+  if (!b) return;
+  if (b.classList.contains('on')){ Spk.stop(); return; }   // 再按一次停止
+  for (const x of document.querySelectorAll('[data-say].on')) x.classList.remove('on');
+  b.classList.add('on');
+  Spk.speak(b.dataset.say, { onEnd: () => b.classList.remove('on') });
 });
 
 async function submitWordQuiz(){
