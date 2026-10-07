@@ -494,6 +494,15 @@ button:disabled{opacity:.5;cursor:default}
 footer{font-size:.82rem;color:var(--muted);line-height:1.8;border-top:1px solid var(--rule);padding-top:16px}
 footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* 字表下方的功能列：和字表本身用一條細線分開，
+   否則「多選」「刪除」混在字表之間會被當成另一個字表。 */
+.setbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  margin-top:13px;padding-top:11px;border-top:1px solid var(--rule)}
+.setbar .hint{flex:1;min-width:0}
+.setbar .linky{flex-shrink:0}
+.lblrow #wsMultiBtn{margin-left:auto}
+.lblrow #wsMultiBtn[aria-pressed="true"]{background:var(--fg);color:var(--surface);
+  border-bottom-color:transparent;border-radius:3px;padding:3px 11px}
 .subrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .subtabs{display:inline-flex;border:1px solid var(--rule);border-radius:3px;overflow:hidden;flex-shrink:0}
 .subtabs button{border:0;border-radius:0;background:var(--surface);padding:8px 18px;
@@ -621,9 +630,13 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
     <div id="view-words" hidden>
       <div class="box">
         <div class="lblrow"><label>單字表</label>
+          <button id="wsMultiBtn" class="linky" aria-pressed="false">多選</button>
           <button id="wsNew" class="linky">＋ 新增字表</button></div>
         <div class="chips" id="wsList"></div>
-        <p class="hint" id="wsSelInfo" hidden style="margin-top:9px"></p>
+        <div class="setbar">
+          <span class="hint" id="wsSelInfo"></span>
+          <button class="linky danger" id="wsDel">刪除目前字表</button>
+        </div>
         <div id="wsForm" hidden>
           <div class="row" style="margin-top:12px">
             <input type="text" id="wsName" placeholder="字表名稱" style="flex:1;min-width:200px">
@@ -1871,9 +1884,7 @@ async function loadWordsets(){
       + (restOpen ? rest.map(chip).join('') : '')
       + (rest.length ? `<button class="linky" id="wsMore" style="margin-left:4px">${
           restOpen ? '收起舊字表' : `更多 ${rest.length} 份`}</button>` : '')
-      + `<button class="linky" id="wsMultiBtn" aria-pressed="${wsMulti}"
-           style="margin-left:10px">${wsMulti ? '結束多選' : '多選'}</button>`
-      + `<button class="linky danger" id="wsDel" style="margin-left:10px">${delLabel()}</button>`;
+      ;
     // 選取的字表被刪掉或還沒選過，就回到最新那一份
     wsSel = wsSel.filter(id => d.sets.some(x => x.id === id));
     if (!wsSel.length) await selectSet(d.sets[0].id);
@@ -2340,11 +2351,10 @@ el('view-words').addEventListener('click', e => {
   analyzeLive(text);
 });
 
-/** 家教每堂課給一份，日期是最自然的區別。同一天建第二份就加序號。 */
+/** 預設名稱。同名就加序號 —— 字表上已經獨立顯示建立日期，名稱不用再重複。 */
 let wsNames = [];
 function defaultSetName(){
-  const d = new Date();
-  const base = `${d.getMonth() + 1}/${d.getDate()} 單字`;
+  const base = '單字';      // 日期不用寫進名稱，字表本身就顯示建立日期了
   if (!wsNames.includes(base)) return base;
   for (let n = 2; ; n++){
     const name = `${base} (${n})`;
@@ -2494,48 +2504,51 @@ el('wsCreate').addEventListener('click', async () => {
   } catch (e){ el('wsHint').textContent = '建立失敗：' + e.message; }
   finally { wsBusy(false); el('wsCreate').disabled = false; el('wsPhoto').disabled = false; }
 });
+el('wsMultiBtn').addEventListener('click', () => { wsMulti = !wsMulti; renderSelInfo(); });
+el('wsDel').addEventListener('click', async () => {
+  const del = el('wsDel');
+  if (!wsSel.length) return;
+  // 刪除會連同那些字表的所有練習進度一起消失，所以要按兩次
+  if (del.dataset.armed !== '1'){
+    const names = wsSel.map(id =>
+      document.querySelector(`.wchip[data-id="${id}"]`)?.firstChild?.textContent?.trim() ?? '')
+      .filter(Boolean);
+    del.dataset.armed = '1';
+    del.textContent = names.length === 1
+      ? `再按一次刪除「${names[0]}」`
+      : `再按一次刪除這 ${names.length} 份`;
+    del.title = names.join('、');
+    clearTimeout(del._t);
+    del._t = setTimeout(() => { del.dataset.armed = '0'; del.textContent = delLabel(); }, 4000);
+    return;
+  }
+  clearTimeout(del._t);
+  del.dataset.armed = '0';
+  await fetch(`/api/wordsets?ids=${selParam()}`, { method:'DELETE',
+    headers: TOKEN ? { 'x-auth-token': TOKEN } : {} });
+  wsSel = []; wsCurrent = null; await loadWordsets();
+});
+
 el('wsList').addEventListener('click', async e => {
   const b = e.target.closest('.wchip');
   if (b) return selectSet(Number(b.dataset.id), wsMulti);
-  if (e.target.id === 'wsMultiBtn'){
-    wsMulti = !wsMulti;
-    return loadWordsets();
-  }
   if (e.target.id === 'wsMore'){
     el('wsList').dataset.expanded = el('wsList').dataset.expanded === '1' ? '0' : '1';
     return loadWordsets();
-  }
-  const del = e.target.closest('#wsDel');
-  if (del && wsSel.length){
-    // 刪除會連同那些字表的所有練習進度一起消失，所以要按兩次
-    if (del.dataset.armed !== '1'){
-      const names = wsSel.map(id =>
-        document.querySelector(`.wchip[data-id="${id}"]`)?.firstChild?.textContent?.trim() ?? '')
-        .filter(Boolean);
-      del.dataset.armed = '1';
-      del.textContent = names.length === 1
-        ? `再按一次刪除「${names[0]}」`
-        : `再按一次刪除這 ${names.length} 份字表`;
-      del.title = names.join('、');
-      clearTimeout(del._t);
-      del._t = setTimeout(() => { del.dataset.armed = '0'; del.textContent = delLabel(); }, 4000);
-      return;
-    }
-    clearTimeout(del._t);
-    await fetch(`/api/wordsets?ids=${selParam()}`, { method:'DELETE',
-      headers: TOKEN ? { 'x-auth-token': TOKEN } : {} });
-    wsSel = []; wsCurrent = null; await loadWordsets();
   }
 });
 
 /** 多選時按鈕與說明要跟著變 */
 const delLabel = () => wsSel.length > 1 ? `刪除選取的 ${wsSel.length} 份` : '刪除目前字表';
 function renderSelInfo(){
-  const el2 = el('wsSelInfo');
-  if (!el2) return;
-  el2.hidden = wsSel.length < 2;
-  el2.textContent = `已選 ${wsSel.length} 份字表，清單與測驗都會合在一起。`;
-  const d = el('wsDel'); if (d && d.dataset.armed !== '1') d.textContent = delLabel();
+  const info = el('wsSelInfo');
+  if (info) info.textContent = wsSel.length > 1
+    ? `已選 ${wsSel.length} 份字表，清單與測驗都會合在一起。`
+    : (wsMulti ? '多選模式：點字表可以加入或移除，至少要留一份。' : '');
+  const d = el('wsDel');
+  if (d && d.dataset.armed !== '1') d.textContent = delLabel();
+  const m = el('wsMultiBtn');
+  if (m){ m.setAttribute('aria-pressed', String(wsMulti)); m.textContent = wsMulti ? '結束多選' : '多選'; }
 }
 
 /** 單字分頁底下的兩個子頁：預設看清單，要考試才切到測驗 */

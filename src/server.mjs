@@ -334,8 +334,7 @@ const server = createServer(async (req, res) => {
         const t0 = Date.now();
         try {
           const { words, usage } = await enrich(items);
-          const d = new Date();
-          const name = b.name || `${d.getMonth()+1}/${d.getDate()} 單字`;   // 前端沒填時的後備
+          const name = b.name || '單字';          // 前端沒填時的後備（日期另外顯示）
           const id = cache.createWordset(name, words, b.note || null);
           // 建字表有呼叫模型，和分析一樣要進歷史紀錄
           cache.log({ kind:'wordset', refId:id, chars:(b.text||'').length, sentences:items.length,
