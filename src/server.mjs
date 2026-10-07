@@ -67,10 +67,10 @@ function authed(req, url){
  *  換成聽考或選擇題測的是別的東西。題型、單字、例句一律不換，
  *  只把選項順序打散，避免靠記得剛才的位置作答。 */
 function redoQuestions(quizId, ids){
-  const all = cache.getQuiz(quizId);
-  if (!all) return null;
+  const q = cache.getQuiz(quizId);
+  if (!q) return null;
   const want = new Set(ids);
-  const picked = all.filter(q => want.has(q.id));
+  const picked = q.questions.filter(x => want.has(x.id));
   return picked.map((q, i) => {
     const copy = { ...q, id: `${q.id.startsWith('w') ? 'w' : 'q'}f${i}${Date.now().toString(36).slice(-3)}` };
     if (Array.isArray(copy.choices)){
@@ -243,7 +243,7 @@ const server = createServer(async (req, res) => {
           return res.end(JSON.stringify({ error:'quiz-expired', message:'原本那份練習已失效，請重新出題。' }));
         }
         const quizId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-        cache.putQuiz(quizId, 'sentence', questions);
+        cache.putQuiz(quizId, 'sentence-fix', questions);
         res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ quizId, pool: questions.length, focusWeak: false, weakDims: null,
           redo: true, questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest) }));
@@ -275,26 +275,27 @@ const server = createServer(async (req, res) => {
       if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
       let body = {};
       try { body = JSON.parse(await readBody(req)) || {}; } catch {}
-      const qs = cache.getQuiz(body.quizId);
-      if (!qs){
+      const quiz = cache.getQuiz(body.quizId);
+      if (!quiz){
         res.writeHead(410, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error: 'quiz-expired', message: '這份練習已失效，請重新出題。' }));
       }
       const userToken = String(body.userToken || 'anon').slice(0, 64);
       const given = body.answers || {};
-      const results = qs.map(q => {
+      const isFix = quiz.kind.endsWith('-fix');     // 訂正不計入統計
+      const results = quiz.questions.map(q => {
         const g = grade(q, given[q.id] ?? []);
         cache.recordAttempt({
           userToken, qtype: q.type, sentenceHash: q.meta.hash,
           patternId: q.meta.patternId, tenseTime: q.meta.tenseTime,
           tenseAspect: q.meta.tenseAspect, pos: q.meta.pos, pronCase: q.meta.case,
-          correct: g.correct, answer: g.given.join(' | '), expected: g.expected.join(' | '),
+          correct: g.correct, isFix, answer: g.given.join(' | '), expected: g.expected.join(' | '),
         });
         return { id: q.id, hash: q.meta.hash, correct: g.correct, expected: q.answer, given: g.given, explain: q.explain };
       });
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify({
-        results, correct: results.filter(r => r.correct).length, total: results.length,
+        results, isFix, correct: results.filter(r => r.correct).length, total: results.length,
       }));
     }
 
@@ -488,7 +489,7 @@ const server = createServer(async (req, res) => {
           return res.end(JSON.stringify({ error:'quiz-expired', message:'原本那份測驗已失效，請重新出題。' }));
         }
         const quizId = 'w' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
-        cache.putQuiz(quizId, 'word', questions);
+        cache.putQuiz(quizId, 'word-fix', questions);
         res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ quizId, total: questions.length, redo: true,
           questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest) }));
@@ -511,21 +512,24 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/wordattempts'){
       let b = {};
       try { b = JSON.parse(await readBody(req)) || {}; } catch {}
-      const qs = cache.getQuiz(b.quizId);
-      if (!qs){
+      const quiz = cache.getQuiz(b.quizId);
+      if (!quiz){
         res.writeHead(410, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error:'quiz-expired', message:'這份測驗已失效，請重新出題。' }));
       }
       const userToken = String(b.userToken || 'anon').slice(0, 64);
       const given = b.answers || {};
-      const results = qs.map(q => {
+      const isFix = quiz.kind.endsWith('-fix');     // 訂正不計入統計，也不推進 Leitner
+      const results = quiz.questions.map(q => {
         const g = gradeWord(q, given[q.id] ?? []);
         cache.recordWordAttempt({ userToken, wordId: q.wordId, senseIdx: q.meta?.senseIdx,
-          mode: q.mode, correct: g.correct, answer: g.given.join(' | '), expected: g.expected.join(' | ') });
+          mode: q.mode, correct: g.correct, isFix,
+          answer: g.given.join(' | '), expected: g.expected.join(' | ') });
         return { id:q.id, wordId:q.wordId, correct:g.correct, expected:q.answer, given:g.given, explain:q.explain, term:q.term };
       });
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ results, correct: results.filter(r=>r.correct).length, total: results.length }));
+      return res.end(JSON.stringify({ results, isFix,
+        correct: results.filter(r=>r.correct).length, total: results.length }));
     }
 
     if (url.pathname === '/api/history'){

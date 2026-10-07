@@ -1553,12 +1553,15 @@ async function submitQuiz(){
         ? `<div class="sum-break">需要加強：${Object.entries(wrongTypes)
             .map(([t, n]) => `${labels[t] || t} 錯 ${n} 題`).join('、')}</div>`
         : `<div class="sum-break">全對。換一份再練，或到「分析」貼新文章擴充題庫。</div>`)
-      + `<div class="sum-break">作答已記錄，可到「弱點」看各句型與時態的正確率。</div>`;
+      + (d.isFix
+        ? `<div class="sum-break">這是訂正，<b>不列入弱點統計</b> —— 答案剛才已經看過了。</div>`
+        : `<div class="sum-break">作答已記錄，可到「弱點」看各句型與時態的正確率。</div>`);
     quizSummary.hidden = false;
     wrongFirst(quizOut, d.results, r => `q-${r.id}`);
     quizWrong = { quizId: currentQuiz.quizId, ids: d.results.filter(r => !r.correct).map(r => r.id) };
     el('quizFix').hidden = !quizWrong.ids.length;
     el('quizFix').textContent = `訂正錯題（${quizWrong.ids.length} 題）`;
+    el('quizFix').title = '把答錯的原題再做一次。不列入弱點統計。';
     quizSummary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     quizAgain.hidden = false;
   } catch (e){
@@ -2011,15 +2014,20 @@ async function submitWordQuiz(){
     }
     const pct = Math.round(d.correct / d.total * 100);
     el('wsSummary').innerHTML = `<div class="sum-score"><b>${d.correct}</b> / ${d.total} 答對（${pct}%）</div>`
-      + (wrong.length ? `<div class="sum-break">答錯的字：${esc([...new Set(wrong)].join('、'))}
-          —— 這些會馬上回到待加強，下一輪優先出現。</div>`
-        : `<div class="sum-break">全對。這些字會隔比較久才再考，先去練別的。</div>`);
+      + (d.isFix
+        ? `<div class="sum-break">這是訂正，<b>不列入正確率，也不會把那些字移出待加強</b> ——
+            答案剛才已經看過了，再答對一次不代表背起來了。
+            ${wrong.length ? `還是錯的：${esc([...new Set(wrong)].join('、'))}` : '下一輪會再考這些字。'}</div>`
+        : wrong.length ? `<div class="sum-break">答錯的字：${esc([...new Set(wrong)].join('、'))}
+            —— 這些會馬上回到待加強，下一輪優先出現。</div>`
+          : `<div class="sum-break">全對。這些字會隔比較久才再考，先去練別的。</div>`);
     el('wsSummary').hidden = false;
     wrongFirst(el('wsOut'), d.results, r => `wq-${r.id}`);
     // 記下答錯的字，訂正時只考這幾個
     wsWrong = { quizId: wsQuiz.quizId, ids: d.results.filter(r => !r.correct).map(r => r.id) };
     el('wsFix').hidden = !wsWrong.ids.length;
     el('wsFix').textContent = `訂正錯題（${wsWrong.ids.length} 題）`;
+    el('wsFix').title = '把答錯的原題再做一次。不列入正確率與待加強。';
     el('wsSummary').scrollIntoView({ behavior:'smooth', block:'nearest' });
     el('wsAgain').hidden = false;
     await selectSetStatsOnly();

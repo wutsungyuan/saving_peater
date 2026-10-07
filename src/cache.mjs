@@ -98,6 +98,9 @@ export function openCache(file = 'data/cache.db'){
   for (const [n, d] of [['input_tokens','INTEGER DEFAULT 0'], ['output_tokens','INTEGER DEFAULT 0'],
                         ['cost_usd','REAL DEFAULT 0']]) addCol('sentences', n, d);
   addCol('attempts', 'pron_case', 'TEXT');
+  // 訂正的作答要留紀錄但不計入統計與排程
+  addCol('attempts', 'is_fix', 'INTEGER DEFAULT 0');
+  addCol('word_attempts', 'is_fix', 'INTEGER DEFAULT 0');
 
   const qGet  = db.prepare('SELECT result FROM sentences WHERE hash = ?');
   const qHit  = db.prepare('UPDATE sentences SET hits = hits + 1 WHERE hash = ?');
@@ -179,35 +182,37 @@ export function openCache(file = 'data/cache.db'){
 
     recordAttempt(a){
       db.prepare(`INSERT INTO attempts
-        (user_token,qtype,sentence_hash,pattern_id,tense_time,tense_aspect,pos,pron_case,correct,answer,expected,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        (user_token,qtype,sentence_hash,pattern_id,tense_time,tense_aspect,pos,pron_case,correct,is_fix,answer,expected,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         a.userToken, a.qtype, a.sentenceHash ?? null, a.patternId ?? null,
         a.tenseTime ?? null, a.tenseAspect ?? null, a.pos ?? null, a.pronCase ?? null,
-        a.correct ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now());
+        a.correct ? 1 : 0, a.isFix ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now());
     },
 
     /** 弱點統計：11 個維度（5 句型 + 6 必學時態）＋ 詞性與題型 */
     weakness(userToken){
       const q = (sql, ...p) => db.prepare(sql).all(userToken, ...p);
       const overall = db.prepare(
-        'SELECT COUNT(*) total, COALESCE(SUM(correct),0) correct FROM attempts WHERE user_token = ?').get(userToken);
+        `SELECT COUNT(*) total, COALESCE(SUM(correct),0) correct FROM attempts
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0`).get(userToken);
       return {
         overall,
         byType: q(`SELECT qtype, COUNT(*) total, SUM(correct) correct FROM attempts
-                   WHERE user_token = ? GROUP BY qtype ORDER BY qtype`),
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 GROUP BY qtype ORDER BY qtype`),
         byPattern: q(`SELECT pattern_id, COUNT(*) total, SUM(correct) correct FROM attempts
-                      WHERE user_token = ? AND pattern_id IS NOT NULL
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND pattern_id IS NOT NULL
                       GROUP BY pattern_id ORDER BY pattern_id`),
         byTense: q(`SELECT tense_time, tense_aspect, COUNT(*) total, SUM(correct) correct FROM attempts
-                    WHERE user_token = ? AND tense_time IS NOT NULL
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND tense_time IS NOT NULL
                     GROUP BY tense_time, tense_aspect`),
         byPos: q(`SELECT pos, COUNT(*) total, SUM(correct) correct FROM attempts
-                  WHERE user_token = ? AND pos IS NOT NULL GROUP BY pos ORDER BY pos`),
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND pos IS NOT NULL GROUP BY pos ORDER BY pos`),
         byCase: q(`SELECT pron_case, COUNT(*) total, SUM(correct) correct FROM attempts
-                   WHERE user_token = ? AND pron_case IS NOT NULL GROUP BY pron_case`),
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND pron_case IS NOT NULL GROUP BY pron_case`),
         recent: q(`SELECT qtype, correct, answer, expected,
                      datetime(created_at/1000,'unixepoch','localtime') t
-                   FROM attempts WHERE user_token = ? ORDER BY created_at DESC LIMIT 20`),
+                   FROM attempts
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 ORDER BY created_at DESC LIMIT 20`),
       };
     },
 
@@ -219,14 +224,14 @@ export function openCache(file = 'data/cache.db'){
       const q = sql => db.prepare(sql).all(userToken);
       return {
         patterns: toMap(q(`SELECT pattern_id, COUNT(*) total, SUM(correct) correct FROM attempts
-          WHERE user_token = ? AND pattern_id IS NOT NULL GROUP BY pattern_id`), r => r.pattern_id),
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND pattern_id IS NOT NULL GROUP BY pattern_id`), r => r.pattern_id),
         tenses: toMap(q(`SELECT tense_time, tense_aspect, COUNT(*) total, SUM(correct) correct FROM attempts
-          WHERE user_token = ? AND tense_time IS NOT NULL GROUP BY tense_time, tense_aspect`),
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND tense_time IS NOT NULL GROUP BY tense_time, tense_aspect`),
           r => `${r.tense_time}-${r.tense_aspect}`),
         pos: toMap(q(`SELECT pos, COUNT(*) total, SUM(correct) correct FROM attempts
-          WHERE user_token = ? AND pos IS NOT NULL GROUP BY pos`), r => r.pos),
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND pos IS NOT NULL GROUP BY pos`), r => r.pos),
         cases: toMap(q(`SELECT pron_case, COUNT(*) total, SUM(correct) correct FROM attempts
-          WHERE user_token = ? AND pron_case IS NOT NULL GROUP BY pron_case`), r => r.pron_case),
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND pron_case IS NOT NULL GROUP BY pron_case`), r => r.pron_case),
       };
     },
 
@@ -290,10 +295,14 @@ export function openCache(file = 'data/cache.db'){
     /** 記錄單字作答並更新 Leitner 盒子 */
     recordWordAttempt(a){
       db.prepare(`INSERT INTO word_attempts
-        (user_token, word_id, sense_idx, mode, correct, answer, expected, created_at)
-        VALUES (?,?,?,?,?,?,?,?)`).run(
+        (user_token, word_id, sense_idx, mode, correct, is_fix, answer, expected, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(
         a.userToken, a.wordId, a.senseIdx ?? null, a.mode,
-        a.correct ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now());
+        a.correct ? 1 : 0, a.isFix ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now());
+
+      // 訂正是「把剛才那題做對」，答案都看過了，不該推進 Leitner 的盒子，
+      // 也不該算進正確率 —— 否則答錯反而讓那個字更晚才再出現，整個反了。
+      if (a.isFix) return;
 
       const INTERVALS = [10*60e3, 60*60e3, 24*3600e3, 3*24*3600e3, 7*24*3600e3, 14*24*3600e3];
       const cur = db.prepare('SELECT box, correct, total FROM word_progress WHERE user_token = ? AND word_id = ?')
@@ -362,9 +371,11 @@ export function openCache(file = 'data/cache.db'){
       db.prepare(`INSERT OR REPLACE INTO quizzes (id, kind, data, created_at)
         VALUES (?,?,?,?)`).run(id, kind, JSON.stringify(questions), Date.now());
     },
+    /** 回傳 { kind, questions }。kind 以 -fix 結尾代表這份是訂正， */
+    /** 批改時要把作答標成訂正，不計入統計也不推進 Leitner 的盒子。 */
     getQuiz(id){
-      const r = db.prepare('SELECT data FROM quizzes WHERE id = ?').get(id);
-      return r ? JSON.parse(r.data) : null;
+      const r = db.prepare('SELECT kind, data FROM quizzes WHERE id = ?').get(id);
+      return r ? { kind: r.kind || '', questions: JSON.parse(r.data) } : null;
     },
     pruneQuizzes(days = 7){
       db.prepare('DELETE FROM quizzes WHERE created_at < ?')
