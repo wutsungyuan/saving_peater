@@ -1641,8 +1641,11 @@ async function startWordQuiz(){
     wsQuiz = d;
     el('wsOut').innerHTML = d.questions.map((q,i) => renderWordQ(q, i+1)).join('');
     el('wsActions').hidden = false;
-    const first = el('wsOut').querySelector('.q-speak');
-    if (first) first.click();                       // 第一題是聽考就直接唸一次
+    // 只有第一題本身是聽考才自動唸。先前用 querySelector('.q-speak') 會抓到
+    // 整份測驗裡任何一題的聽考鈕，等於提前唸出後面題目的答案。
+    const firstQ = d.questions[0];
+    if (firstQ?.mode === 'listen')
+      el('wsOut').querySelector(`#wq-${firstQ.id} .q-speak`)?.click();
   } catch (e){ el('wsOut').innerHTML = `<p class="msg">出題失敗：${esc(e.message)}</p>`; }
 }
 
