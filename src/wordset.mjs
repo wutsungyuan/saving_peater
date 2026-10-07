@@ -141,7 +141,7 @@ function qZh2En(w){
   const s = pick(w.senses);
   if (!s?.zh) return null;
   return {
-    mode: 'zh2en', wordId: w.id, term: w.term,
+    mode: 'zh2en', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
     prompt: '寫出這個中文意思的英文單字',
     question: s.zh, hint: `${s.pos}　${w.syllables ? w.syllables.replace(/[a-z]/gi, '_') : ''}`.trim(),
     inputMode: 'text', blanks: 1,
@@ -158,7 +158,7 @@ function qEn2Zh(w, all){
     .filter(o => o.zh && o.zh !== s.zh).slice(0, 3);
   if (others.length < 2) return null;
   return {
-    mode: 'en2zh', wordId: w.id, term: w.term,
+    mode: 'en2zh', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
     prompt: `「${w.term}」是什麼意思？`,
     question: w.term, hint: s.pos,
     inputMode: 'choice',
@@ -172,7 +172,7 @@ function qEn2Zh(w, all){
 function qListen(w){
   const s = w.senses?.[0];
   return {
-    mode: 'listen', wordId: w.id, term: w.term,
+    mode: 'listen', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
     prompt: '聽發音，把單字拼出來',
     speak: w.term,                       // 前端用 speech.js 唸這個
     question: null, hint: s?.zh ? `提示：${s.zh}` : null,
@@ -192,7 +192,7 @@ function qCloze(w){
   const display = s.example.slice(0, f.start) + '______' + s.example.slice(f.end);
   const inflected = norm(f.text) !== norm(w.term);
   return {
-    mode: 'cloze', wordId: w.id, term: w.term,
+    mode: 'cloze', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
     prompt: '把單字填進句子裡',
     question: display, hint: s.zh ? `${s.pos}　${s.zh}` : null,
     inputMode: 'text', blanks: 1,
@@ -211,7 +211,7 @@ function qSense(w){
   if (!withEx.length) return null;
   const { s, i } = pick(withEx);
   return {
-    mode: 'sense', wordId: w.id, term: w.term,
+    mode: 'sense', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
     prompt: `「${w.term}」在這句話裡是哪個意思？`,
     question: s.example, hint: null,
     inputMode: 'choice',

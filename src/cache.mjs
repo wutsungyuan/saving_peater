@@ -296,7 +296,8 @@ export function openCache(file = 'data/cache.db'){
         .map(r => r.term.toLowerCase()));
     },
 
-    /** 可以一次吃多份字表 —— 複習時常常要跨單元一起練 */
+    /** 可以一次吃多份字表 —— 複習時常常要跨單元一起練。
+     *  多選時同一個字會合併成一張卡（詞義與例句取聯集，進度相加）。 */
     wordsOf(setIds, userToken){
       const ids = (Array.isArray(setIds) ? setIds : [setIds]).map(Number).filter(Number.isFinite);
       if (!ids.length) return [];
@@ -312,20 +313,38 @@ export function openCache(file = 'data/cache.db'){
                    box:r.box, dueAt:r.due_at, correct:r.correct, total:r.total }; });
 
       if (ids.length < 2) return rows;
-      // 跨字表合併時同一個字會出現多次（例如整頁的字表包含了小範圍那份）。
-      // 清單上看兩次、同一輪可能被考兩次，所以按單字去重，
-      // 留下「練過比較多次」的那一筆，進度才不會被沒練過的覆蓋掉。
-      const best = new Map();
+
+      // 同一個字可能出現在多份字表（例如整頁的字表包含了小範圍那份）。
+      // 單份內允許重複沒問題，但多選時要合併成一張卡：
+      // 詞義與例句取聯集（不同字表可能給不同例句），作答次數相加、盒子取最前面的，
+      // 這樣熟練度反映的是這個字被練了多少，和你選了幾份字表無關。
+      const groups = new Map();
       for (const w of rows){
         const k = w.term.toLowerCase();
-        const cur = best.get(k);
-        if (!cur || w.total > cur.total || (w.total === cur.total && w.box > cur.box)){
-          best.set(k, { ...w, dupOf: cur ? [...(cur.dupOf ?? []), cur.setId] : (w.dupOf ?? []) });
-        } else {
-          cur.dupOf = [...(cur.dupOf ?? []), w.setId];
-        }
+        groups.set(k, [...(groups.get(k) ?? []), w]);
       }
-      return [...best.values()];
+      const senseKey = sn => `${sn.pos}|${sn.zh}`;
+      return [...groups.values()].map(g => {
+        if (g.length === 1) return g[0];
+        // 以練得最多的那筆當主體 —— 之後作答要記到某一個 word_id 上
+        const main = g.reduce((a, b) =>
+          (b.total > a.total || (b.total === a.total && b.box > a.box)) ? b : a);
+        const senses = [], seen = new Set();
+        for (const w of g) for (const sn of w.senses ?? [])
+          if (!seen.has(senseKey(sn))){ seen.add(senseKey(sn)); senses.push(sn); }
+        const uniq = (arr, f) => {
+          const m = new Map();
+          for (const x of arr) if (!m.has(f(x))) m.set(f(x), x);
+          return [...m.values()];
+        };
+        // 進度直接用 main 那一筆，不相加 —— 作答會同步寫到所有重複的列，
+        // 相加的話同一次作答會被算兩次。
+        return { ...main, senses,
+          confusable: uniq(g.flatMap(w => w.confusable ?? []), c => c.word),
+          family:     uniq(g.flatMap(w => w.family ?? []),     c => c.word),
+          mergedFrom: g.map(w => w.setId),
+          mergedIds:  g.map(w => w.id) };
+      });
     },
 
     /** 刪字表會連同該字表的作答與熟練度一起刪掉（同一個交易，要嘛全成要嘛全退）。
@@ -358,13 +377,18 @@ export function openCache(file = 'data/cache.db'){
       if (a.isFix) return;
 
       const INTERVALS = [10*60e3, 60*60e3, 24*3600e3, 3*24*3600e3, 7*24*3600e3, 14*24*3600e3];
-      const cur = db.prepare('SELECT box, correct, total FROM word_progress WHERE user_token = ? AND word_id = ?')
-        .get(a.userToken, a.wordId) ?? { box: 0, correct: 0, total: 0 };
-      const box = a.correct ? Math.min(cur.box + 1, INTERVALS.length - 1) : 0;
-      db.prepare(`INSERT OR REPLACE INTO word_progress
-        (user_token, word_id, box, due_at, correct, total) VALUES (?,?,?,?,?,?)`).run(
-        a.userToken, a.wordId, box, Date.now() + INTERVALS[box],
-        cur.correct + (a.correct ? 1 : 0), cur.total + 1);
+      // 同一個字可能在多份字表各有一列。答對 lesson 就是答對 lesson，
+      // 不該因為是從哪份字表考的而只更新其中一列，否則單看另一份會以為沒練過。
+      const ids = (a.wordIds?.length ? a.wordIds : [a.wordId]).map(Number).filter(Number.isFinite);
+      const qCur = db.prepare('SELECT box, correct, total FROM word_progress WHERE user_token = ? AND word_id = ?');
+      const qSet = db.prepare(`INSERT OR REPLACE INTO word_progress
+        (user_token, word_id, box, due_at, correct, total) VALUES (?,?,?,?,?,?)`);
+      for (const wid of ids){
+        const cur = qCur.get(a.userToken, wid) ?? { box: 0, correct: 0, total: 0 };
+        const box = a.correct ? Math.min(cur.box + 1, INTERVALS.length - 1) : 0;
+        qSet.run(a.userToken, wid, box, Date.now() + INTERVALS[box],
+          cur.correct + (a.correct ? 1 : 0), cur.total + 1);
+      }
     },
 
     /** 統計直接由去重後的清單彙總 —— 另外寫一組 SQL 的話，

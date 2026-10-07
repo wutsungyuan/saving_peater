@@ -494,6 +494,12 @@ button:disabled{opacity:.5;cursor:default}
 footer{font-size:.82rem;color:var(--muted);line-height:1.8;border-top:1px solid var(--rule);padding-top:16px}
 footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.setof{font-size:.7rem;font-family:var(--font-ui);color:var(--faint);
+  border:1px solid var(--rule);border-radius:999px;padding:2px 9px;
+  max-width:14em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dupt{font-size:.7rem;font-family:var(--font-ui);color:var(--accent);
+  border:1px solid var(--accent);border-radius:999px;padding:2px 9px;
+  background:var(--tip-bg);font-weight:600}
 /* 新增表單的目標欄：一個可輸入的下拉選單同時處理兩件事 ——
    打新名字＝建新字表，選既有的＝加進那一份。 */
 .dest{margin-top:12px}
@@ -507,9 +513,6 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
   margin-top:13px;padding-top:11px;border-top:1px solid var(--rule)}
 .setbar .hint{flex:1;min-width:0}
 .setbar .linky{flex-shrink:0}
-.lblrow #wsMultiBtn{margin-left:auto}
-.lblrow #wsMultiBtn[aria-pressed="true"]{background:var(--fg);color:var(--surface);
-  border-bottom-color:transparent;border-radius:3px;padding:3px 11px}
 .subrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .subtabs{display:inline-flex;border:1px solid var(--rule);border-radius:3px;overflow:hidden;flex-shrink:0}
 .subtabs button{border:0;border-radius:0;background:var(--surface);padding:8px 18px;
@@ -637,7 +640,6 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
     <div id="view-words" hidden>
       <div class="box">
         <div class="lblrow"><label>單字表</label>
-          <button id="wsMultiBtn" class="linky" aria-pressed="false">多選</button>
           <button id="wsNew" class="linky">＋ 新增字表</button></div>
         <div class="chips" id="wsList"></div>
         <div class="setbar" id="wsBar">
@@ -1854,9 +1856,8 @@ const WMODES = [['zh2en','中考英'],['en2zh','英考中'],['listen','聽考'],
 const WMODE_NAME = Object.fromEntries(WMODES);
 const el = id => document.getElementById(id);
 let wsSel = [];                    // 選取的字表 id（可多選）
-let wsMerged = { dedup: 0 };       // 跨字表合併時有幾個字重複被併起來
+let wsMerged = { dup: 0, words: 0 };       // 跨字表合併時有幾個字重複被併起來
 let wsAllSets = [];                // 全部字表，新增表單要列出來當目標
-let wsMulti = false;               // 多選模式
 let wsCurrent = null, wsQuiz = null, wsWordsCache = [];
 const selParam = () => wsSel.join(',');
 
@@ -1901,20 +1902,21 @@ async function loadWordsets(){
       ;
     // 選取的字表被刪掉或還沒選過，就回到最新那一份
     wsSel = wsSel.filter(id => d.sets.some(x => x.id === id));
-    if (!wsSel.length) await selectSet(d.sets[0].id);
+    if (!wsSel.length) await selectSet(d.sets[0].id, true);
     else { wsCurrent = wsSel[0]; renderSelInfo(); }
   } catch (e){
     el('wsList').innerHTML = `<span class="hint">載入失敗：${esc(e.message)}</span>`;
   }
 }
 
-/** 點字表：單選模式換成那一份；多選模式則是加入／移除（至少要留一份） */
-async function selectSet(id, toggle = false){
-  if (toggle){
+/** 點字表就是加選／取消。至少要留一份，否則畫面上沒有東西可看。
+ *  不另外做「多選模式」—— 多一個開關只是多一層操作，
+ *  而刪除本來就有兩段確認擋著。 */
+async function selectSet(id, only = false){
+  if (only) wsSel = [id];
+  else {
     wsSel = wsSel.includes(id) ? wsSel.filter(x => x !== id) : [...wsSel, id];
     if (!wsSel.length) wsSel = [id];          // 不允許一份都不選
-  } else {
-    wsSel = [id];
   }
   wsSel.sort((a, b) => b - a);
   wsCurrent = wsSel[0];
@@ -1954,6 +1956,8 @@ function sayBtn(text, label){
 }
 
 function renderWordList(){
+  const multi = wsSel.length > 1;
+  const setName = id => wsAllSets.find(x => x.id === id)?.name ?? '';
   el('wsWords').innerHTML = `<div class="wlist">${wsWordsCache.map(w => {
     const tag = w.total === 0 ? '<span class="box-tag">還沒考過</span>'
       : w.box >= 3 ? `<span class="box-tag good">已背熟 ${w.correct}/${w.total}</span>`
@@ -1961,7 +1965,11 @@ function renderWordList(){
     return `<div class="wcard"><div class="top">
       <span class="term">${esc(w.term)}</span>
       ${w.syllables ? `<span class="syl">${esc(w.syllables)}</span>` : ''}
-      ${sayBtn(w.term, '唸這個單字')}${tag}</div>
+      ${sayBtn(w.term, '唸這個單字')}
+      ${multi ? (w.mergedFrom
+        ? `<span class="dupt" title="${esc(w.mergedFrom.map(setName).join('、'))}">合併 ${w.mergedFrom.length} 份</span>`
+        : `<span class="setof" title="來自這份字表">${esc(setName(w.setId))}</span>`) : ''}
+      ${tag}</div>
       ${(w.senses||[]).map(sn => `<div class="wsense"><b>${esc(sn.pos)}</b>${esc(sn.zh)}
         ${sn.example ? `<span class="ex">${esc(sn.example)}${sayBtn(sn.example, '朗讀例句')}` +
           `<button class="exan${sn.analyzed ? ' done' : ''}" data-an="${esc(sn.example)}"
@@ -2377,7 +2385,6 @@ el('view-words').addEventListener('click', e => {
 function setFormMode(on){
   el('wsBar').hidden = on;
   el('wsList').hidden = on;
-  el('wsMultiBtn').hidden = on;
   el('wsNew').textContent = on ? '← 回到單字表' : '＋ 新增字表';
 }
 
@@ -2569,9 +2576,6 @@ el('wsNew').addEventListener('click', () => {
   const f = el('wsForm'); f.hidden = !f.hidden;
   setFormMode(!f.hidden);
   if (!f.hidden){
-    // 建立的永遠是一份新字表，和目前選取哪幾份無關。
-    // 讓多選開著會讓人以為是「加進選取的字表」，所以直接關掉。
-    if (wsMulti){ wsMulti = false; renderSelInfo(); }
     fillDefaultName();
     renderFormActions();
   }
@@ -2582,7 +2586,6 @@ el('wsCancel').addEventListener('click', () => {
 el('wsCreate').addEventListener('click', () => submitWordset(destOf().setId));
 for (const ev of ['input', 'change']) el('wsName').addEventListener(ev, syncDest);
 
-el('wsMultiBtn').addEventListener('click', () => { wsMulti = !wsMulti; renderSelInfo(); });
 el('wsDel').addEventListener('click', async () => {
   const del = el('wsDel');
   if (!wsSel.length) return;
@@ -2609,7 +2612,7 @@ el('wsDel').addEventListener('click', async () => {
 
 el('wsList').addEventListener('click', async e => {
   const b = e.target.closest('.wchip');
-  if (b) return selectSet(Number(b.dataset.id), wsMulti);
+  if (b) return selectSet(Number(b.dataset.id));
   if (e.target.id === 'wsMore'){
     el('wsList').dataset.expanded = el('wsList').dataset.expanded === '1' ? '0' : '1';
     return loadWordsets();
@@ -2621,13 +2624,11 @@ const delLabel = () => wsSel.length > 1 ? `刪除選取的 ${wsSel.length} 份` 
 function renderSelInfo(){
   const info = el('wsSelInfo');
   if (info) info.textContent = wsSel.length > 1
-    ? `已選 ${wsSel.length} 份字表，清單與測驗合在一起` +
-      (wsMerged.dedup ? `（有 ${wsMerged.dedup} 個字重複出現，已合併成一個）。` : '。')
-    : (wsMulti ? '多選模式：點字表可以加入或移除，至少要留一份。' : '');
+    ? `已選 ${wsSel.length} 份字表，共 ${wsMerged.words} 個字` +
+      (wsMerged.dup ? `（其中 ${wsMerged.dup} 個在多份裡都有，已合併成一張卡，例句與詞義都保留）。` : '。')
+    : '點字表可以加選或取消，至少要留一份。';
   const d = el('wsDel');
   if (d && d.dataset.armed !== '1') d.textContent = delLabel();
-  const m = el('wsMultiBtn');
-  if (m){ m.setAttribute('aria-pressed', String(wsMulti)); m.textContent = wsMulti ? '結束多選' : '多選'; }
 }
 
 /** 單字分頁底下的兩個子頁：預設看清單，要考試才切到測驗 */

@@ -456,7 +456,7 @@ const server = createServer(async (req, res) => {
         // 例句的句型分析狀態：已分析過的點了是瞬間，沒分析過的才要花額度
         examples: { total: exs.length, cached: exs.filter(t => cache.get(t)).length },
         merged: { sets: ids.length, words: words.length,
-                  dedup: words.filter(w => (w.dupOf ?? []).length).length },
+                  dup: words.filter(w => w.mergedFrom).length },
       }));
     }
 
@@ -553,7 +553,7 @@ const server = createServer(async (req, res) => {
       const isFix = quiz.kind.endsWith('-fix');     // 訂正不計入統計，也不推進 Leitner
       const results = quiz.questions.map(q => {
         const g = gradeWord(q, given[q.id] ?? []);
-        cache.recordWordAttempt({ userToken, wordId: q.wordId, senseIdx: q.meta?.senseIdx,
+        cache.recordWordAttempt({ userToken, wordId: q.wordId, wordIds: q.wordIds, senseIdx: q.meta?.senseIdx,
           mode: q.mode, correct: g.correct, isFix,
           answer: g.given.join(' | '), expected: g.expected.join(' | ') });
         return { id:q.id, wordId:q.wordId, correct:g.correct, expected:q.answer, given:g.given, explain:q.explain, term:q.term };
