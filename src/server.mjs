@@ -265,11 +265,16 @@ const server = createServer(async (req, res) => {
           res.writeHead(413, { 'content-type':'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ error:'too-many', message:`一次最多 60 個字，這次有 ${items.length} 個。` }));
         }
+        const t0 = Date.now();
         try {
           const { words, usage } = await enrich(items);
-          const id = cache.createWordset(b.name || `字表 ${new Date().toLocaleDateString('zh-TW')}`, words, b.note || null);
-          cache.log({ chars:(b.text||'').length, sentences:items.length, cached:0, analyzed:items.length,
-            ms:0, text:null, ...usage });
+          const name = b.name || `字表 ${new Date().toLocaleDateString('zh-TW')}`;
+          const id = cache.createWordset(name, words, b.note || null);
+          // 建字表有呼叫模型，和分析一樣要進歷史紀錄
+          cache.log({ kind:'wordset', chars:(b.text||'').length, sentences:items.length,
+            cached:0, analyzed:items.length, ms: Date.now() - t0,
+            text: `${name}\n${items.map(w => w.zh ? `${w.term}, ${w.zh}` : w.term).join('\n')}`,
+            ...usage });
           res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ id, count: words.length, usage }));
         } catch (e){

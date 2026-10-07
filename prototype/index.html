@@ -156,6 +156,10 @@ h3.sec{margin:4px 0 0;font-size:.75rem;font-weight:700;letter-spacing:.1em;text-
 .hitem+.hitem{margin-top:9px}
 .hitem:hover{border-color:var(--accent)}
 .hitem .htext{flex:1;min-width:0;font-family:var(--font-en);font-size:1rem;line-height:1.6;color:var(--fg)}
+.hkind{display:inline-block;font-size:.68rem;font-family:var(--font-mono);letter-spacing:.06em;
+  padding:2px 8px;border-radius:999px;border:1px solid var(--rule);color:var(--faint);
+  margin-right:8px;vertical-align:2px}
+.hkind.word{border-color:var(--pos-pron);color:var(--pos-pron)}
 .hitem .hmeta{font-size:.76rem;color:var(--faint);margin-top:6px;font-family:var(--font-ui);
   display:flex;gap:10px;flex-wrap:wrap}
 .hitem .hmeta b{font-family:var(--font-mono);color:var(--muted);font-weight:600}
@@ -1427,13 +1431,18 @@ async function loadHistory(){
     }
     historyOut.innerHTML = d.items.map(it => {
       const gone = !it.preview;
-      return `<button class="hitem${gone ? ' hgone' : ''}" data-id="${it.id}" ${gone ? 'disabled' : ''}>
-        <div class="htext">${gone ? '（原文已超過保留期限，自動清除）'
-          : esc(it.preview) + (it.full_len > 160 ? '…' : '')}
+      const isWord = it.kind === 'wordset';
+      const unit = isWord ? '字' : '句';
+      return `<button class="hitem${gone ? ' hgone' : ''}" data-id="${it.id}"
+        data-kind="${esc(it.kind)}" ${gone ? 'disabled' : ''}>
+        <div class="htext">
+          <span class="hkind${isWord ? ' word' : ''}">${isWord ? '建立字表' : '分析句子'}</span>
+          ${gone ? '（原文已超過保留期限，自動清除）'
+            : esc(it.preview) + (it.full_len > 160 ? '…' : '')}
           <div class="hmeta">
             <span>${timeAgo(it.created_at)}</span>
-            <span><b>${it.sentences}</b> 句</span>
-            <span>新分析 <b>${it.analyzed}</b>／快取 <b>${it.cached}</b></span>
+            <span><b>${it.sentences}</b> ${unit}</span>
+            ${isWord ? '' : `<span>新分析 <b>${it.analyzed}</b>／快取 <b>${it.cached}</b></span>`}
             <span><b>${(it.ms / 1000).toFixed(1)}s</b></span>
             ${it.cost_usd ? `<span>參考費用 <b>${money(it.cost_usd)}</b></span>` : ''}
           </div>
@@ -1447,6 +1456,10 @@ async function loadHistory(){
 
 historyOut.addEventListener('click', async e => {
   const b = e.target.closest('.hitem'); if (!b || b.disabled) return;
+  if (b.dataset.kind === 'wordset'){        // 字表不是句子，拿去分析沒有意義
+    document.querySelector('.tabs button[data-view="words"]').click();
+    return;
+  }
   const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
   if (!text) return;
   document.querySelector('.tabs button[data-view="analyze"]').click();

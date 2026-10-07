@@ -72,6 +72,7 @@ export function openCache(file = 'data/cache.db'){
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       chars      INTEGER, sentences INTEGER, cached INTEGER, analyzed INTEGER,
       ms         INTEGER, created_at INTEGER NOT NULL,
+      kind       TEXT DEFAULT 'analyze',  -- analyze（分析句子）| wordset（建立字表）
       text       TEXT,                 -- 原文，供歷史紀錄重新顯示（由 TTL 自動清理）
       input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,
       cache_read_tokens INTEGER DEFAULT 0, cost_usd REAL DEFAULT 0
@@ -82,7 +83,7 @@ export function openCache(file = 'data/cache.db'){
   // 既有資料庫補欄位（node:sqlite 沒有 IF NOT EXISTS，用 PRAGMA 檢查）
   const cols = t => new Set(db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name));
   const addCol = (t, name, decl) => { if (!cols(t).has(name)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${name} ${decl}`); };
-  for (const [n, d] of [['text','TEXT'], ['input_tokens','INTEGER DEFAULT 0'],
+  for (const [n, d] of [['text','TEXT'], ['kind',"TEXT DEFAULT 'analyze'"], ['input_tokens','INTEGER DEFAULT 0'],
                         ['output_tokens','INTEGER DEFAULT 0'], ['cache_read_tokens','INTEGER DEFAULT 0'],
                         ['cost_usd','REAL DEFAULT 0']]) addCol('requests', n, d);
   for (const [n, d] of [['input_tokens','INTEGER DEFAULT 0'], ['output_tokens','INTEGER DEFAULT 0'],
@@ -96,8 +97,9 @@ export function openCache(file = 'data/cache.db'){
      input_tokens, output_tokens, cost_usd)
     VALUES (?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT hits FROM sentences WHERE hash = ?), 0), ?,?,?)`);
   const qLog  = db.prepare(`INSERT INTO requests
-    (chars, sentences, cached, analyzed, ms, created_at, text, input_tokens, output_tokens, cache_read_tokens, cost_usd)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+    (chars, sentences, cached, analyzed, ms, created_at, kind, text,
+     input_tokens, output_tokens, cache_read_tokens, cost_usd)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
   const qStats = db.prepare(`SELECT
       (SELECT COUNT(*) FROM sentences) AS sentences,
       (SELECT COALESCE(SUM(hits),0) FROM sentences) AS cache_hits,
@@ -126,16 +128,18 @@ export function openCache(file = 'data/cache.db'){
     },
     log(row){
       qLog.run(row.chars, row.sentences, row.cached, row.analyzed, row.ms, Date.now(),
-        row.text ?? null, row.inputTokens ?? 0, row.outputTokens ?? 0,
+        row.kind ?? 'analyze', row.text ?? null, row.inputTokens ?? 0, row.outputTokens ?? 0,
         row.cacheReadTokens ?? 0, row.costUsd ?? 0);
     },
 
     /** 分析歷史：最近幾次請求 */
     history(limit = 30){
-      return db.prepare(`SELECT id, chars, sentences, cached, analyzed, ms, created_at,
+      // 不濾掉 text 為空的 —— 原文過期清掉後，用量紀錄仍要看得到
+      return db.prepare(`SELECT id, COALESCE(kind,'analyze') kind, chars, sentences,
+          cached, analyzed, ms, created_at,
           substr(text, 1, 160) preview, length(text) full_len,
           input_tokens, output_tokens, cache_read_tokens, cost_usd
-        FROM requests WHERE text IS NOT NULL ORDER BY created_at DESC LIMIT ?`).all(limit);
+        FROM requests ORDER BY created_at DESC LIMIT ?`).all(limit);
     },
     historyText(id){
       return db.prepare('SELECT text FROM requests WHERE id = ?').get(id)?.text ?? null;
