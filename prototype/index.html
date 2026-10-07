@@ -2014,6 +2014,19 @@ const clearQuizMsg = id => el(id).parentNode.querySelector('.quizmsg')?.remove()
 // 點單句的「分析」是瞬間完成且不花額度的。
 let wsExamples = { total: 0, cached: 0 };
 
+/** 只更新例句的分析進度，不動畫面其他部分。
+ *  從「分析」分頁分析過例句後切回來，數字要跟著變 ——
+ *  原本只有 selectSet() 會算，而那只在切換字表時才跑。 */
+async function refreshExamples(){
+  if (!wsCurrent || API === false) return;
+  try {
+    const d = await fetch(`/api/wordset?id=${wsCurrent}&user=${encodeURIComponent(USER)}`)
+      .then(r => r.json());
+    wsExamples = d.examples || wsExamples;
+    renderAnalyzeBtn();
+  } catch { /* 拿不到就維持原本的數字 */ }
+}
+
 function renderAnalyzeBtn(){
   const b = el('wsAnalyze');
   const left = wsExamples.total - wsExamples.cached;
@@ -2372,7 +2385,7 @@ for (const b of document.querySelectorAll('.tabs button')){
     if (v === 'words'){
       if (API === false) el('wsList').innerHTML =
         '<span class="hint">單字表需要後端。請在本機執行 npm start 後開啟 http://127.0.0.1:8787</span>';
-      else loadWordsets();
+      else { loadWordsets(); refreshExamples(); }
     }
     if (v === 'practice'){
       if (API === false) quizOut.innerHTML = '<p class="msg">練習需要後端。請在本機執行 npm start 後開啟 http://127.0.0.1:8787</p>';
