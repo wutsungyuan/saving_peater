@@ -255,6 +255,11 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .sayx.on .ico{width:6px;height:6px;border:0;border-radius:1px;background:currentColor;margin:0}
 .wcard .top .sayx{margin-left:4px}
 .wsense .ex .sayx{margin-left:6px}
+.exan{font-size:.72rem;font-family:var(--font-ui);margin-left:7px;padding:2px 9px;
+  border:1px solid var(--rule);border-radius:999px;background:var(--surface);
+  color:var(--muted);cursor:pointer;vertical-align:1px}
+.exan:hover{border-color:var(--accent);color:var(--accent)}
+#wsAnalyze{margin-left:auto}
 .q-speak.on .ico{width:9px;height:9px;border:0;border-radius:1px;background:currentColor}
 .q-speak{display:inline-flex;align-items:center;gap:7px;font-size:.9rem;padding:9px 18px;
   border-radius:999px;background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
@@ -549,7 +554,8 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
         <div class="usage-cards" id="wsStats"></div>
         <div class="box">
           <div class="lblrow"><label>測驗設定</label>
-            <button id="wsToggleList" class="linky">看單字清單</button></div>
+            <button id="wsToggleList" class="linky">看單字清單</button>
+            <button id="wsAnalyze" class="linky" hidden></button></div>
           <div class="row" id="wsModes"></div>
           <div class="row">
             <span class="hint">題數</span>
@@ -1742,6 +1748,8 @@ async function selectSet(id){
     b.setAttribute('aria-pressed', String(Number(b.dataset.id) === id));
   const d = await fetch(`/api/wordset?id=${id}&user=${encodeURIComponent(USER)}`).then(r => r.json());
   wsWordsCache = d.words || [];
+  wsExamples = d.examples || { total: 0, cached: 0 };
+  renderAnalyzeBtn();
   const st = d.stats || { words:0, attempts:0, correct:0, mastered:0, weak:0 };
   const pct = st.attempts ? Math.round(st.correct / st.attempts * 100) : 0;
   el('wsStats').innerHTML =
@@ -1777,7 +1785,8 @@ function renderWordList(){
       ${w.syllables ? `<span class="syl">${esc(w.syllables)}</span>` : ''}
       ${sayBtn(w.term, '唸這個單字')}${tag}</div>
       ${(w.senses||[]).map(sn => `<div class="wsense"><b>${esc(sn.pos)}</b>${esc(sn.zh)}
-        ${sn.example ? `<span class="ex">${esc(sn.example)}${sayBtn(sn.example, '朗讀例句')}</span>` : ''}
+        ${sn.example ? `<span class="ex">${esc(sn.example)}${sayBtn(sn.example, '朗讀例句')}` +
+          `<button class="exan" data-an="${esc(sn.example)}" title="看這句的句型與詞性">分析</button></span>` : ''}
         ${sn.exampleZh ? `<span class="exz">${esc(sn.exampleZh)}</span>` : ''}</div>`).join('')}
       ${w.spellTip ? `<div class="wtip">拼字：${esc(w.spellTip)}</div>` : ''}
       ${(w.confusable||[]).length ? `<div class="wextra">易混淆：${w.confusable.map(c=>`${esc(c.word)}（${esc(c.zh)}）`).join('、')}</div>` : ''}
@@ -1924,6 +1933,55 @@ function shrinkImage(file, maxSide = 1600){
 }
 
 
+
+
+// ---- 例句的句型分析 ----
+// 分析過的句子存在同一個快取裡，所以批次分析過之後，
+// 點單句的「分析」是瞬間完成且不花額度的。
+let wsExamples = { total: 0, cached: 0 };
+
+function renderAnalyzeBtn(){
+  const b = el('wsAnalyze');
+  const left = wsExamples.total - wsExamples.cached;
+  if (!wsExamples.total){ b.hidden = true; return; }
+  b.hidden = false;
+  b.disabled = false;
+  b.textContent = left ? `批次分析例句（還有 ${left} 句）` : `例句都分析過了（${wsExamples.total} 句）`;
+  b.classList.toggle('danger', !left);
+}
+
+el('wsAnalyze').addEventListener('click', async () => {
+  const left = wsExamples.total - wsExamples.cached;
+  if (!left) {                                  // 都分析過了，直接去分析頁看
+    document.querySelector('.tabs button[data-view="analyze"]').click();
+    return;
+  }
+  const b = el('wsAnalyze');
+  b.disabled = true;
+  b.textContent = `分析中…${left} 句併成一次送，約 ${Math.max(20, Math.round(left * 6))} 秒`;
+  try {
+    const d = await fetch('/api/wordset-analyze', {
+      method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
+      body: JSON.stringify({ setId: wsCurrent, userToken: USER }),
+    }).then(r => r.json());
+    if (d.error){ b.textContent = d.message || d.error; return; }
+    wsExamples = { total: d.total, cached: d.cached + d.analyzed };
+    renderAnalyzeBtn();
+    el('wsHint').textContent =
+      `分析完 ${d.analyzed} 句（參考費用 ${money(d.usage.costUsd)}）。現在點任何例句的「分析」都是瞬間的。`;
+    loadHistory?.();
+  } catch (e){ b.textContent = '分析失敗：' + e.message; b.disabled = false; }
+});
+
+// 點例句的「分析」：切到分析頁，命中快取的話瞬間出結果
+el('wsOut').addEventListener('click', e => {
+  const b = e.target.closest('.exan');
+  if (!b) return;
+  const text = b.dataset.an;
+  document.querySelector('.tabs button[data-view="analyze"]').click();
+  setInput(text);
+  analyzeLive(text);
+});
 
 /** 家教每堂課給一份，日期是最自然的區別。同一天建第二份就加序號。 */
 let wsNames = [];

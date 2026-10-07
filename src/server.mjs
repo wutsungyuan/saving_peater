@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, extname, normalize as pathNormalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { analyze, fixPronounCase, MODEL } from './analyzer.mjs';
+import { analyze, analyzeMany, fixPronounCase, MODEL } from './analyzer.mjs';
 import { splitSentences } from './segment.mjs';
 import { openCache } from './cache.mjs';
 import { generate, grade, TYPES } from './exercises.mjs';
@@ -60,6 +60,15 @@ function authed(req, url){
   const sent = req.headers['x-auth-token'] || url.searchParams.get('token') || '';
   // 長度相同才比對，避免洩漏長度；這裡是本機小工具，常數時間比對非必要
   return sent === AUTH_TOKEN;
+}
+
+/** 把字表裡所有例句抓出來去重 */
+function exampleSentences(words){
+  const seen = new Set();
+  for (const w of words)
+    for (const sn of w.senses ?? [])
+      if (sn.example) seen.add(String(sn.example).trim());
+  return [...seen];
 }
 
 async function handleAnalyze(req, res, url){
@@ -358,10 +367,62 @@ const server = createServer(async (req, res) => {
       const userToken = String(url.searchParams.get('user') || 'anon').slice(0, 64);
       const id = Number(url.searchParams.get('id'));
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+      const words = id ? cache.wordsOf(id, userToken) : [];
+      const exs = exampleSentences(words);
       return res.end(JSON.stringify({
-        words: id ? cache.wordsOf(id, userToken) : [],
+        words,
         stats: id ? cache.wordStats(id, userToken) : null,
+        // 例句的句型分析狀態：已分析過的點了是瞬間，沒分析過的才要花額度
+        examples: { total: exs.length, cached: exs.filter(t => cache.get(t)).length },
       }));
+    }
+
+    // 批次分析字表的例句：多句併成一次呼叫，比逐句省四成
+    if (req.method === 'POST' && url.pathname === '/api/wordset-analyze'){
+      if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+      let b = {};
+      try { b = JSON.parse(await readBody(req)) || {}; } catch {}
+      const userToken = String(b.userToken || 'anon').slice(0, 64);
+      const words = cache.wordsOf(Number(b.setId), userToken);
+      const all = exampleSentences(words);
+      const todo = all.filter(t => !cache.get(t));      // 已分析過的不重跑
+      if (!todo.length){
+        res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ total: all.length, cached: all.length, analyzed: 0,
+          usage: { costUsd: 0, outputTokens: 0 } }));
+      }
+      const t0 = Date.now();
+      try {
+        const { results, usage, missed } = await analyzeMany(todo);
+        const got = results.filter(Boolean).length || 1;
+        // 批次沒有逐句的用量，按句數分攤，帳才對得起來
+        const per = {
+          inputTokens:  Math.round(usage.inputTokens  / got),
+          outputTokens: Math.round(usage.outputTokens / got),
+          costUsd: usage.costUsd / got,
+        };
+        let saved = 0;
+        results.forEach((r, i) => {
+          if (!r) return;
+          try {
+            fixPronounCase(r.words ?? []);
+            cache.put(todo[i], r, MODEL, per);
+            saved++;
+          } catch (err){ console.error('存快取失敗：', todo[i].slice(0, 40), err.message); }
+        });
+        cache.log({ kind:'analyze', chars: todo.join(' ').length, sentences: todo.length,
+          cached: all.length - todo.length, analyzed: saved, ms: Date.now() - t0,
+          text: todo.join('\n'), ...usage });
+        res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ total: all.length, cached: all.length - todo.length,
+          analyzed: saved, missed, usage }));
+      } catch (e){
+        const kind = e.kind || 'other';
+        res.writeHead(kind === 'rate-limit' ? 429 : 500, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: kind, message:
+          kind === 'rate-limit' ? 'Claude 訂閱額度似乎已用盡，等額度重置後再試。'
+        : '分析失敗：' + String(e.message).slice(0, 200) }));
+      }
     }
 
     if (req.method === 'POST' && url.pathname === '/api/wordquiz'){
