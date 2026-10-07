@@ -79,7 +79,15 @@ export function openCache(file = 'data/cache.db'){
       cache_read_tokens INTEGER DEFAULT 0, cost_usd REAL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_requests_time ON requests(created_at DESC);
-  `);
+  
+    CREATE TABLE IF NOT EXISTS quizzes (
+      id         TEXT PRIMARY KEY,
+      kind       TEXT,              -- sentence（句型練習）| word（單字測驗）
+      data       TEXT NOT NULL,     -- 題目含答案的 JSON
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_quizzes_at ON quizzes(created_at);
+`);
 
   // 既有資料庫補欄位（node:sqlite 沒有 IF NOT EXISTS，用 PRAGMA 檢查）
   const cols = t => new Set(db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name));
@@ -348,6 +356,20 @@ export function openCache(file = 'data/cache.db'){
 
     count(){ return db.prepare('SELECT COUNT(*) n FROM sentences').get().n; },
 
+    // 出好的題目（含答案）。原本只放記憶體，伺服器一重啟就全部失效，
+    // 作答到一半的人按交卷只會看到「這份測驗已失效」。
+    putQuiz(id, kind, questions){
+      db.prepare(`INSERT OR REPLACE INTO quizzes (id, kind, data, created_at)
+        VALUES (?,?,?,?)`).run(id, kind, JSON.stringify(questions), Date.now());
+    },
+    getQuiz(id){
+      const r = db.prepare('SELECT data FROM quizzes WHERE id = ?').get(id);
+      return r ? JSON.parse(r.data) : null;
+    },
+    pruneQuizzes(days = 7){
+      db.prepare('DELETE FROM quizzes WHERE created_at < ?')
+        .run(Date.now() - days * 86400_000);
+    },
     prune(days){
       const cutoff = Date.now() - days * 86400_000;
       const n = db.prepare('SELECT COUNT(*) n FROM sentences WHERE created_at < ?').get(cutoff).n;

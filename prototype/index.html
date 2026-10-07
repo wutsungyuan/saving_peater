@@ -226,6 +226,9 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
   font-size:1.05rem;font-weight:700;color:var(--accent);
   background:color-mix(in srgb,var(--accent) 9%,var(--surface));
   border:2.5px dashed var(--accent);border-radius:6px}
+.quizmsg{margin-top:10px;padding:11px 14px;border-radius:4px;
+  background:var(--err-bg);border:1px solid var(--err);color:var(--err);
+  font-size:.92rem;flex-basis:100%}
 .linky.danger{color:var(--muted)}
 .linky.danger:hover{color:var(--err)}
 .linky.danger[data-armed="1"]{color:var(--err);font-weight:700}
@@ -1400,7 +1403,7 @@ async function submitQuiz(){
     });
     const d = await res.json();
     if (!res.ok){
-      quizOut.insertAdjacentHTML('afterbegin', `<p class="msg">${esc(d.message || d.error)}</p>`);
+      quizMsg('quizActions', d.message || d.error);
       quizSubmit.disabled = false;
       return;
     }
@@ -1434,7 +1437,7 @@ async function submitQuiz(){
     quizAgain.hidden = false;
   } catch (e){
     quizSubmit.disabled = false;
-    quizOut.insertAdjacentHTML('afterbegin', `<p class="msg">交卷失敗：${esc(e.message)}</p>`);
+    quizMsg('quizActions', '交卷失敗：' + e.message);
   }
 }
 
@@ -1817,6 +1820,7 @@ function renderWordQ(q, n){
 async function startWordQuiz(){
   el('wsSummary').hidden = true; el('wsActions').hidden = true;
   el('wsAgain').hidden = true; el('wsSubmit').disabled = false;
+  clearQuizMsg('wsActions');
   el('wsWords').hidden = true; el('wsToggleList').textContent = '看單字清單';
   el('wsOut').innerHTML = '<p class="msg">出題中…</p>';
   try {
@@ -1862,7 +1866,7 @@ async function submitWordQuiz(){
       body: JSON.stringify({ quizId: wsQuiz.quizId, userToken: USER, answers }),
     }).then(r => r.json());
     if (d.error){ el('wsSubmit').disabled = false;
-      el('wsOut').insertAdjacentHTML('afterbegin', `<p class="msg">${esc(d.message||d.error)}</p>`); return; }
+      quizMsg('wsActions', d.message || d.error); return; }
 
     const wrong = [];
     for (const r of d.results){
@@ -1886,7 +1890,7 @@ async function submitWordQuiz(){
     await selectSetStatsOnly();
   } catch (e){
     el('wsSubmit').disabled = false;
-    el('wsOut').insertAdjacentHTML('afterbegin', `<p class="msg">交卷失敗：${esc(e.message)}</p>`);
+    quizMsg('wsActions', '交卷失敗：' + e.message);
   }
 }
 
@@ -1934,6 +1938,24 @@ function shrinkImage(file, maxSide = 1600){
 
 
 
+
+
+/** 交卷的錯誤訊息要出現在交卷鍵旁邊。
+ *  原本插在題目列表最上方，使用者在頁尾按交卷根本看不到，
+ *  而且用 insertAdjacentHTML 會一直疊上去。 */
+function quizMsg(actionsId, text){
+  const row = el(actionsId);
+  let p = row.parentNode.querySelector('.quizmsg');
+  if (!p){
+    p = document.createElement('p');
+    p.className = 'msg quizmsg';
+    row.after(p);
+  }
+  p.textContent = text;
+  p.hidden = false;
+  p.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+const clearQuizMsg = id => el(id).parentNode.querySelector('.quizmsg')?.remove();
 
 // ---- 例句的句型分析 ----
 // 分析過的句子存在同一個快取裡，所以批次分析過之後，

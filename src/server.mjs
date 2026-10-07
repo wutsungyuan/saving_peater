@@ -30,8 +30,8 @@ const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1
 
 const cache = openCache(join(ROOT, 'data', 'cache.db'));
 const seeded = autoSeed(cache);
-const quizzes = new Map();   // quizId -> { questions(含答案), at }
-const wordQuizzes = new Map();   // 新機器首次啟動：把版控裡的種子快取載進來
+// 題目（含答案）存進 SQLite，不放記憶體 —— 伺服器重啟時，
+// 作答到一半的人才不會按交卷就看到「這份測驗已失效」。
 
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css',
   '.json':'application/json', '.svg':'image/svg+xml', '.ico':'image/x-icon' };
@@ -209,8 +209,7 @@ const server = createServer(async (req, res) => {
       const questions = generate(records, { count, types, acc });
       // 答案不隨題目下發，避免在開發者工具裡直接看到
       const quizId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-      quizzes.set(quizId, { questions, at: Date.now() });
-      if (quizzes.size > 200) for (const [k, v] of quizzes) if (Date.now() - v.at > 864e5) quizzes.delete(k);
+      cache.putQuiz(quizId, 'sentence', questions);
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify({
         quizId, pool: records.length, focusWeak,
@@ -228,14 +227,14 @@ const server = createServer(async (req, res) => {
       if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
       let body = {};
       try { body = JSON.parse(await readBody(req)) || {}; } catch {}
-      const quiz = quizzes.get(body.quizId);
-      if (!quiz){
+      const qs = cache.getQuiz(body.quizId);
+      if (!qs){
         res.writeHead(410, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error: 'quiz-expired', message: '這份練習已失效，請重新出題。' }));
       }
       const userToken = String(body.userToken || 'anon').slice(0, 64);
       const given = body.answers || {};
-      const results = quiz.questions.map(q => {
+      const results = qs.map(q => {
         const g = grade(q, given[q.id] ?? []);
         cache.recordAttempt({
           userToken, qtype: q.type, sentenceHash: q.meta.hash,
@@ -438,8 +437,7 @@ const server = createServer(async (req, res) => {
         ? b.modes.filter(m => WORD_MODES.includes(m)) : WORD_MODES;
       const questions = generateWordQuiz(words, { count: Math.min(Math.max(Number(b.count)||10,1),30), modes });
       const quizId = 'w' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
-      wordQuizzes.set(quizId, { questions, at: Date.now() });
-      if (wordQuizzes.size > 200) for (const [k,v] of wordQuizzes) if (Date.now()-v.at > 864e5) wordQuizzes.delete(k);
+      cache.putQuiz(quizId, 'word', questions);
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ quizId, total: words.length,
         questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest) }));
@@ -448,14 +446,14 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/wordattempts'){
       let b = {};
       try { b = JSON.parse(await readBody(req)) || {}; } catch {}
-      const quiz = wordQuizzes.get(b.quizId);
-      if (!quiz){
+      const qs = cache.getQuiz(b.quizId);
+      if (!qs){
         res.writeHead(410, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error:'quiz-expired', message:'這份測驗已失效，請重新出題。' }));
       }
       const userToken = String(b.userToken || 'anon').slice(0, 64);
       const given = b.answers || {};
-      const results = quiz.questions.map(q => {
+      const results = qs.map(q => {
         const g = gradeWord(q, given[q.id] ?? []);
         cache.recordWordAttempt({ userToken, wordId: q.wordId, senseIdx: q.meta?.senseIdx,
           mode: q.mode, correct: g.correct, answer: g.given.join(' | '), expected: g.expected.join(' | ') });
@@ -494,8 +492,9 @@ server.listen(PORT, HOST, () => {
   if (seeded) console.log(`已從 fixtures/seed-cache.jsonl 載入 ${seeded.added} 句種子快取`);
   else console.log(`快取 ${cache.count()} 句`);
   const purged = cache.pruneHistory(HISTORY_DAYS);
+  cache.pruneQuizzes(7);                       // 一週前的題目沒人會再交卷
   if (purged) console.log(`已清掉 ${purged} 筆超過 ${HISTORY_DAYS} 天的歷史原文`);
-  setInterval(() => cache.pruneHistory(HISTORY_DAYS), 6 * 3600_000).unref();
+  setInterval(() => { cache.pruneHistory(HISTORY_DAYS); cache.pruneQuizzes(7); }, 6 * 3600_000).unref();
   console.log(`分析由本機 claude CLI 執行，額度計入這台機器登入的 Claude 帳號。`);
   console.log(`歷史原文保留 ${HISTORY_DAYS} 天後自動清除（分析快取不受影響）。`);
   console.log(`訂閱額度請在 Claude app → Settings → Usage 查看（CLI 沒有提供查詢介面）。`);
