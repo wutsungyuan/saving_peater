@@ -42,6 +42,32 @@ export function openCache(file = 'data/cache.db'){
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_attempts_user ON attempts(user_token, created_at);
+    CREATE TABLE IF NOT EXISTS wordsets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL, note TEXT, created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS words (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      set_id INTEGER NOT NULL, idx INTEGER NOT NULL,
+      term TEXT NOT NULL, syllables TEXT, spell_tip TEXT,
+      data TEXT NOT NULL,                 -- senses / confusable / family 的完整 JSON
+      UNIQUE(set_id, term)
+    );
+    CREATE INDEX IF NOT EXISTS idx_words_set ON words(set_id, idx);
+    CREATE TABLE IF NOT EXISTS word_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_token TEXT NOT NULL, word_id INTEGER NOT NULL, sense_idx INTEGER,
+      mode TEXT NOT NULL, correct INTEGER NOT NULL,
+      answer TEXT, expected TEXT, created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_wattempts ON word_attempts(user_token, created_at);
+    -- Leitner 間隔複習：答對往上一盒、答錯打回第一盒，到期的優先出
+    CREATE TABLE IF NOT EXISTS word_progress (
+      user_token TEXT NOT NULL, word_id INTEGER NOT NULL,
+      box INTEGER NOT NULL DEFAULT 0, due_at INTEGER NOT NULL DEFAULT 0,
+      correct INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_token, word_id)
+    );
     CREATE TABLE IF NOT EXISTS requests (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       chars      INTEGER, sentences INTEGER, cached INTEGER, analyzed INTEGER,
@@ -195,6 +221,86 @@ export function openCache(file = 'data/cache.db'){
         ORDER BY RANDOM() LIMIT ?`).all(limit)
         .map(r => { try { return { hash: r.hash, data: JSON.parse(r.result) }; } catch { return null; } })
         .filter(Boolean);
+    },
+
+    // ---------- 單字表 ----------
+    createWordset(name, words, note){
+      const now = Date.now();
+      db.exec('BEGIN');
+      try {
+        const r = db.prepare('INSERT INTO wordsets (name, note, created_at) VALUES (?,?,?)')
+          .run(name, note ?? null, now);
+        const setId = Number(r.lastInsertRowid);
+        const ins = db.prepare(`INSERT OR REPLACE INTO words
+          (set_id, idx, term, syllables, spell_tip, data) VALUES (?,?,?,?,?,?)`);
+        words.forEach((w, i) => ins.run(setId, i, w.term, w.syllables ?? null, w.spellTip ?? null,
+          JSON.stringify({ senses: w.senses ?? [], confusable: w.confusable ?? [], family: w.family ?? [] })));
+        db.exec('COMMIT');
+        return setId;
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
+    },
+
+    wordsets(userToken){
+      return db.prepare(`SELECT s.id, s.name, s.note, s.created_at,
+          (SELECT COUNT(*) FROM words w WHERE w.set_id = s.id) AS word_count,
+          (SELECT COUNT(*) FROM words w JOIN word_progress p
+             ON p.word_id = w.id AND p.user_token = ? WHERE w.set_id = s.id AND p.box >= 3) AS mastered
+        FROM wordsets s ORDER BY s.created_at DESC`).all(userToken);
+    },
+
+    /** 取出一份字表的所有單字，附上該使用者的進度 */
+    wordsOf(setId, userToken){
+      return db.prepare(`SELECT w.id, w.idx, w.term, w.syllables, w.spell_tip, w.data,
+          COALESCE(p.box,0) box, COALESCE(p.due_at,0) due_at,
+          COALESCE(p.correct,0) correct, COALESCE(p.total,0) total
+        FROM words w LEFT JOIN word_progress p ON p.word_id = w.id AND p.user_token = ?
+        WHERE w.set_id = ? ORDER BY w.idx`).all(userToken, setId)
+        .map(r => { const d = JSON.parse(r.data);
+          return { id:r.id, idx:r.idx, term:r.term, syllables:r.syllables, spellTip:r.spell_tip,
+                   ...d, box:r.box, dueAt:r.due_at, correct:r.correct, total:r.total }; });
+    },
+
+    deleteWordset(id){
+      db.exec('BEGIN');
+      try {
+        db.prepare('DELETE FROM word_attempts WHERE word_id IN (SELECT id FROM words WHERE set_id = ?)').run(id);
+        db.prepare('DELETE FROM word_progress WHERE word_id IN (SELECT id FROM words WHERE set_id = ?)').run(id);
+        db.prepare('DELETE FROM words WHERE set_id = ?').run(id);
+        db.prepare('DELETE FROM wordsets WHERE id = ?').run(id);
+        db.exec('COMMIT');
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
+    },
+
+    /** 記錄單字作答並更新 Leitner 盒子 */
+    recordWordAttempt(a){
+      db.prepare(`INSERT INTO word_attempts
+        (user_token, word_id, sense_idx, mode, correct, answer, expected, created_at)
+        VALUES (?,?,?,?,?,?,?,?)`).run(
+        a.userToken, a.wordId, a.senseIdx ?? null, a.mode,
+        a.correct ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now());
+
+      const INTERVALS = [10*60e3, 60*60e3, 24*3600e3, 3*24*3600e3, 7*24*3600e3, 14*24*3600e3];
+      const cur = db.prepare('SELECT box, correct, total FROM word_progress WHERE user_token = ? AND word_id = ?')
+        .get(a.userToken, a.wordId) ?? { box: 0, correct: 0, total: 0 };
+      const box = a.correct ? Math.min(cur.box + 1, INTERVALS.length - 1) : 0;
+      db.prepare(`INSERT OR REPLACE INTO word_progress
+        (user_token, word_id, box, due_at, correct, total) VALUES (?,?,?,?,?,?)`).run(
+        a.userToken, a.wordId, box, Date.now() + INTERVALS[box],
+        cur.correct + (a.correct ? 1 : 0), cur.total + 1);
+    },
+
+    wordStats(setId, userToken){
+      const row = db.prepare(`SELECT COUNT(*) words,
+          COALESCE(SUM(p.total),0) attempts, COALESCE(SUM(p.correct),0) correct,
+          COALESCE(SUM(CASE WHEN p.box >= 3 THEN 1 ELSE 0 END),0) mastered,
+          COALESCE(SUM(CASE WHEN p.total > 0 AND COALESCE(p.box,0) = 0 THEN 1 ELSE 0 END),0) weak
+        FROM words w LEFT JOIN word_progress p ON p.word_id = w.id AND p.user_token = ?
+        WHERE w.set_id = ?`).get(userToken, setId);
+      const byWord = db.prepare(`SELECT w.term, COALESCE(p.box,0) box,
+          COALESCE(p.correct,0) correct, COALESCE(p.total,0) total
+        FROM words w LEFT JOIN word_progress p ON p.word_id = w.id AND p.user_token = ?
+        WHERE w.set_id = ? ORDER BY COALESCE(p.box,0), w.idx`).all(userToken, setId);
+      return { ...row, byWord };
     },
 
     /** 匯出成可攜、可進版控、可合併的列陣列（依 hash 排序，git diff 才乾淨） */

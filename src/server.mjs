@@ -9,6 +9,7 @@ import { analyze, fixPronounCase, MODEL } from './analyzer.mjs';
 import { splitSentences } from './segment.mjs';
 import { openCache } from './cache.mjs';
 import { generate, grade, TYPES } from './exercises.mjs';
+import { parseWordList, enrich, generateWordQuiz, gradeWord, WORD_MODES } from './wordset.mjs';
 import { autoSeed } from './cache-cli.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -26,7 +27,8 @@ const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1
 
 const cache = openCache(join(ROOT, 'data', 'cache.db'));
 const seeded = autoSeed(cache);
-const quizzes = new Map();   // quizId -> { questions(含答案), at }   // 新機器首次啟動：把版控裡的種子快取載進來
+const quizzes = new Map();   // quizId -> { questions(含答案), at }
+const wordQuizzes = new Map();   // 新機器首次啟動：把版控裡的種子快取載進來
 
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css',
   '.json':'application/json', '.svg':'image/svg+xml', '.ico':'image/x-icon' };
@@ -241,6 +243,101 @@ const server = createServer(async (req, res) => {
       const userToken = url.searchParams.get('user') || 'anon';
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify(cache.weakness(userToken), null, 2));
+    }
+
+    // ---------- 單字表 ----------
+    if (url.pathname === '/api/wordsets'){
+      const userToken = String(url.searchParams.get('user') || 'anon').slice(0, 64);
+      if (req.method === 'GET'){
+        res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ sets: cache.wordsets(userToken) }));
+      }
+      if (req.method === 'POST'){
+        if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+        let b = {};
+        try { b = JSON.parse(await readBody(req)) || {}; } catch {}
+        const items = parseWordList(b.text || '');
+        if (!items.length){
+          res.writeHead(400, { 'content-type':'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error:'empty', message:'看不到任何單字。一行一個，可以用逗號接中文。' }));
+        }
+        if (items.length > 60){
+          res.writeHead(413, { 'content-type':'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error:'too-many', message:`一次最多 60 個字，這次有 ${items.length} 個。` }));
+        }
+        try {
+          const { words, usage } = await enrich(items);
+          const id = cache.createWordset(b.name || `字表 ${new Date().toLocaleDateString('zh-TW')}`, words, b.note || null);
+          cache.log({ chars:(b.text||'').length, sentences:items.length, cached:0, analyzed:items.length,
+            ms:0, text:null, ...usage });
+          res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ id, count: words.length, usage }));
+        } catch (e){
+          const kind = e.kind || 'other';
+          res.writeHead(kind === 'rate-limit' ? 429 : 500, { 'content-type':'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error: kind, message:
+            kind === 'rate-limit' ? 'Claude 訂閱額度似乎已用盡，等額度重置後再建立字表。'
+          : kind === 'auth' ? 'Claude 認證失效，請在終端機執行 claude 重新登入。'
+          : '建立字表失敗：' + String(e.message).slice(0, 200) }));
+        }
+      }
+      if (req.method === 'DELETE'){
+        if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+        const id = Number(url.searchParams.get('id'));
+        if (id) cache.deleteWordset(id);
+        res.writeHead(200, { 'content-type':'application/json' });
+        return res.end('{"ok":true}');
+      }
+    }
+
+    if (url.pathname === '/api/wordset'){
+      const userToken = String(url.searchParams.get('user') || 'anon').slice(0, 64);
+      const id = Number(url.searchParams.get('id'));
+      res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({
+        words: id ? cache.wordsOf(id, userToken) : [],
+        stats: id ? cache.wordStats(id, userToken) : null,
+      }));
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/wordquiz'){
+      let b = {};
+      try { b = JSON.parse(await readBody(req)) || {}; } catch {}
+      const userToken = String(b.userToken || 'anon').slice(0, 64);
+      const words = cache.wordsOf(Number(b.setId), userToken);
+      if (!words.length){
+        res.writeHead(409, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error:'empty-set', message:'這份字表沒有單字。' }));
+      }
+      const modes = Array.isArray(b.modes) && b.modes.length
+        ? b.modes.filter(m => WORD_MODES.includes(m)) : WORD_MODES;
+      const questions = generateWordQuiz(words, { count: Math.min(Math.max(Number(b.count)||10,1),30), modes });
+      const quizId = 'w' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+      wordQuizzes.set(quizId, { questions, at: Date.now() });
+      if (wordQuizzes.size > 200) for (const [k,v] of wordQuizzes) if (Date.now()-v.at > 864e5) wordQuizzes.delete(k);
+      res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ quizId, total: words.length,
+        questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest) }));
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/wordattempts'){
+      let b = {};
+      try { b = JSON.parse(await readBody(req)) || {}; } catch {}
+      const quiz = wordQuizzes.get(b.quizId);
+      if (!quiz){
+        res.writeHead(410, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error:'quiz-expired', message:'這份測驗已失效，請重新出題。' }));
+      }
+      const userToken = String(b.userToken || 'anon').slice(0, 64);
+      const given = b.answers || {};
+      const results = quiz.questions.map(q => {
+        const g = gradeWord(q, given[q.id] ?? []);
+        cache.recordWordAttempt({ userToken, wordId: q.wordId, senseIdx: q.meta?.senseIdx,
+          mode: q.mode, correct: g.correct, answer: g.given.join(' | '), expected: g.expected.join(' | ') });
+        return { id:q.id, correct:g.correct, expected:q.answer, given:g.given, explain:q.explain, term:q.term };
+      });
+      res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ results, correct: results.filter(r=>r.correct).length, total: results.length }));
     }
 
     if (url.pathname === '/api/history'){
