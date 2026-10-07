@@ -271,7 +271,7 @@ const server = createServer(async (req, res) => {
           const name = b.name || `字表 ${new Date().toLocaleDateString('zh-TW')}`;
           const id = cache.createWordset(name, words, b.note || null);
           // 建字表有呼叫模型，和分析一樣要進歷史紀錄
-          cache.log({ kind:'wordset', chars:(b.text||'').length, sentences:items.length,
+          cache.log({ kind:'wordset', refId:id, chars:(b.text||'').length, sentences:items.length,
             cached:0, analyzed:items.length, ms: Date.now() - t0,
             text: `${name}\n${items.map(w => w.zh ? `${w.term}, ${w.zh}` : w.term).join('\n')}`,
             ...usage });

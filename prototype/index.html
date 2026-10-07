@@ -160,6 +160,14 @@ h3.sec{margin:4px 0 0;font-size:.75rem;font-weight:700;letter-spacing:.1em;text-
   padding:2px 8px;border-radius:999px;border:1px solid var(--rule);color:var(--faint);
   margin-right:8px;vertical-align:2px}
 .hkind.word{border-color:var(--pos-pron);color:var(--pos-pron)}
+.hkind.gone{border-color:var(--err);color:var(--err)}
+.hitem.hdead .hname{text-decoration:line-through;text-decoration-thickness:1px}
+.hname{display:block;font-family:var(--font-ui);font-weight:600;font-size:.95rem;
+  color:var(--fg);margin-top:4px}
+.hwords{display:block;font-family:var(--font-en);font-size:.86rem;color:var(--muted);
+  line-height:1.65;margin-top:3px}
+.hnote{font-size:.8rem;color:var(--err);background:var(--err-bg);border:1px solid var(--err);
+  border-radius:3px;padding:6px 10px;margin-top:8px}
 .hitem .hmeta{font-size:.76rem;color:var(--faint);margin-top:6px;font-family:var(--font-ui);
   display:flex;gap:10px;flex-wrap:wrap}
 .hitem .hmeta b{font-family:var(--font-mono);color:var(--muted);font-weight:600}
@@ -1433,12 +1441,20 @@ async function loadHistory(){
       const gone = !it.preview;
       const isWord = it.kind === 'wordset';
       const unit = isWord ? '字' : '句';
-      return `<button class="hitem${gone ? ' hgone' : ''}" data-id="${it.id}"
-        data-kind="${esc(it.kind)}" ${gone ? 'disabled' : ''}>
+      const dead = isWord && !it.ref_alive;           // 字表已被刪除
+      // 字表的原文是「名稱\n單字清單」，拆開顯示才讀得懂
+      const lines = (it.preview || '').split('\n');
+      const body = gone ? '（原文已超過保留期限，自動清除）'
+        : isWord
+          ? `<span class="hname">${esc(lines[0])}</span>` +
+            `<span class="hwords">${esc(lines.slice(1).join('、'))}${it.full_len > 300 ? '…' : ''}</span>`
+          : esc(it.preview) + (it.full_len > 300 ? '…' : '');
+      return `<button class="hitem${gone ? ' hgone' : ''}${dead ? ' hdead' : ''}" data-id="${it.id}"
+        data-kind="${esc(it.kind)}" data-ref="${it.ref_id ?? ''}" ${gone ? 'disabled' : ''}>
         <div class="htext">
           <span class="hkind${isWord ? ' word' : ''}">${isWord ? '建立字表' : '分析句子'}</span>
-          ${gone ? '（原文已超過保留期限，自動清除）'
-            : esc(it.preview) + (it.full_len > 160 ? '…' : '')}
+          ${dead ? '<span class="hkind gone">已刪除</span>' : ''}
+          ${body}
           <div class="hmeta">
             <span>${timeAgo(it.created_at)}</span>
             <span><b>${it.sentences}</b> ${unit}</span>
@@ -1457,7 +1473,15 @@ async function loadHistory(){
 historyOut.addEventListener('click', async e => {
   const b = e.target.closest('.hitem'); if (!b || b.disabled) return;
   if (b.dataset.kind === 'wordset'){        // 字表不是句子，拿去分析沒有意義
+    if (b.classList.contains('hdead')){
+      b.insertAdjacentHTML('beforeend',
+        '<div class="hnote">這份字表已經刪除了，用量紀錄仍然保留。</div>');
+      setTimeout(() => b.querySelector('.hnote')?.remove(), 3000);
+      return;
+    }
+    const ref = Number(b.dataset.ref);
     document.querySelector('.tabs button[data-view="words"]').click();
+    if (ref) { wsCurrent = ref; await loadWordsets(); }   // 直接切到那一份
     return;
   }
   const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
