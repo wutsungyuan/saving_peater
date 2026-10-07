@@ -62,6 +62,29 @@ function authed(req, url){
   return sent === AUTH_TOKEN;
 }
 
+/** 訂正：把答錯的原題重出一次。
+ *  訂正就是把原本那題做對 —— 拼錯 interesting 的人要再拼一次 interesting，
+ *  換成聽考或選擇題測的是別的東西。題型、單字、例句一律不換，
+ *  只把選項順序打散，避免靠記得剛才的位置作答。 */
+function redoQuestions(quizId, ids){
+  const all = cache.getQuiz(quizId);
+  if (!all) return null;
+  const want = new Set(ids);
+  const picked = all.filter(q => want.has(q.id));
+  return picked.map((q, i) => {
+    const copy = { ...q, id: `${q.id.startsWith('w') ? 'w' : 'q'}f${i}${Date.now().toString(36).slice(-3)}` };
+    if (Array.isArray(copy.choices)){
+      const c = [...copy.choices];
+      for (let j = c.length - 1; j > 0; j--){
+        const k = Math.floor(Math.random() * (j + 1));
+        [c[j], c[k]] = [c[k], c[j]];
+      }
+      copy.choices = c;
+    }
+    return copy;
+  });
+}
+
 /** 把字表裡所有例句抓出來去重 */
 function exampleSentences(words){
   const seen = new Set();
@@ -200,10 +223,20 @@ const server = createServer(async (req, res) => {
       const userToken = String(body.userToken || 'anon').slice(0, 64);
       const focusWeak = body.focusWeak !== false;      // 預設開啟弱點加權
       const acc = focusWeak ? cache.accuracyMap(userToken) : null;
-      // 訂正時按 hash 精準取，不走有取樣上限的 pickSentences
-      let records = Array.isArray(body.onlyHashes) && body.onlyHashes.length
-        ? cache.sentencesByHash(body.onlyHashes.slice(0, 60))
-        : cache.pickSentences(60);
+      // 訂正：把答錯的原題重出，題型不換
+      if (body.redoFrom && Array.isArray(body.redoIds) && body.redoIds.length){
+        const questions = redoQuestions(body.redoFrom, body.redoIds);
+        if (!questions?.length){
+          res.writeHead(410, { 'content-type':'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error:'quiz-expired', message:'原本那份練習已失效，請重新出題。' }));
+        }
+        const quizId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+        cache.putQuiz(quizId, 'sentence', questions);
+        res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ quizId, pool: questions.length, focusWeak: false, weakDims: null,
+          redo: true, questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest) }));
+      }
+      const records = cache.pickSentences(60);
       if (!records.length){
         res.writeHead(409, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error: 'no-sentences',
@@ -431,13 +464,20 @@ const server = createServer(async (req, res) => {
       let b = {};
       try { b = JSON.parse(await readBody(req)) || {}; } catch {}
       const userToken = String(b.userToken || 'anon').slice(0, 64);
-      let words = cache.wordsOf(Number(b.setId), userToken);
-      // 訂正：只從答錯的那幾個字出題。題目會重新生成，所以不是把剛看過的答案抄一遍
-      if (Array.isArray(b.onlyWordIds) && b.onlyWordIds.length){
-        const want = new Set(b.onlyWordIds.map(Number));
-        const sub = words.filter(w => want.has(w.id));
-        if (sub.length) words = sub;
+      // 訂正：把答錯的原題重出，題型不換
+      if (b.redoFrom && Array.isArray(b.redoIds) && b.redoIds.length){
+        const questions = redoQuestions(b.redoFrom, b.redoIds);
+        if (!questions?.length){
+          res.writeHead(410, { 'content-type':'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error:'quiz-expired', message:'原本那份測驗已失效，請重新出題。' }));
+        }
+        const quizId = 'w' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+        cache.putQuiz(quizId, 'word', questions);
+        res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ quizId, total: questions.length, redo: true,
+          questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest) }));
       }
+      const words = cache.wordsOf(Number(b.setId), userToken);
       if (!words.length){
         res.writeHead(409, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error:'empty-set', message:'這份字表沒有單字。' }));

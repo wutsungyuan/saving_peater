@@ -1370,8 +1370,9 @@ async function startQuiz(opts = {}){
     const res = await fetch('/api/exercises', {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(TOKEN ? { 'x-auth-token': TOKEN } : {}) },
-      body: JSON.stringify({ count: opts.count ?? Number(document.getElementById('qcount').value),
-        types: selectedTypes(), userToken: USER, onlyHashes: opts.onlyHashes }),
+      body: JSON.stringify({ count: Number(document.getElementById('qcount').value),
+        types: selectedTypes(), userToken: USER,
+        redoFrom: opts.redoFrom, redoIds: opts.redoIds }),
     });
     const d = await res.json();
     if (!res.ok){
@@ -1440,9 +1441,9 @@ async function submitQuiz(){
       + `<div class="sum-break">作答已記錄，可到「弱點」看各句型與時態的正確率。</div>`;
     quizSummary.hidden = false;
     wrongFirst(quizOut, d.results, r => `q-${r.id}`);
-    quizWrongHashes = [...new Set(d.results.filter(r => !r.correct).map(r => r.hash).filter(Boolean))];
-    el('quizFix').hidden = !quizWrongHashes.length;
-    el('quizFix').textContent = `訂正錯題（${quizWrongHashes.length} 句）`;
+    quizWrong = { quizId: currentQuiz.quizId, ids: d.results.filter(r => !r.correct).map(r => r.id) };
+    el('quizFix').hidden = !quizWrong.ids.length;
+    el('quizFix').textContent = `訂正錯題（${quizWrong.ids.length} 題）`;
     quizSummary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     quizAgain.hidden = false;
   } catch (e){
@@ -1837,8 +1838,8 @@ async function startWordQuiz(opts = {}){
     const d = await fetch('/api/wordquiz', {
       method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
       body: JSON.stringify({ setId: wsCurrent, userToken: USER,
-        count: opts.count ?? Number(el('wsCount').value), modes: wsModesSel(),
-        onlyWordIds: opts.onlyWordIds }),
+        count: Number(el('wsCount').value), modes: wsModesSel(),
+        redoFrom: opts.redoFrom, redoIds: opts.redoIds }),
     }).then(r => r.json());
     if (d.error){ el('wsOut').innerHTML = `<p class="msg">${esc(d.message || d.error)}</p>`; return; }
     wsQuiz = d;
@@ -1898,9 +1899,9 @@ async function submitWordQuiz(){
     el('wsSummary').hidden = false;
     wrongFirst(el('wsOut'), d.results, r => `wq-${r.id}`);
     // 記下答錯的字，訂正時只考這幾個
-    wsWrongIds = [...new Set(d.results.filter(r => !r.correct).map(r => r.wordId).filter(Boolean))];
-    el('wsFix').hidden = !wsWrongIds.length;
-    el('wsFix').textContent = `訂正錯題（${wsWrongIds.length} 個字）`;
+    wsWrong = { quizId: wsQuiz.quizId, ids: d.results.filter(r => !r.correct).map(r => r.id) };
+    el('wsFix').hidden = !wsWrong.ids.length;
+    el('wsFix').textContent = `訂正錯題（${wsWrong.ids.length} 題）`;
     el('wsSummary').scrollIntoView({ behavior:'smooth', block:'nearest' });
     el('wsAgain').hidden = false;
     await selectSetStatsOnly();
@@ -1958,18 +1959,18 @@ function shrinkImage(file, maxSide = 1600){
 
 
 
-// ---- 訂正：只考答錯的，而且題目重新生成 ----
-// 重新生成是刻意的：直接重問同一題等於把剛看到的答案抄一遍，
-// 換個問法（中考英變聽考、選項重排）才是真的有沒有記住。
-let wsWrongIds = [], quizWrongHashes = [];
+// ---- 訂正：把答錯的原題重出 ----
+// 訂正就是把原本那題做對，所以題型不換。只有選項順序會打散。
+let wsWrong = { quizId: null, ids: [] };
+let quizWrong = { quizId: null, ids: [] };
 
 el('wsFix').addEventListener('click', () => {
-  if (!wsWrongIds.length) return;
-  startWordQuiz({ onlyWordIds: wsWrongIds, count: wsWrongIds.length });
+  if (!wsWrong.ids.length) return;
+  startWordQuiz({ redoFrom: wsWrong.quizId, redoIds: wsWrong.ids });
 });
 el('quizFix').addEventListener('click', () => {
-  if (!quizWrongHashes.length) return;
-  startQuiz({ onlyHashes: quizWrongHashes, count: quizWrongHashes.length });
+  if (!quizWrong.ids.length) return;
+  startQuiz({ redoFrom: quizWrong.quizId, redoIds: quizWrong.ids });
 });
 
 /** 批改後把答錯的排到最前面 —— 要訂正的東西不該埋在一堆答對的裡面。
