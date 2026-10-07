@@ -204,6 +204,13 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .wchip[aria-pressed="true"]{background:var(--fg);border-color:var(--fg);color:var(--surface);font-weight:600}
 .wchip small{font-family:var(--font-mono);font-size:.72rem;opacity:.75}
 .wchip small.when{opacity:.5}
+#view-words.dropping{position:relative}
+#view-words.dropping::after{content:'放開就開始辨識課本照片';
+  position:absolute;inset:-6px;z-index:20;pointer-events:none;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.05rem;font-weight:700;color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 9%,var(--surface));
+  border:2.5px dashed var(--accent);border-radius:6px}
 .linky.danger{color:var(--muted)}
 .linky.danger:hover{color:var(--err)}
 .linky.danger[data-armed="1"]{color:var(--err);font-weight:700}
@@ -505,7 +512,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
           <div class="row">
             <button id="wsPhoto">拍照／選課本照片</button>
             <input type="file" id="wsFile" accept="image/*" capture="environment" hidden>
-            <span class="hint">辨識完會填進上面的框，核對後再按建立。</span>
+            <span class="hint">也可以把圖片直接拖進來，或按 ⌘V 貼上。辨識完會填進上面的框，核對後再按建立。</span>
           </div>
           <div class="row">
             <button class="primary" id="wsCreate">建立字表</button>
@@ -1891,10 +1898,21 @@ function shrinkImage(file, maxSide = 1600){
   });
 }
 
-el('wsPhoto').addEventListener('click', () => el('wsFile').click());
-el('wsFile').addEventListener('change', async e => {
-  const file = e.target.files?.[0];
-  e.target.value = '';                          // 讓同一張照片可以再選一次
+/** 從拖曳或貼上的事件裡挑出第一張圖片 */
+function imageFromTransfer(dt){
+  if (!dt) return null;
+  for (const f of dt.files || []) if (f.type?.startsWith('image/')) return f;
+  for (const it of dt.items || []){
+    if (it.kind === 'file' && it.type?.startsWith('image/')){
+      const f = it.getAsFile();
+      if (f) return f;
+    }
+  }
+  return null;
+}
+
+/** 選圖、拖曳、貼上三種來源都走這裡 */
+async function handleImageFile(file){
   if (!file) return;
   el('wsPhoto').disabled = true;
   el('wsHint').textContent = '讀取照片…';
@@ -1917,6 +1935,53 @@ el('wsFile').addEventListener('change', async e => {
   } catch (err){
     el('wsHint').textContent = '辨識失敗：' + err.message;
   } finally { el('wsPhoto').disabled = false; }
+}
+
+el('wsPhoto').addEventListener('click', () => el('wsFile').click());
+el('wsFile').addEventListener('change', e => {
+  const f = e.target.files?.[0];
+  e.target.value = '';                          // 讓同一張照片可以再選一次
+  handleImageFile(f);
+});
+
+// ---- 拖曳：整個單字分頁都能接，表單沒開就自動打開 ----
+const openFormFor = (msg) => {
+  if (el('wsForm').hidden){ el('wsForm').hidden = false; el('wsNew').textContent = '收起'; }
+  if (msg) el('wsHint').textContent = msg;
+};
+let dragDepth = 0;
+const wordsView = el('view-words');
+wordsView.addEventListener('dragenter', e => {
+  if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+  e.preventDefault();
+  if (dragDepth++ === 0) wordsView.classList.add('dropping');
+});
+wordsView.addEventListener('dragover', e => {
+  if ([...(e.dataTransfer?.types || [])].includes('Files')){
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }
+});
+wordsView.addEventListener('dragleave', () => {
+  if (--dragDepth <= 0){ dragDepth = 0; wordsView.classList.remove('dropping'); }
+});
+wordsView.addEventListener('drop', e => {
+  const f = imageFromTransfer(e.dataTransfer);
+  if (!f && !(e.dataTransfer?.files?.length)) return;   // 不是檔案就讓瀏覽器自己處理
+  e.preventDefault();
+  dragDepth = 0; wordsView.classList.remove('dropping');
+  if (!f){ openFormFor('拖進來的不是圖片。請拖 JPG 或 PNG 的課本照片。'); return; }
+  openFormFor('');
+  handleImageFile(f);
+});
+
+// ---- 貼上：從 LINE 之類的地方複製圖片，直接 ⌘V ----
+wordsView.addEventListener('paste', e => {
+  const f = imageFromTransfer(e.clipboardData);
+  if (!f) return;                                // 貼文字就照常貼進輸入框
+  e.preventDefault();
+  openFormFor('');
+  handleImageFile(f);
 });
 
 el('wsNew').addEventListener('click', () => {
