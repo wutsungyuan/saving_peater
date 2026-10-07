@@ -200,7 +200,10 @@ const server = createServer(async (req, res) => {
       const userToken = String(body.userToken || 'anon').slice(0, 64);
       const focusWeak = body.focusWeak !== false;      // 預設開啟弱點加權
       const acc = focusWeak ? cache.accuracyMap(userToken) : null;
-      const records = cache.pickSentences(60);
+      // 訂正時按 hash 精準取，不走有取樣上限的 pickSentences
+      let records = Array.isArray(body.onlyHashes) && body.onlyHashes.length
+        ? cache.sentencesByHash(body.onlyHashes.slice(0, 60))
+        : cache.pickSentences(60);
       if (!records.length){
         res.writeHead(409, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error: 'no-sentences',
@@ -242,7 +245,7 @@ const server = createServer(async (req, res) => {
           tenseAspect: q.meta.tenseAspect, pos: q.meta.pos, pronCase: q.meta.case,
           correct: g.correct, answer: g.given.join(' | '), expected: g.expected.join(' | '),
         });
-        return { id: q.id, correct: g.correct, expected: q.answer, given: g.given, explain: q.explain };
+        return { id: q.id, hash: q.meta.hash, correct: g.correct, expected: q.answer, given: g.given, explain: q.explain };
       });
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify({
@@ -428,7 +431,13 @@ const server = createServer(async (req, res) => {
       let b = {};
       try { b = JSON.parse(await readBody(req)) || {}; } catch {}
       const userToken = String(b.userToken || 'anon').slice(0, 64);
-      const words = cache.wordsOf(Number(b.setId), userToken);
+      let words = cache.wordsOf(Number(b.setId), userToken);
+      // 訂正：只從答錯的那幾個字出題。題目會重新生成，所以不是把剛看過的答案抄一遍
+      if (Array.isArray(b.onlyWordIds) && b.onlyWordIds.length){
+        const want = new Set(b.onlyWordIds.map(Number));
+        const sub = words.filter(w => want.has(w.id));
+        if (sub.length) words = sub;
+      }
       if (!words.length){
         res.writeHead(409, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error:'empty-set', message:'這份字表沒有單字。' }));
@@ -457,7 +466,7 @@ const server = createServer(async (req, res) => {
         const g = gradeWord(q, given[q.id] ?? []);
         cache.recordWordAttempt({ userToken, wordId: q.wordId, senseIdx: q.meta?.senseIdx,
           mode: q.mode, correct: g.correct, answer: g.given.join(' | '), expected: g.expected.join(' | ') });
-        return { id:q.id, correct:g.correct, expected:q.answer, given:g.given, explain:q.explain, term:q.term };
+        return { id:q.id, wordId:q.wordId, correct:g.correct, expected:q.answer, given:g.given, explain:q.explain, term:q.term };
       });
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ results, correct: results.filter(r=>r.correct).length, total: results.length }));

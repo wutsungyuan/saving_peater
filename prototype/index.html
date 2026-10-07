@@ -226,6 +226,8 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
   font-size:1.05rem;font-weight:700;color:var(--accent);
   background:color-mix(in srgb,var(--accent) 9%,var(--surface));
   border:2.5px dashed var(--accent);border-radius:6px}
+.okdiv{margin:22px 0 14px;padding-top:14px;border-top:1px dashed var(--rule);
+  font-size:.86rem;color:var(--faint);text-align:center;letter-spacing:.04em}
 .quizmsg{margin-top:10px;padding:11px 14px;border-radius:4px;
   background:var(--err-bg);border:1px solid var(--err);color:var(--err);
   font-size:.92rem;flex-basis:100%}
@@ -572,6 +574,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
         <div id="wsOut"></div>
         <div class="row" id="wsActions" hidden>
           <button class="primary" id="wsSubmit">交卷</button>
+          <button class="primary" id="wsFix" hidden>訂正錯題</button>
           <button id="wsAgain" hidden>再來一輪</button>
         </div>
       </div>
@@ -594,6 +597,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
       <div id="quizOut"></div>
       <div class="row" id="quizActions" hidden>
         <button class="primary" id="quizSubmit">交卷</button>
+        <button class="primary" id="quizFix" hidden>訂正錯題</button>
         <button id="quizAgain" hidden>再來一份</button>
         <button class="wklink" type="button" id="toWeak">看弱點統計</button>
       </div>
@@ -1356,16 +1360,18 @@ function renderQuestion(q, n){
   </article>`;
 }
 
-async function startQuiz(){
+async function startQuiz(opts = {}){
   quizSummary.hidden = true; quizActions.hidden = true; quizAgain.hidden = true;
+  el('quizFix').hidden = true;
+  clearQuizMsg('quizActions');
   quizSubmit.disabled = false;
   quizOut.innerHTML = '<p class="msg">出題中…</p>';
   try {
     const res = await fetch('/api/exercises', {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(TOKEN ? { 'x-auth-token': TOKEN } : {}) },
-      body: JSON.stringify({ count: Number(document.getElementById('qcount').value),
-        types: selectedTypes(), userToken: USER }),
+      body: JSON.stringify({ count: opts.count ?? Number(document.getElementById('qcount').value),
+        types: selectedTypes(), userToken: USER, onlyHashes: opts.onlyHashes }),
     });
     const d = await res.json();
     if (!res.ok){
@@ -1433,6 +1439,10 @@ async function submitQuiz(){
         : `<div class="sum-break">全對。換一份再練，或到「分析」貼新文章擴充題庫。</div>`)
       + `<div class="sum-break">作答已記錄，可到「弱點」看各句型與時態的正確率。</div>`;
     quizSummary.hidden = false;
+    wrongFirst(quizOut, d.results, r => `q-${r.id}`);
+    quizWrongHashes = [...new Set(d.results.filter(r => !r.correct).map(r => r.hash).filter(Boolean))];
+    el('quizFix').hidden = !quizWrongHashes.length;
+    el('quizFix').textContent = `訂正錯題（${quizWrongHashes.length} 句）`;
     quizSummary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     quizAgain.hidden = false;
   } catch (e){
@@ -1817,9 +1827,9 @@ function renderWordQ(q, n){
     ${body}</article>`;
 }
 
-async function startWordQuiz(){
+async function startWordQuiz(opts = {}){
   el('wsSummary').hidden = true; el('wsActions').hidden = true;
-  el('wsAgain').hidden = true; el('wsSubmit').disabled = false;
+  el('wsAgain').hidden = true; el('wsFix').hidden = true; el('wsSubmit').disabled = false;
   clearQuizMsg('wsActions');
   el('wsWords').hidden = true; el('wsToggleList').textContent = '看單字清單';
   el('wsOut').innerHTML = '<p class="msg">出題中…</p>';
@@ -1827,7 +1837,8 @@ async function startWordQuiz(){
     const d = await fetch('/api/wordquiz', {
       method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
       body: JSON.stringify({ setId: wsCurrent, userToken: USER,
-        count: Number(el('wsCount').value), modes: wsModesSel() }),
+        count: opts.count ?? Number(el('wsCount').value), modes: wsModesSel(),
+        onlyWordIds: opts.onlyWordIds }),
     }).then(r => r.json());
     if (d.error){ el('wsOut').innerHTML = `<p class="msg">${esc(d.message || d.error)}</p>`; return; }
     wsQuiz = d;
@@ -1885,6 +1896,11 @@ async function submitWordQuiz(){
           —— 這些會馬上回到待加強，下一輪優先出現。</div>`
         : `<div class="sum-break">全對。這些字會隔比較久才再考，先去練別的。</div>`);
     el('wsSummary').hidden = false;
+    wrongFirst(el('wsOut'), d.results, r => `wq-${r.id}`);
+    // 記下答錯的字，訂正時只考這幾個
+    wsWrongIds = [...new Set(d.results.filter(r => !r.correct).map(r => r.wordId).filter(Boolean))];
+    el('wsFix').hidden = !wsWrongIds.length;
+    el('wsFix').textContent = `訂正錯題（${wsWrongIds.length} 個字）`;
     el('wsSummary').scrollIntoView({ behavior:'smooth', block:'nearest' });
     el('wsAgain').hidden = false;
     await selectSetStatsOnly();
@@ -1939,6 +1955,41 @@ function shrinkImage(file, maxSide = 1600){
 
 
 
+
+
+
+// ---- 訂正：只考答錯的，而且題目重新生成 ----
+// 重新生成是刻意的：直接重問同一題等於把剛看到的答案抄一遍，
+// 換個問法（中考英變聽考、選項重排）才是真的有沒有記住。
+let wsWrongIds = [], quizWrongHashes = [];
+
+el('wsFix').addEventListener('click', () => {
+  if (!wsWrongIds.length) return;
+  startWordQuiz({ onlyWordIds: wsWrongIds, count: wsWrongIds.length });
+});
+el('quizFix').addEventListener('click', () => {
+  if (!quizWrongHashes.length) return;
+  startQuiz({ onlyHashes: quizWrongHashes, count: quizWrongHashes.length });
+});
+
+/** 批改後把答錯的排到最前面 —— 要訂正的東西不該埋在一堆答對的裡面。
+ *  題號保持原本的順序編號，那是當下那份測驗的題號，改掉反而對不上。 */
+function wrongFirst(outEl, results, idOf){
+  const wrong = [], right = [];
+  for (const r of results){
+    const card = document.getElementById(idOf(r));
+    if (card) (r.correct ? right : wrong).push(card);
+  }
+  if (!wrong.length || !right.length) return;      // 全對或全錯就不用重排
+  const frag = document.createDocumentFragment();
+  for (const c of wrong) frag.appendChild(c);
+  const div = document.createElement('div');
+  div.className = 'okdiv';
+  div.textContent = `以下 ${right.length} 題答對了`;
+  frag.appendChild(div);
+  for (const c of right) frag.appendChild(c);
+  outEl.appendChild(frag);                          // appendChild 會搬移節點，等於重排
+}
 
 /** 交卷的錯誤訊息要出現在交卷鍵旁邊。
  *  原本插在題目列表最上方，使用者在頁尾按交卷根本看不到，

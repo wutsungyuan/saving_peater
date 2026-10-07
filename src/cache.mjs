@@ -356,6 +356,16 @@ export function openCache(file = 'data/cache.db'){
 
     count(){ return db.prepare('SELECT COUNT(*) n FROM sentences').get().n; },
 
+    /** 按 hash 精準取句子。訂正時不能走 pickSentences —— 那有取樣上限，
+     *  句子一多，要訂正的那句可能剛好不在這次取的範圍裡。 */
+    sentencesByHash(hashes){
+      if (!hashes?.length) return [];
+      const qs = hashes.map(() => '?').join(',');
+      return db.prepare(`SELECT hash, result FROM sentences
+        WHERE hash IN (${qs}) AND issue IS NULL AND pattern_id IS NOT NULL`).all(...hashes)
+        .map(r => { try { return { hash: r.hash, data: JSON.parse(r.result) }; } catch { return null; } })
+        .filter(Boolean);
+    },
     // 出好的題目（含答案）。原本只放記憶體，伺服器一重啟就全部失效，
     // 作答到一半的人按交卷只會看到「這份測驗已失效」。
     putQuiz(id, kind, questions){
