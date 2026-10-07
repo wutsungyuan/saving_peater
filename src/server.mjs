@@ -415,6 +415,10 @@ const server = createServer(async (req, res) => {
       const id = Number(url.searchParams.get('id'));
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       const words = id ? cache.wordsOf(id, userToken) : [];
+      // 逐句標出例句分析過沒有，清單上的「分析」鍵才知道要顯示成哪一種
+      for (const w of words)
+        for (const sn of w.senses ?? [])
+          if (sn.example) sn.analyzed = Boolean(cache.get(String(sn.example).trim()));
       const exs = exampleSentences(words);
       return res.end(JSON.stringify({
         words,

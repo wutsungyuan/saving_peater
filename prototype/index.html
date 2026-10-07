@@ -260,10 +260,15 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .sayx.on .ico{width:6px;height:6px;border:0;border-radius:1px;background:currentColor;margin:0}
 .wcard .top .sayx{margin-left:4px}
 .wsense .ex .sayx{margin-left:6px}
+/* 例句的「分析」鍵分兩種狀態。不只靠顏色區分 ——
+   還沒分析的是虛線框，已分析的是實線加勾，色盲或黑白列印也看得出差別。 */
 .exan{font-size:.72rem;font-family:var(--font-ui);margin-left:7px;padding:2px 9px;
-  border:1px solid var(--rule);border-radius:999px;background:var(--surface);
-  color:var(--muted);cursor:pointer;vertical-align:1px}
+  border:1px dashed var(--rule);border-radius:999px;background:var(--surface);
+  color:var(--faint);cursor:pointer;vertical-align:1px}
 .exan:hover{border-color:var(--accent);color:var(--accent)}
+.exan.done{border-style:solid;border-color:var(--accent);color:var(--accent);
+  background:var(--tip-bg);font-weight:600}
+.exan.done::before{content:'✓';margin-right:4px;font-weight:700}
 .q-speak.on .ico{width:9px;height:9px;border:0;border-radius:1px;background:currentColor}
 .q-speak{display:inline-flex;align-items:center;gap:7px;font-size:.9rem;padding:9px 18px;
   border-radius:999px;background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
@@ -1910,7 +1915,9 @@ function renderWordList(){
       ${sayBtn(w.term, '唸這個單字')}${tag}</div>
       ${(w.senses||[]).map(sn => `<div class="wsense"><b>${esc(sn.pos)}</b>${esc(sn.zh)}
         ${sn.example ? `<span class="ex">${esc(sn.example)}${sayBtn(sn.example, '朗讀例句')}` +
-          `<button class="exan" data-an="${esc(sn.example)}" title="看這句的句型與詞性">分析</button></span>` : ''}
+          `<button class="exan${sn.analyzed ? ' done' : ''}" data-an="${esc(sn.example)}"
+             title="${sn.analyzed ? '已分析過，點了馬上看句型與詞性，不花額度'
+                                  : '還沒分析，點了會花一次額度'}">分析</button></span>` : ''}
         ${sn.exampleZh ? `<span class="exz">${esc(sn.exampleZh)}</span>` : ''}</div>`).join('')}
       ${w.spellTip ? `<div class="wtip">拼字：${esc(w.spellTip)}</div>` : ''}
       ${(w.confusable||[]).length ? `<div class="wextra">易混淆：${w.confusable.map(c=>`${esc(c.word)}（${esc(c.zh)}）`).join('、')}</div>` : ''}
@@ -2253,8 +2260,11 @@ async function refreshExamples(){
   try {
     const d = await fetch(`/api/wordset?id=${wsCurrent}&user=${encodeURIComponent(USER)}`)
       .then(r => r.json());
+    const changed = (d.examples?.cached ?? -1) !== wsExamples.cached;
     wsExamples = d.examples || wsExamples;
     renderAnalyzeBtn();
+    // 有新分析過的例句才重畫，否則會把使用者正在看的位置洗掉
+    if (changed && d.words){ wsWordsCache = d.words; renderWordList(); }
   } catch { /* 拿不到就維持原本的數字 */ }
 }
 
@@ -2283,8 +2293,9 @@ el('wsAnalyze').addEventListener('click', async () => {
       body: JSON.stringify({ setId: wsCurrent, userToken: USER }),
     }).then(r => r.json());
     if (d.error){ b.textContent = d.message || d.error; return; }
-    wsExamples = { total: d.total, cached: d.cached + d.analyzed };
-    renderAnalyzeBtn();
+    // 交給 refreshExamples 去比對與重畫 —— 先改 wsExamples 的話，
+    // 它的「有沒有變」判斷會變成 false，清單就不會更新
+    await refreshExamples();
     el('wsHint').textContent =
       `分析完 ${d.analyzed} 句（參考費用 ${money(d.usage.costUsd)}）。現在點任何例句的「分析」都是瞬間的。`;
     loadHistory?.();
