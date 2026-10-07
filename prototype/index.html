@@ -264,7 +264,6 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
   border:1px solid var(--rule);border-radius:999px;background:var(--surface);
   color:var(--muted);cursor:pointer;vertical-align:1px}
 .exan:hover{border-color:var(--accent);color:var(--accent)}
-#wsAnalyze{margin-left:auto}
 .q-speak.on .ico{width:9px;height:9px;border:0;border-radius:1px;background:currentColor}
 .q-speak{display:inline-flex;align-items:center;gap:7px;font-size:.9rem;padding:9px 18px;
   border-radius:999px;background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
@@ -490,6 +489,14 @@ button:disabled{opacity:.5;cursor:default}
 footer{font-size:.82rem;color:var(--muted);line-height:1.8;border-top:1px solid var(--rule);padding-top:16px}
 footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.subrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.subtabs{display:inline-flex;border:1px solid var(--rule);border-radius:3px;overflow:hidden;flex-shrink:0}
+.subtabs button{border:0;border-radius:0;background:var(--surface);padding:8px 18px;
+  font-size:.86rem;color:var(--muted);font-weight:500}
+.subtabs button+button{border-left:1px solid var(--rule)}
+.subtabs button[aria-pressed="true"]{background:var(--fg);color:var(--surface);font-weight:700}
+#wsAnalyze{margin-left:auto}
+[id^="pane-"]{display:flex;flex-direction:column;gap:20px;min-width:0}
 /* 手機的邊緣抽屜：圖例佔掉一整屏，收到邊緣去 */
 .edge,.drawer,.scrim{display:none}
 @media (max-width:560px){
@@ -640,25 +647,37 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 
       <div id="wsPanel" hidden>
         <div class="usage-cards" id="wsStats"></div>
-        <div class="box">
-          <div class="lblrow"><label>測驗設定</label>
-            <button id="wsToggleList" class="linky">看單字清單</button>
-            <button id="wsAnalyze" class="linky" hidden></button></div>
-          <div class="row" id="wsModes"></div>
-          <div class="row">
-            <span class="hint">題數</span>
-            <select id="wsCount"><option>5</option><option selected>10</option><option>15</option><option>20</option></select>
-            <button class="primary" id="wsStart">出題</button>
-            <span class="hint" id="wsQuizHint">沒背熟的字會優先出現，答對後間隔變長、答錯馬上再考。</span>
+
+        <div class="subrow">
+          <div class="subtabs" role="group" aria-label="切換單字清單與測驗">
+            <button data-pane="list" aria-pressed="true">單字清單</button>
+            <button data-pane="quiz" aria-pressed="false">單字測驗</button>
           </div>
+          <button id="wsAnalyze" class="linky" hidden></button>
         </div>
-        <div id="wsWords" hidden></div>
-        <div id="wsSummary" hidden></div>
-        <div id="wsOut"></div>
-        <div class="row" id="wsActions" hidden>
-          <button class="primary" id="wsSubmit">交卷</button>
-          <button class="primary" id="wsFix" hidden>訂正錯題</button>
-          <button id="wsAgain" hidden>再來一輪</button>
+
+        <div id="pane-list">
+          <div id="wsWords"></div>
+        </div>
+
+        <div id="pane-quiz" hidden>
+          <div class="box">
+            <label>測驗設定</label>
+            <div class="row" id="wsModes"></div>
+            <div class="row">
+              <span class="hint">題數</span>
+              <select id="wsCount"><option>5</option><option selected>10</option><option>15</option><option>20</option></select>
+              <button class="primary" id="wsStart">出題</button>
+              <span class="hint" id="wsQuizHint">沒背熟的字會優先出現，答對後間隔變長、答錯馬上再考。</span>
+            </div>
+          </div>
+          <div id="wsSummary" hidden></div>
+          <div id="wsOut"></div>
+          <div class="row" id="wsActions" hidden>
+            <button class="primary" id="wsSubmit">交卷</button>
+            <button class="primary" id="wsFix" hidden>訂正錯題</button>
+            <button id="wsAgain" hidden>再來一輪</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1923,7 +1942,7 @@ async function startWordQuiz(opts = {}){
   el('wsSummary').hidden = true; el('wsActions').hidden = true;
   el('wsAgain').hidden = true; el('wsFix').hidden = true; el('wsSubmit').disabled = false;
   clearQuizMsg('wsActions');
-  el('wsWords').hidden = true; el('wsToggleList').textContent = '看單字清單';
+  showPane('quiz');                       // 出題一定是在測驗那一頁
   el('wsOut').innerHTML = '<p class="msg">出題中…</p>';
   try {
     const d = await fetch('/api/wordquiz', {
@@ -2462,10 +2481,15 @@ el('wsList').addEventListener('click', async e => {
     wsCurrent = null; await loadWordsets();
   }
 });
-el('wsToggleList').addEventListener('click', () => {
-  const w = el('wsWords'); w.hidden = !w.hidden;
-  el('wsToggleList').textContent = w.hidden ? '看單字清單' : '收起清單';
-});
+/** 單字分頁底下的兩個子頁：預設看清單，要考試才切到測驗 */
+function showPane(which){
+  for (const b of document.querySelectorAll('.subtabs button'))
+    b.setAttribute('aria-pressed', String(b.dataset.pane === which));
+  el('pane-list').hidden = which !== 'list';
+  el('pane-quiz').hidden = which !== 'quiz';
+}
+for (const b of document.querySelectorAll('.subtabs button'))
+  b.addEventListener('click', () => { Spk.stop(); showPane(b.dataset.pane); });
 el('wsStart').addEventListener('click', startWordQuiz);
 el('wsSubmit').addEventListener('click', submitWordQuiz);
 el('wsAgain').addEventListener('click', startWordQuiz);
