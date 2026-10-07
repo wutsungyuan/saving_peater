@@ -270,25 +270,36 @@ export function openCache(file = 'data/cache.db'){
     },
 
     /** 取出一份字表的所有單字，附上該使用者的進度 */
-    wordsOf(setId, userToken){
-      return db.prepare(`SELECT w.id, w.idx, w.term, w.syllables, w.spell_tip, w.data,
+    /** 可以一次吃多份字表 —— 複習時常常要跨單元一起練 */
+    wordsOf(setIds, userToken){
+      const ids = (Array.isArray(setIds) ? setIds : [setIds]).map(Number).filter(Number.isFinite);
+      if (!ids.length) return [];
+      const qs = ids.map(() => '?').join(',');
+      return db.prepare(`SELECT w.id, w.idx, w.set_id, w.term, w.syllables, w.spell_tip, w.data,
           COALESCE(p.box,0) box, COALESCE(p.due_at,0) due_at,
           COALESCE(p.correct,0) correct, COALESCE(p.total,0) total
         FROM words w LEFT JOIN word_progress p ON p.word_id = w.id AND p.user_token = ?
-        WHERE w.set_id = ? ORDER BY w.idx`).all(userToken, setId)
+        WHERE w.set_id IN (${qs}) ORDER BY w.set_id, w.idx`).all(userToken, ...ids)
         .map(r => { const d = JSON.parse(r.data);
-          return { id:r.id, idx:r.idx, term:r.term, syllables:r.syllables, spellTip:r.spell_tip,
-                   ...d, box:r.box, dueAt:r.due_at, correct:r.correct, total:r.total }; });
+          return { id:r.id, idx:r.idx, setId:r.set_id, term:r.term, syllables:r.syllables,
+                   spellTip:r.spell_tip, ...d,
+                   box:r.box, dueAt:r.due_at, correct:r.correct, total:r.total }; });
     },
 
-    deleteWordset(id){
+    /** 刪字表會連同該字表的作答與熟練度一起刪掉（同一個交易，要嘛全成要嘛全退）。
+     *  句子分析快取不受影響 —— 那是以句子為單位，和字表無關。 */
+    deleteWordset(setIds){
+      const ids = (Array.isArray(setIds) ? setIds : [setIds]).map(Number).filter(Number.isFinite);
+      if (!ids.length) return 0;
+      const qs = ids.map(() => '?').join(',');
       db.exec('BEGIN');
       try {
-        db.prepare('DELETE FROM word_attempts WHERE word_id IN (SELECT id FROM words WHERE set_id = ?)').run(id);
-        db.prepare('DELETE FROM word_progress WHERE word_id IN (SELECT id FROM words WHERE set_id = ?)').run(id);
-        db.prepare('DELETE FROM words WHERE set_id = ?').run(id);
-        db.prepare('DELETE FROM wordsets WHERE id = ?').run(id);
+        db.prepare(`DELETE FROM word_attempts WHERE word_id IN (SELECT id FROM words WHERE set_id IN (${qs}))`).run(...ids);
+        db.prepare(`DELETE FROM word_progress WHERE word_id IN (SELECT id FROM words WHERE set_id IN (${qs}))`).run(...ids);
+        db.prepare(`DELETE FROM words WHERE set_id IN (${qs})`).run(...ids);
+        const r = db.prepare(`DELETE FROM wordsets WHERE id IN (${qs})`).run(...ids);
         db.exec('COMMIT');
+        return r.changes;
       } catch (e){ db.exec('ROLLBACK'); throw e; }
     },
 
@@ -314,17 +325,20 @@ export function openCache(file = 'data/cache.db'){
         cur.correct + (a.correct ? 1 : 0), cur.total + 1);
     },
 
-    wordStats(setId, userToken){
+    wordStats(setIds, userToken){
+      const ids = (Array.isArray(setIds) ? setIds : [setIds]).map(Number).filter(Number.isFinite);
+      if (!ids.length) return { words:0, attempts:0, correct:0, mastered:0, weak:0, byWord:[] };
+      const qs = ids.map(() => '?').join(',');
       const row = db.prepare(`SELECT COUNT(*) words,
           COALESCE(SUM(p.total),0) attempts, COALESCE(SUM(p.correct),0) correct,
           COALESCE(SUM(CASE WHEN p.box >= 3 THEN 1 ELSE 0 END),0) mastered,
           COALESCE(SUM(CASE WHEN p.total > 0 AND COALESCE(p.box,0) = 0 THEN 1 ELSE 0 END),0) weak
         FROM words w LEFT JOIN word_progress p ON p.word_id = w.id AND p.user_token = ?
-        WHERE w.set_id = ?`).get(userToken, setId);
+        WHERE w.set_id IN (${qs})`).get(userToken, ...ids);
       const byWord = db.prepare(`SELECT w.term, COALESCE(p.box,0) box,
           COALESCE(p.correct,0) correct, COALESCE(p.total,0) total
         FROM words w LEFT JOIN word_progress p ON p.word_id = w.id AND p.user_token = ?
-        WHERE w.set_id = ? ORDER BY COALESCE(p.box,0), w.idx`).all(userToken, setId);
+        WHERE w.set_id IN (${qs}) ORDER BY COALESCE(p.box,0), w.set_id, w.idx`).all(userToken, ...ids);
       return { ...row, byWord };
     },
 

@@ -62,6 +62,12 @@ function authed(req, url){
   return sent === AUTH_TOKEN;
 }
 
+/** 從查詢字串或 body 解析出字表 id 陣列（相容舊的單一 id） */
+function setIdList(v, fallback){
+  const raw = Array.isArray(v) ? v : String(v ?? fallback ?? '').split(',');
+  return [...new Set(raw.map(Number).filter(n => Number.isFinite(n) && n > 0))].slice(0, 20);
+}
+
 /** 訂正：把答錯的原題重出一次。
  *  訂正就是把原本那題做對 —— 拼錯 interesting 的人要再拼一次 interesting，
  *  換成聽考或選擇題測的是別的東西。題型、單字、例句一律不換，
@@ -349,10 +355,10 @@ const server = createServer(async (req, res) => {
       }
       if (req.method === 'DELETE'){
         if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
-        const id = Number(url.searchParams.get('id'));
-        if (id) cache.deleteWordset(id);
+        const ids = setIdList(url.searchParams.get('ids'), url.searchParams.get('id'));
+        const n = ids.length ? cache.deleteWordset(ids) : 0;
         res.writeHead(200, { 'content-type':'application/json' });
-        return res.end('{"ok":true}');
+        return res.end(JSON.stringify({ ok: true, deleted: n }));
       }
     }
 
@@ -413,9 +419,9 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === '/api/wordset'){
       const userToken = String(url.searchParams.get('user') || 'anon').slice(0, 64);
-      const id = Number(url.searchParams.get('id'));
+      const ids = setIdList(url.searchParams.get('ids'), url.searchParams.get('id'));
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
-      const words = id ? cache.wordsOf(id, userToken) : [];
+      const words = cache.wordsOf(ids, userToken);
       // 逐句標出例句分析過沒有，清單上的「分析」鍵才知道要顯示成哪一種
       for (const w of words)
         for (const sn of w.senses ?? [])
@@ -423,7 +429,7 @@ const server = createServer(async (req, res) => {
       const exs = exampleSentences(words);
       return res.end(JSON.stringify({
         words,
-        stats: id ? cache.wordStats(id, userToken) : null,
+        stats: ids.length ? cache.wordStats(ids, userToken) : null,
         // 例句的句型分析狀態：已分析過的點了是瞬間，沒分析過的才要花額度
         examples: { total: exs.length, cached: exs.filter(t => cache.get(t)).length },
       }));
@@ -435,7 +441,7 @@ const server = createServer(async (req, res) => {
       let b = {};
       try { b = JSON.parse(await readBody(req)) || {}; } catch {}
       const userToken = String(b.userToken || 'anon').slice(0, 64);
-      const words = cache.wordsOf(Number(b.setId), userToken);
+      const words = cache.wordsOf(setIdList(b.setIds, b.setId), userToken);
       const all = exampleSentences(words);
       const todo = all.filter(t => !cache.get(t));      // 已分析過的不重跑
       if (!todo.length){
@@ -494,7 +500,7 @@ const server = createServer(async (req, res) => {
         return res.end(JSON.stringify({ quizId, total: questions.length, redo: true,
           questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest) }));
       }
-      const words = cache.wordsOf(Number(b.setId), userToken);
+      const words = cache.wordsOf(setIdList(b.setIds, b.setId), userToken);
       if (!words.length){
         res.writeHead(409, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error:'empty-set', message:'這份字表沒有單字。' }));

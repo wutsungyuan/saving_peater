@@ -623,6 +623,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
         <div class="lblrow"><label>單字表</label>
           <button id="wsNew" class="linky">＋ 新增字表</button></div>
         <div class="chips" id="wsList"></div>
+        <p class="hint" id="wsSelInfo" hidden style="margin-top:9px"></p>
         <div id="wsForm" hidden>
           <div class="row" style="margin-top:12px">
             <input type="text" id="wsName" placeholder="字表名稱" style="flex:1;min-width:200px">
@@ -1672,7 +1673,7 @@ historyOut.addEventListener('click', async e => {
     }
     const ref = Number(b.dataset.ref);
     document.querySelector('.tabs button[data-view="words"]').click();
-    if (ref) { wsCurrent = ref; await loadWordsets(); }   // 直接切到那一份
+    if (ref) { wsSel = [ref]; wsCurrent = ref; await loadWordsets(); }   // 直接切到那一份
     return;
   }
   const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
@@ -1828,7 +1829,10 @@ const WMODES = [['zh2en','中考英'],['en2zh','英考中'],['listen','聽考'],
                 ['cloze','例句填空'],['sense','詞義辨析']];
 const WMODE_NAME = Object.fromEntries(WMODES);
 const el = id => document.getElementById(id);
+let wsSel = [];                    // 選取的字表 id（可多選）
+let wsMulti = false;               // 多選模式
 let wsCurrent = null, wsQuiz = null, wsWordsCache = [];
+const selParam = () => wsSel.join(',');
 
 const wsModesSel = () => [...el('wsModes').querySelectorAll('[aria-pressed="true"]')].map(b => b.dataset.m);
 
@@ -1853,7 +1857,7 @@ async function loadWordsets(){
     const chip = x => {
       const d2 = new Date(x.created_at);
       const when = `${d2.getMonth()+1}/${d2.getDate()}`;
-      return `<button class="wchip" data-id="${x.id}" aria-pressed="${x.id === wsCurrent}"
+      return `<button class="wchip" data-id="${x.id}" aria-pressed="${wsSel.includes(x.id)}"
         title="建立於 ${d2.toLocaleString('zh-TW')}｜已背熟 ${x.mastered} 字">
         ${esc(x.name)}<small>${x.word_count} 字</small><small class="when">${when}</small></button>`;
     };
@@ -1861,24 +1865,38 @@ async function loadWordsets(){
     const SHOWN = 6;
     const recent = d.sets.slice(0, SHOWN), rest = d.sets.slice(SHOWN);
     const restOpen = el('wsList').dataset.expanded === '1'
-      || rest.some(x => x.id === wsCurrent);     // 目前選的在舊的裡面就要展開
+      || rest.some(x => wsSel.includes(x.id));   // 目前選的在舊的裡面就要展開
     el('wsList').dataset.expanded = restOpen ? '1' : '0';
     el('wsList').innerHTML = recent.map(chip).join('')
       + (restOpen ? rest.map(chip).join('') : '')
       + (rest.length ? `<button class="linky" id="wsMore" style="margin-left:4px">${
           restOpen ? '收起舊字表' : `更多 ${rest.length} 份`}</button>` : '')
-      + `<button class="linky danger" id="wsDel" style="margin-left:10px">刪除目前字表</button>`;
-    if (!wsCurrent || !d.sets.some(x => x.id === wsCurrent)) await selectSet(d.sets[0].id);
+      + `<button class="linky" id="wsMultiBtn" aria-pressed="${wsMulti}"
+           style="margin-left:10px">${wsMulti ? '結束多選' : '多選'}</button>`
+      + `<button class="linky danger" id="wsDel" style="margin-left:10px">${delLabel()}</button>`;
+    // 選取的字表被刪掉或還沒選過，就回到最新那一份
+    wsSel = wsSel.filter(id => d.sets.some(x => x.id === id));
+    if (!wsSel.length) await selectSet(d.sets[0].id);
+    else { wsCurrent = wsSel[0]; renderSelInfo(); }
   } catch (e){
     el('wsList').innerHTML = `<span class="hint">載入失敗：${esc(e.message)}</span>`;
   }
 }
 
-async function selectSet(id){
-  wsCurrent = id;
+/** 點字表：單選模式換成那一份；多選模式則是加入／移除（至少要留一份） */
+async function selectSet(id, toggle = false){
+  if (toggle){
+    wsSel = wsSel.includes(id) ? wsSel.filter(x => x !== id) : [...wsSel, id];
+    if (!wsSel.length) wsSel = [id];          // 不允許一份都不選
+  } else {
+    wsSel = [id];
+  }
+  wsSel.sort((a, b) => b - a);
+  wsCurrent = wsSel[0];
   for (const b of el('wsList').querySelectorAll('.wchip'))
-    b.setAttribute('aria-pressed', String(Number(b.dataset.id) === id));
-  const d = await fetch(`/api/wordset?id=${id}&user=${encodeURIComponent(USER)}`).then(r => r.json());
+    b.setAttribute('aria-pressed', String(wsSel.includes(Number(b.dataset.id))));
+  renderSelInfo();
+  const d = await fetch(`/api/wordset?ids=${selParam()}&user=${encodeURIComponent(USER)}`).then(r => r.json());
   wsWordsCache = d.words || [];
   wsExamples = d.examples || { total: 0, cached: 0 };
   renderAnalyzeBtn();
@@ -1957,7 +1975,7 @@ async function startWordQuiz(opts = {}){
   try {
     const d = await fetch('/api/wordquiz', {
       method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
-      body: JSON.stringify({ setId: wsCurrent, userToken: USER,
+      body: JSON.stringify({ setIds: wsSel, userToken: USER,
         count: Number(el('wsCount').value), modes: wsModesSel(),
         redoFrom: opts.redoFrom, redoIds: opts.redoIds }),
     }).then(r => r.json());
@@ -2039,7 +2057,7 @@ async function submitWordQuiz(){
 
 /** 交卷後只更新統計與清單，不動測驗結果 */
 async function selectSetStatsOnly(){
-  const d = await fetch(`/api/wordset?id=${wsCurrent}&user=${encodeURIComponent(USER)}`).then(r => r.json());
+  const d = await fetch(`/api/wordset?ids=${selParam()}&user=${encodeURIComponent(USER)}`).then(r => r.json());
   wsWordsCache = d.words || [];
   const st = d.stats;
   const pct = st.attempts ? Math.round(st.correct / st.attempts * 100) : 0;
@@ -2264,9 +2282,9 @@ let wsExamples = { total: 0, cached: 0 };
  *  從「分析」分頁分析過例句後切回來，數字要跟著變 ——
  *  原本只有 selectSet() 會算，而那只在切換字表時才跑。 */
 async function refreshExamples(){
-  if (!wsCurrent || API === false) return;
+  if (!wsSel.length || API === false) return;
   try {
-    const d = await fetch(`/api/wordset?id=${wsCurrent}&user=${encodeURIComponent(USER)}`)
+    const d = await fetch(`/api/wordset?ids=${selParam()}&user=${encodeURIComponent(USER)}`)
       .then(r => r.json());
     const changed = (d.examples?.cached ?? -1) !== wsExamples.cached;
     wsExamples = d.examples || wsExamples;
@@ -2298,7 +2316,7 @@ el('wsAnalyze').addEventListener('click', async () => {
   try {
     const d = await fetch('/api/wordset-analyze', {
       method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
-      body: JSON.stringify({ setId: wsCurrent, userToken: USER }),
+      body: JSON.stringify({ setIds: wsSel, userToken: USER }),
     }).then(r => r.json());
     if (d.error){ b.textContent = d.message || d.error; return; }
     // 交給 refreshExamples 去比對與重畫 —— 先改 wsExamples 的話，
@@ -2471,35 +2489,55 @@ el('wsCreate').addEventListener('click', async () => {
     el('wsHint').textContent = `建立完成：${d.count} 個字。`;
     el('wsText').value = ''; el('wsName').value = '';
     el('wsForm').hidden = true; el('wsNew').textContent = '＋ 新增字表';
-    wsCurrent = d.id;
+    wsSel = [d.id]; wsCurrent = d.id;
     await loadWordsets();
   } catch (e){ el('wsHint').textContent = '建立失敗：' + e.message; }
   finally { wsBusy(false); el('wsCreate').disabled = false; el('wsPhoto').disabled = false; }
 });
 el('wsList').addEventListener('click', async e => {
   const b = e.target.closest('.wchip');
-  if (b) return selectSet(Number(b.dataset.id));
+  if (b) return selectSet(Number(b.dataset.id), wsMulti);
+  if (e.target.id === 'wsMultiBtn'){
+    wsMulti = !wsMulti;
+    return loadWordsets();
+  }
   if (e.target.id === 'wsMore'){
     el('wsList').dataset.expanded = el('wsList').dataset.expanded === '1' ? '0' : '1';
     return loadWordsets();
   }
   const del = e.target.closest('#wsDel');
-  if (del && wsCurrent){
-    // 刪除會連同該字表的所有練習進度一起消失，所以要按兩次
+  if (del && wsSel.length){
+    // 刪除會連同那些字表的所有練習進度一起消失，所以要按兩次
     if (del.dataset.armed !== '1'){
-      const name = document.querySelector(`.wchip[data-id="${wsCurrent}"]`)?.firstChild?.textContent?.trim() ?? '';
+      const names = wsSel.map(id =>
+        document.querySelector(`.wchip[data-id="${id}"]`)?.firstChild?.textContent?.trim() ?? '')
+        .filter(Boolean);
       del.dataset.armed = '1';
-      del.textContent = `再按一次刪除「${name}」`;
+      del.textContent = names.length === 1
+        ? `再按一次刪除「${names[0]}」`
+        : `再按一次刪除這 ${names.length} 份字表`;
+      del.title = names.join('、');
       clearTimeout(del._t);
-      del._t = setTimeout(() => { del.dataset.armed = '0'; del.textContent = '刪除目前字表'; }, 4000);
+      del._t = setTimeout(() => { del.dataset.armed = '0'; del.textContent = delLabel(); }, 4000);
       return;
     }
     clearTimeout(del._t);
-    await fetch(`/api/wordsets?id=${wsCurrent}`, { method:'DELETE',
+    await fetch(`/api/wordsets?ids=${selParam()}`, { method:'DELETE',
       headers: TOKEN ? { 'x-auth-token': TOKEN } : {} });
-    wsCurrent = null; await loadWordsets();
+    wsSel = []; wsCurrent = null; await loadWordsets();
   }
 });
+
+/** 多選時按鈕與說明要跟著變 */
+const delLabel = () => wsSel.length > 1 ? `刪除選取的 ${wsSel.length} 份` : '刪除目前字表';
+function renderSelInfo(){
+  const el2 = el('wsSelInfo');
+  if (!el2) return;
+  el2.hidden = wsSel.length < 2;
+  el2.textContent = `已選 ${wsSel.length} 份字表，清單與測驗都會合在一起。`;
+  const d = el('wsDel'); if (d && d.dataset.armed !== '1') d.textContent = delLabel();
+}
+
 /** 單字分頁底下的兩個子頁：預設看清單，要考試才切到測驗 */
 function showPane(which){
   for (const b of document.querySelectorAll('.subtabs button'))
