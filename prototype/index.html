@@ -240,6 +240,10 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .q-opt:hover{border-color:var(--accent)}
 .q-opt input{accent-color:var(--accent);margin:0}
 .q-blanks{display:flex;gap:9px;flex-wrap:wrap}
+.ime-warn{font-size:.8rem;color:var(--err);background:var(--err-bg);border:1px solid var(--err);
+  border-radius:3px;padding:6px 10px;margin-top:7px;line-height:1.6;width:100%;
+  opacity:0;transform:translateY(-3px);transition:opacity .15s,transform .15s;pointer-events:none}
+.ime-warn[data-show="1"]{opacity:1;transform:none}
 .q-blanks input{font-family:var(--font-en);font-size:1rem;padding:8px 11px;border:1px solid var(--rule);
   border-radius:3px;background:var(--surface-2);color:var(--fg);min-width:140px}
 .q.graded{border-width:2px}
@@ -1313,6 +1317,7 @@ async function startQuiz(){
     }
     currentQuiz = d;
     quizOut.innerHTML = d.questions.map((q, i) => renderQuestion(q, i + 1)).join('');
+    hardenAnswers(quizOut);
     quizHint.textContent = `共 ${d.questions.length} 題，題庫 ${d.pool} 句。`;
     quizActions.hidden = false;
   } catch (e){
@@ -1521,6 +1526,71 @@ window.addEventListener('pagehide', () => Spk.stop());
 })();
 
 
+
+/* ---- 作答欄位強化 ----
+ * 網頁「無法」關閉作業系統的輸入法本身（注音／拼音的選字視窗一定會跳出來），
+ * 能做的是讓它打出來的字進不了欄位，效果上等同禁用：
+ *   1. 關掉瀏覽器自己的自動完成、拼字檢查、自動修正、自動大寫
+ *   2. 欄位名稱隨機，瀏覽器記不住上次打過什麼
+ *   3. 擋掉貼上與拖放
+ *   4. 偵測到輸入法組字就提示，組完把非英文字元濾掉
+ */
+const ANSWER_ALLOWED = /[^A-Za-z0-9 '’\-.,?!]/g;
+
+function hardenAnswerInput(inp){
+  if (inp.dataset.hardened) return;
+  inp.dataset.hardened = '1';
+  inp.setAttribute('autocomplete', 'off');
+  inp.setAttribute('autocorrect', 'off');
+  inp.setAttribute('autocapitalize', 'off');
+  inp.setAttribute('spellcheck', 'false');
+  inp.setAttribute('inputmode', 'text');
+  inp.setAttribute('name', 'a' + Math.random().toString(36).slice(2, 8));
+
+  let note = null, timer = null;
+  const warn = (msg) => {
+    if (!note){
+      note = document.createElement('div');
+      note.className = 'ime-warn';
+      inp.parentElement?.appendChild(note);
+    }
+    note.textContent = msg;
+    note.dataset.show = '1';
+    clearTimeout(timer);
+    timer = setTimeout(() => { if (note) note.dataset.show = '0'; }, 2600);
+  };
+
+  const strip = () => {
+    // 全形英數先轉半形再過濾 —— 輸入法停在全形時打 free 不該整個消失
+    const half = inp.value.replace(/[\uFF01-\uFF5E]/g,
+      c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/\u3000/g, ' ');
+    const clean = half.replace(ANSWER_ALLOWED, '');
+    if (clean !== inp.value){
+      const atEnd = inp.selectionStart === inp.value.length;
+      inp.value = clean;
+      if (atEnd) inp.setSelectionRange(clean.length, clean.length);
+      warn('作答請切換成英文輸入法，這一格只收英文。');
+    }
+  };
+
+  // 組字過程中不能動 value，否則輸入法會錯亂；等組完再濾
+  let composing = false;
+  inp.addEventListener('compositionstart', () => {
+    composing = true;
+    warn('偵測到中文輸入法，請切換成英文再作答。');
+  });
+  inp.addEventListener('compositionend', () => { composing = false; strip(); });
+  inp.addEventListener('input', () => { if (!composing) strip(); });
+
+  inp.addEventListener('paste', e => { e.preventDefault(); warn('作答時不能貼上，請自己拼出來。'); });
+  inp.addEventListener('drop',  e => { e.preventDefault(); warn('作答時不能拖放文字。'); });
+}
+
+/** 把一個容器裡所有作答欄位都強化 */
+function hardenAnswers(root){
+  for (const inp of root.querySelectorAll('.q-blanks input')) hardenAnswerInput(inp);
+}
+
 // ===== 單字表 =====
 const WMODES = [['zh2en','中考英'],['en2zh','英考中'],['listen','聽考'],
                 ['cloze','例句填空'],['sense','詞義辨析']];
@@ -1640,6 +1710,7 @@ async function startWordQuiz(){
     if (d.error){ el('wsOut').innerHTML = `<p class="msg">${esc(d.message || d.error)}</p>`; return; }
     wsQuiz = d;
     el('wsOut').innerHTML = d.questions.map((q,i) => renderWordQ(q, i+1)).join('');
+    hardenAnswers(el('wsOut'));
     el('wsActions').hidden = false;
     // 只有第一題本身是聽考才自動唸。先前用 querySelector('.q-speak') 會抓到
     // 整份測驗裡任何一題的聽考鈕，等於提前唸出後面題目的答案。
