@@ -270,3 +270,63 @@ export function gradeWord(q, given){
   const alt = (q.alsoAccept ?? []).some(a => norm(a) === norm(got.join(' ')));
   return { correct: ok || alt, expected: q.answer, given: got };
 }
+
+// ---------------------------------------------------------------------------
+// 拍照辨識：讀課本單字表的照片，抄出單字與中文
+// ---------------------------------------------------------------------------
+
+const OCR_PROMPT = join(__dirname, '..', 'prompts', 'wordset-ocr.md');
+
+/** 從圖片檔抄出單字表。回傳 { words, usage } */
+export function extractFromImage(imagePath, { model = MODEL, timeoutMs = 180_000 } = {}){
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-p', `Read the image at ${imagePath} and extract the vocabulary list.`,
+      '--system-prompt-file', OCR_PROMPT,
+      '--allowedTools', 'Read',           // 要讀圖就得開 Read，其餘工具一律不給
+      '--exclude-dynamic-system-prompt-sections',
+      '--model', model,
+      '--output-format', 'json',
+    ];
+    const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '', err = '';
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')); }, timeoutMs);
+    child.stdout.on('data', d => { out += d; });
+    child.stderr.on('data', d => { err += d; });
+    child.on('error', e => { clearTimeout(timer); reject(e); });
+    child.on('close', code => {
+      clearTimeout(timer);
+      if (code !== 0){
+        const e = new Error(`claude exited ${code}: ${err.slice(0, 400)}`);
+        e.kind = classifyError(err);
+        return reject(e);
+      }
+      let env;
+      try { env = JSON.parse(out); } catch { return reject(new Error('CLI 回傳非 JSON')); }
+      if (env.is_error){
+        const e = new Error(String(env.result).slice(0, 300));
+        e.kind = classifyError(env.result);
+        return reject(e);
+      }
+      let data;
+      try { data = parseModelJson(env.result); }
+      catch (e){ return reject(new Error('辨識結果無法解析：' + e.message)); }
+
+      const words = (data.words ?? [])
+        .map(w => ({ term: String(w.term ?? '').trim(), zh: w.zh ? String(w.zh).trim() : null }))
+        .filter(w => w.term && /[A-Za-z]/.test(w.term));
+      const u = env.usage ?? {};
+      resolve({ words, usage: {
+        inputTokens: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+        outputTokens: u.output_tokens ?? 0,
+        cacheReadTokens: u.cache_read_input_tokens ?? 0,
+        costUsd: env.total_cost_usd ?? 0,
+      } });
+    });
+  });
+}
+
+/** 把辨識結果轉回可編輯的文字，讓使用者核對後再建立字表 */
+export function wordsToText(words){
+  return words.map(w => w.zh ? `${w.term}, ${w.zh}` : w.term).join('\n');
+}

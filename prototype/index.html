@@ -161,6 +161,7 @@ h3.sec{margin:4px 0 0;font-size:.75rem;font-weight:700;letter-spacing:.1em;text-
   margin-right:8px;vertical-align:2px}
 .hkind.word{border-color:var(--pos-pron);color:var(--pos-pron)}
 .hkind.gone{border-color:var(--err);color:var(--err)}
+.hkind.ocr{border-color:var(--pos-adv);color:var(--pos-adv)}
 .hitem.hdead .hname{text-decoration:line-through;text-decoration-thickness:1px}
 .hname{display:block;font-family:var(--font-ui);font-weight:600;font-size:.95rem;
   color:var(--fg);margin-top:4px}
@@ -501,6 +502,11 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
           </div>
           <textarea id="wsText" rows="8" style="margin-top:9px"
             placeholder="一行一個單字，可以用逗號接中文：&#10;lesson, 課；課程&#10;difficult, 困難的&#10;teach, 教導&#10;&#10;沒有中文也可以，系統會自動補上意思與例句。"></textarea>
+          <div class="row">
+            <button id="wsPhoto">拍照／選課本照片</button>
+            <input type="file" id="wsFile" accept="image/*" capture="environment" hidden>
+            <span class="hint">辨識完會填進上面的框，核對後再按建立。</span>
+          </div>
           <div class="row">
             <button class="primary" id="wsCreate">建立字表</button>
             <button id="wsCancel">取消</button>
@@ -1439,12 +1445,16 @@ async function loadHistory(){
     }
     historyOut.innerHTML = d.items.map(it => {
       const gone = !it.preview;
+      const KIND = { analyze:['分析句子','句',''], wordset:['建立字表','字','word'], ocr:['照片辨識','字','ocr'] };
+      const [kindName, unit, kindCls] = KIND[it.kind] || KIND.analyze;
       const isWord = it.kind === 'wordset';
-      const unit = isWord ? '字' : '句';
+      const isOcr  = it.kind === 'ocr';
       const dead = isWord && !it.ref_alive;           // 字表已被刪除
       // 字表的原文是「名稱\n單字清單」，拆開顯示才讀得懂
       const lines = (it.preview || '').split('\n');
       const body = gone ? '（原文已超過保留期限，自動清除）'
+        : isOcr
+          ? `<span class="hwords">${esc(lines.join('、'))}${it.full_len > 300 ? '…' : ''}</span>`
         : isWord
           ? `<span class="hname">${esc(lines[0])}</span>` +
             `<span class="hwords">${esc(lines.slice(1).join('、'))}${it.full_len > 300 ? '…' : ''}</span>`
@@ -1452,13 +1462,13 @@ async function loadHistory(){
       return `<button class="hitem${gone ? ' hgone' : ''}${dead ? ' hdead' : ''}" data-id="${it.id}"
         data-kind="${esc(it.kind)}" data-ref="${it.ref_id ?? ''}" ${gone ? 'disabled' : ''}>
         <div class="htext">
-          <span class="hkind${isWord ? ' word' : ''}">${isWord ? '建立字表' : '分析句子'}</span>
+          <span class="hkind${kindCls ? ' ' + kindCls : ''}">${kindName}</span>
           ${dead ? '<span class="hkind gone">已刪除</span>' : ''}
           ${body}
           <div class="hmeta">
             <span>${timeAgo(it.created_at)}</span>
             <span><b>${it.sentences}</b> ${unit}</span>
-            ${isWord ? '' : `<span>新分析 <b>${it.analyzed}</b>／快取 <b>${it.cached}</b></span>`}
+            ${isWord || isOcr ? '' : `<span>新分析 <b>${it.analyzed}</b>／快取 <b>${it.cached}</b></span>`}
             <span><b>${(it.ms / 1000).toFixed(1)}s</b></span>
             ${it.cost_usd ? `<span>參考費用 <b>${money(it.cost_usd)}</b></span>` : ''}
           </div>
@@ -1472,6 +1482,18 @@ async function loadHistory(){
 
 historyOut.addEventListener('click', async e => {
   const b = e.target.closest('.hitem'); if (!b || b.disabled) return;
+  if (b.dataset.kind === 'ocr'){            // 把辨識結果帶回表單，省得重拍一次
+    const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
+    document.querySelector('.tabs button[data-view="words"]').click();
+    if (text){
+      el('wsForm').hidden = false;
+      el('wsNew').textContent = '收起';
+      el('wsText').value = text;
+      el('wsText').dispatchEvent(new Event('input'));
+      el('wsHint').textContent = '已帶回上次辨識的結果，核對後可直接建立字表。';
+    }
+    return;
+  }
   if (b.dataset.kind === 'wordset'){        // 字表不是句子，拿去分析沒有意義
     if (b.classList.contains('hdead')){
       b.insertAdjacentHTML('beforeend',
@@ -1841,6 +1863,61 @@ async function selectSetStatsOnly(){
   if (sub[3]) sub[3].textContent = `${st.correct} / ${st.attempts} 題`;
   renderWordList();
 }
+
+
+/** 上傳前先縮到最長邊 1600px —— 手機原圖動輒四五 MB，縮完約十分之一，
+ *  辨識品質一樣但快很多也省額度。HEIC 之類瀏覽器畫不出來的就原樣送。 */
+function shrinkImage(file, maxSide = 1600){
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        if (scale === 1) return resolve(dataUrl);
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        try { resolve(c.toDataURL('image/jpeg', 0.85)); }
+        catch { resolve(dataUrl); }
+      };
+      img.onerror = () => resolve(dataUrl);     // 瀏覽器讀不了（HEIC）就原樣送
+      img.src = dataUrl;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+el('wsPhoto').addEventListener('click', () => el('wsFile').click());
+el('wsFile').addEventListener('change', async e => {
+  const file = e.target.files?.[0];
+  e.target.value = '';                          // 讓同一張照片可以再選一次
+  if (!file) return;
+  el('wsPhoto').disabled = true;
+  el('wsHint').textContent = '讀取照片…';
+  try {
+    const image = await shrinkImage(file);
+    if (!image){ el('wsHint').textContent = '讀不到這個檔案。'; return; }
+    el('wsHint').textContent = '辨識中…把課本上的單字抄下來，約十秒。';
+    const d = await fetch('/api/wordset-ocr', {
+      method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
+      body: JSON.stringify({ image }),
+    }).then(r => r.json());
+    if (d.error){ el('wsHint').textContent = d.message || d.error; return; }
+    if (!d.words.length){ el('wsHint').textContent = '這張照片沒抄到單字，換一張清楚一點的試試。'; return; }
+    // 填進文字框讓使用者核對再建立 —— 辨識可能有誤，不直接拿去花額度充實
+    const old = el('wsText').value.trim();
+    el('wsText').value = old ? old + '\n' + d.text : d.text;
+    el('wsText').dispatchEvent(new Event('input'));
+    el('wsHint').textContent = `抄到 ${d.words.length} 個字（參考費用 ${money(d.usage.costUsd)}）。` +
+      `請核對上面的內容，刪掉不考的部分再按建立字表。`;
+  } catch (err){
+    el('wsHint').textContent = '辨識失敗：' + err.message;
+  } finally { el('wsPhoto').disabled = false; }
+});
 
 el('wsNew').addEventListener('click', () => {
   const f = el('wsForm'); f.hidden = !f.hidden;

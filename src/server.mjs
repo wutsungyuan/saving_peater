@@ -9,7 +9,10 @@ import { analyze, fixPronounCase, MODEL } from './analyzer.mjs';
 import { splitSentences } from './segment.mjs';
 import { openCache } from './cache.mjs';
 import { generate, grade, TYPES } from './exercises.mjs';
-import { parseWordList, enrich, generateWordQuiz, gradeWord, WORD_MODES } from './wordset.mjs';
+import { parseWordList, enrich, generateWordQuiz, gradeWord, WORD_MODES,
+         extractFromImage, wordsToText } from './wordset.mjs';
+import { writeFile, unlink, mkdir } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { autoSeed } from './cache-cli.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -292,6 +295,61 @@ const server = createServer(async (req, res) => {
         if (id) cache.deleteWordset(id);
         res.writeHead(200, { 'content-type':'application/json' });
         return res.end('{"ok":true}');
+      }
+    }
+
+    // 拍照辨識：讀課本單字表的照片，抄成可編輯的文字給使用者核對
+    if (req.method === 'POST' && url.pathname === '/api/wordset-ocr'){
+      if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+      let b = {};
+      try { b = JSON.parse(await readBody(req, 14e6)) || {}; } catch {
+        res.writeHead(413, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error:'too-large', message:'圖片太大，請用手機相簿壓縮後再試。' }));
+      }
+      const m = /^data:image\/(jpeg|jpg|png|webp|heic|heif);base64,(.+)$/i.exec(String(b.image || ''));
+      if (!m){
+        res.writeHead(400, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error:'bad-image', message:'看不出這是圖片，請選 JPG 或 PNG。' }));
+      }
+      const buf = Buffer.from(m[2], 'base64');
+      if (buf.length > 10e6){
+        res.writeHead(413, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error:'too-large', message:'圖片超過 10MB。' }));
+      }
+      // 再驗一次檔頭，不能只信前端說的 MIME
+      const sig = buf.subarray(0, 12);
+      const isJpeg = sig[0] === 0xFF && sig[1] === 0xD8 && sig[2] === 0xFF;
+      const isPng  = sig.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A]));
+      const isWebp = sig.subarray(0,4).toString() === 'RIFF' && sig.subarray(8,12).toString() === 'WEBP';
+      const isHeic = sig.subarray(4,8).toString() === 'ftyp';
+      if (!isJpeg && !isPng && !isWebp && !isHeic){
+        res.writeHead(400, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error:'bad-image', message:'檔案內容不是圖片。' }));
+      }
+
+      const ext = isPng ? 'png' : isWebp ? 'webp' : isHeic ? 'heic' : 'jpg';
+      const dir = join(ROOT, 'data', 'tmp');
+      const file = join(dir, `ocr-${randomBytes(8).toString('hex')}.${ext}`);
+      const t0 = Date.now();
+      try {
+        await mkdir(dir, { recursive: true });
+        await writeFile(file, buf);
+        const { words, usage } = await extractFromImage(file);
+        const text = wordsToText(words);
+        cache.log({ kind:'ocr', chars: buf.length, sentences: words.length,
+          cached:0, analyzed: words.length, ms: Date.now() - t0,
+          text: text || '（照片裡沒有抄到單字）', ...usage });
+        res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ words, text, usage }));
+      } catch (e){
+        const kind = e.kind || 'other';
+        res.writeHead(kind === 'rate-limit' ? 429 : 500, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: kind, message:
+          kind === 'rate-limit' ? 'Claude 訂閱額度似乎已用盡，等額度重置後再試。'
+        : kind === 'auth' ? 'Claude 認證失效，請在終端機執行 claude 重新登入。'
+        : '辨識失敗：' + String(e.message).slice(0, 200) }));
+      } finally {
+        await unlink(file).catch(() => {});      // 照片不留在硬碟上
       }
     }
 
