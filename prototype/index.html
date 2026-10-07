@@ -204,6 +204,21 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .wchip[aria-pressed="true"]{background:var(--fg);border-color:var(--fg);color:var(--surface);font-weight:600}
 .wchip small{font-family:var(--font-mono);font-size:.72rem;opacity:.75}
 .wchip small.when{opacity:.5}
+.ta-wrap{position:relative;margin-top:9px}
+.ta-wrap > textarea{margin-top:0}
+.busy{position:absolute;inset:0;z-index:12;border-radius:4px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+  background:color-mix(in srgb,var(--surface) 93%,var(--accent));
+  border:2px solid var(--accent)}
+.busy .spin{width:30px;height:30px;border-radius:50%;
+  border:3px solid color-mix(in srgb,var(--accent) 22%,transparent);
+  border-top-color:var(--accent);animation:spin .75s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.busy-main{font-size:1.1rem;font-weight:700;color:var(--accent)}
+.busy-sub{font-size:.88rem;color:var(--muted)}
+.busy-t{font-family:var(--font-mono);font-size:.82rem;color:var(--faint);
+  font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){ .busy .spin{animation-duration:2.4s} }
 #view-words.dropping{position:relative}
 #view-words.dropping::after{content:'放開就開始辨識課本照片';
   position:absolute;inset:-6px;z-index:20;pointer-events:none;
@@ -505,14 +520,22 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
         <div class="chips" id="wsList"></div>
         <div id="wsForm" hidden>
           <div class="row" style="margin-top:12px">
-            <input type="text" id="wsName" placeholder="字表名稱，例如 Unit 2 單字" style="flex:1;min-width:200px">
+            <input type="text" id="wsName" placeholder="字表名稱" style="flex:1;min-width:200px">
           </div>
-          <textarea id="wsText" rows="8" style="margin-top:9px"
-            placeholder="一行一個單字，可以用逗號接中文：&#10;lesson, 課；課程&#10;difficult, 困難的&#10;teach, 教導&#10;&#10;沒有中文也可以，系統會自動補上意思與例句。"></textarea>
+          <div class="ta-wrap">
+            <textarea id="wsText" rows="8"
+              placeholder="一行一個單字，可以用逗號接中文：&#10;lesson, 課；課程&#10;difficult, 困難的&#10;teach, 教導&#10;&#10;沒有中文也可以，系統會自動補上意思與例句。"></textarea>
+            <div class="busy" id="wsBusy" hidden>
+              <div class="spin"></div>
+              <div class="busy-main" id="wsBusyMain">辨識中</div>
+              <div class="busy-sub" id="wsBusySub">把課本上的單字抄下來</div>
+              <div class="busy-t" id="wsBusyT">0 秒</div>
+            </div>
+          </div>
           <div class="row">
             <button id="wsPhoto">拍照／選課本照片</button>
             <input type="file" id="wsFile" accept="image/*" capture="environment" hidden>
-            <span class="hint">也可以把圖片直接拖進來，或按 ⌘V 貼上。辨識完會填進上面的框，核對後再按建立。</span>
+            <span class="hint">也可以把圖片直接拖進來，或按 <b id="pasteKey">⌘V</b> 貼上。辨識完會填進上面的框，核對後再按建立。</span>
           </div>
           <div class="row">
             <button class="primary" id="wsCreate">建立字表</button>
@@ -1495,6 +1518,7 @@ historyOut.addEventListener('click', async e => {
     if (text){
       el('wsForm').hidden = false;
       el('wsNew').textContent = '收起';
+      fillDefaultName();
       el('wsText').value = text;
       el('wsText').dispatchEvent(new Event('input'));
       el('wsHint').textContent = '已帶回上次辨識的結果，核對後可直接建立字表。';
@@ -1682,6 +1706,7 @@ el('wsModes').addEventListener('click', e => {
 async function loadWordsets(){
   try {
     const d = await fetch(`/api/wordsets?user=${encodeURIComponent(USER)}`).then(r => r.json());
+    wsNames = d.sets.map(x => x.name);
     if (!d.sets.length){
       el('wsList').innerHTML = '<span class="hint">還沒有字表。按「＋ 新增字表」貼上老師給的範圍。</span>';
       el('wsPanel').hidden = true;
@@ -1898,6 +1923,45 @@ function shrinkImage(file, maxSide = 1600){
   });
 }
 
+
+
+/** 家教每堂課給一份，日期是最自然的區別。同一天建第二份就加序號。 */
+let wsNames = [];
+function defaultSetName(){
+  const d = new Date();
+  const base = `${d.getMonth() + 1}/${d.getDate()} 單字`;
+  if (!wsNames.includes(base)) return base;
+  for (let n = 2; ; n++){
+    const name = `${base} (${n})`;
+    if (!wsNames.includes(name)) return name;
+  }
+}
+/** 開表單時填上預設名稱；使用者已經打了字就不要蓋掉 */
+function fillDefaultName(){
+  const box = el('wsName');
+  if (!box.value.trim()) box.value = defaultSetName();
+}
+
+/** 輸入框上的進度指示。模型要跑十秒到一分鐘，沒有動的東西會讓人以為當掉了。 */
+let busyTimer = null;
+function wsBusy(on, main = '', sub = ''){
+  const box = el('wsBusy');
+  clearInterval(busyTimer);
+  if (!on){ box.hidden = true; return; }
+  el('wsBusyMain').textContent = main;
+  el('wsBusySub').textContent = sub;
+  el('wsBusyT').textContent = '0 秒';
+  box.hidden = false;
+  box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  const t0 = Date.now();
+  busyTimer = setInterval(() => {
+    el('wsBusyT').textContent = `${Math.round((Date.now() - t0) / 1000)} 秒`;
+  }, 250);
+}
+// Windows 之後也會用到，鍵位提示跟著平台走
+if (!/Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent))
+  el('pasteKey').textContent = 'Ctrl+V';
+
 /** 從拖曳或貼上的事件裡挑出第一張圖片 */
 function imageFromTransfer(dt){
   if (!dt) return null;
@@ -1914,12 +1978,14 @@ function imageFromTransfer(dt){
 /** 選圖、拖曳、貼上三種來源都走這裡 */
 async function handleImageFile(file){
   if (!file) return;
-  el('wsPhoto').disabled = true;
+  el('wsPhoto').disabled = true; el('wsCreate').disabled = true;
+  wsBusy(true, '讀取照片', '縮圖中');
   el('wsHint').textContent = '讀取照片…';
   try {
     const image = await shrinkImage(file);
     if (!image){ el('wsHint').textContent = '讀不到這個檔案。'; return; }
-    el('wsHint').textContent = '辨識中…把課本上的單字抄下來，約十秒。';
+    wsBusy(true, '辨識中', '把課本上的單字抄下來，大約十秒');
+    el('wsHint').textContent = '辨識中…';
     const d = await fetch('/api/wordset-ocr', {
       method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
       body: JSON.stringify({ image }),
@@ -1934,7 +2000,7 @@ async function handleImageFile(file){
       `請核對上面的內容，刪掉不考的部分再按建立字表。`;
   } catch (err){
     el('wsHint').textContent = '辨識失敗：' + err.message;
-  } finally { el('wsPhoto').disabled = false; }
+  } finally { wsBusy(false); el('wsPhoto').disabled = false; el('wsCreate').disabled = false; }
 }
 
 el('wsPhoto').addEventListener('click', () => el('wsFile').click());
@@ -1947,6 +2013,7 @@ el('wsFile').addEventListener('change', e => {
 // ---- 拖曳：整個單字分頁都能接，表單沒開就自動打開 ----
 const openFormFor = (msg) => {
   if (el('wsForm').hidden){ el('wsForm').hidden = false; el('wsNew').textContent = '收起'; }
+  fillDefaultName();
   if (msg) el('wsHint').textContent = msg;
 };
 let dragDepth = 0;
@@ -1986,6 +2053,7 @@ wordsView.addEventListener('paste', e => {
 
 el('wsNew').addEventListener('click', () => {
   const f = el('wsForm'); f.hidden = !f.hidden;
+  if (!f.hidden) fillDefaultName();
   el('wsNew').textContent = f.hidden ? '＋ 新增字表' : '收起';
 });
 el('wsCancel').addEventListener('click', () => {
@@ -1995,7 +2063,8 @@ el('wsCreate').addEventListener('click', async () => {
   const text = el('wsText').value.trim();
   if (!text) return;
   el('wsCreate').disabled = true;
-  el('wsHint').textContent = '整理中…每個字要查詞性、意思、例句與音節，大約一分鐘。';
+  wsBusy(true, '整理中', '每個字要查詞性、意思、例句與音節，大約一分鐘');
+  el('wsHint').textContent = '整理中…';
   try {
     const d = await fetch('/api/wordsets', {
       method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
@@ -2008,7 +2077,7 @@ el('wsCreate').addEventListener('click', async () => {
     wsCurrent = d.id;
     await loadWordsets();
   } catch (e){ el('wsHint').textContent = '建立失敗：' + e.message; }
-  finally { el('wsCreate').disabled = false; }
+  finally { wsBusy(false); el('wsCreate').disabled = false; el('wsPhoto').disabled = false; }
 });
 el('wsList').addEventListener('click', async e => {
   const b = e.target.closest('.wchip');
