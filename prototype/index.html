@@ -168,6 +168,11 @@ h3.sec{margin:4px 0 0;font-size:.75rem;font-weight:700;letter-spacing:.1em;text-
   color:var(--muted);font-weight:500}
 .tabs button+button{border-left:1px solid var(--rule)}
 .tabs button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);font-weight:700}
+.tabs button.needs-api{color:var(--faint)}
+.tabs button.needs-api::after{content:'·';margin-left:5px;font-weight:700;color:var(--st-mid)}
+.tabs button.needs-api[aria-pressed="true"]{color:var(--on-accent)}
+.demo-note{margin:0;font-size:.82rem;color:var(--muted);line-height:1.7;
+  background:#fdf4c4;border:1px solid #d9c478;border-radius:3px;padding:10px 13px}
 select{font-family:var(--font-ui);font-size:.85rem;padding:6px 10px;border:1px solid var(--rule);
   border-radius:3px;background:var(--surface-2);color:var(--fg)}
 .tchip{font-size:.8rem;padding:5px 12px;border:1px solid var(--rule);background:var(--surface-2);
@@ -918,6 +923,16 @@ fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
 }).catch(() => {
   API = false;
   hintEl.textContent = '展示模式：沒有連上後端，請點下方範例標籤。要分析任意輸入請在本機執行 npm start。';
+  // 這三個分頁在展示模式下沒有資料可用，明確標出來，不要讓人以為點不動
+  for (const v of ['practice', 'weak', 'history']){
+    const b = document.querySelector(`.tabs button[data-view="${v}"]`);
+    if (!b) continue;
+    b.classList.add('needs-api');
+    b.title = '需要後端才能使用。請在本機執行 npm start 後開啟 http://127.0.0.1:8787';
+  }
+  document.querySelector('.tabs')?.insertAdjacentHTML('afterend',
+    '<p class="demo-note">「練習」「弱點」「歷史」需要本機後端才能使用。' +
+    '這個線上版只能看分析範例與試聽朗讀。</p>');
 });
 
 function placeholder(index, original, state){
