@@ -190,6 +190,10 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
   color:var(--muted);border-radius:999px;cursor:pointer;display:inline-flex;gap:7px;align-items:baseline}
 .wchip[aria-pressed="true"]{background:var(--fg);border-color:var(--fg);color:var(--surface);font-weight:600}
 .wchip small{font-family:var(--font-mono);font-size:.72rem;opacity:.75}
+.wchip small.when{opacity:.5}
+.linky.danger{color:var(--muted)}
+.linky.danger:hover{color:var(--err)}
+.linky.danger[data-armed="1"]{color:var(--err);font-weight:700}
 .wlist{display:flex;flex-direction:column;gap:9px}
 .wcard{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:13px 16px}
 .wcard .top{display:flex;gap:11px;align-items:baseline;flex-wrap:wrap}
@@ -1617,10 +1621,24 @@ async function loadWordsets(){
       el('wsPanel').hidden = true;
       return;
     }
-    el('wsList').innerHTML = d.sets.map(x =>
-      `<button class="wchip" data-id="${x.id}" aria-pressed="${x.id === wsCurrent}">
-         ${esc(x.name)}<small>${x.word_count} 字</small></button>`).join('')
-      + `<button class="linky" id="wsDel" style="margin-left:8px">刪除目前字表</button>`;
+    const chip = x => {
+      const d2 = new Date(x.created_at);
+      const when = `${d2.getMonth()+1}/${d2.getDate()}`;
+      return `<button class="wchip" data-id="${x.id}" aria-pressed="${x.id === wsCurrent}"
+        title="建立於 ${d2.toLocaleString('zh-TW')}｜已背熟 ${x.mastered} 字">
+        ${esc(x.name)}<small>${x.word_count} 字</small><small class="when">${when}</small></button>`;
+    };
+    // 字表會一直累積（家教每堂課一份），只先顯示最近幾份，其餘收起來
+    const SHOWN = 6;
+    const recent = d.sets.slice(0, SHOWN), rest = d.sets.slice(SHOWN);
+    const restOpen = el('wsList').dataset.expanded === '1'
+      || rest.some(x => x.id === wsCurrent);     // 目前選的在舊的裡面就要展開
+    el('wsList').dataset.expanded = restOpen ? '1' : '0';
+    el('wsList').innerHTML = recent.map(chip).join('')
+      + (restOpen ? rest.map(chip).join('') : '')
+      + (rest.length ? `<button class="linky" id="wsMore" style="margin-left:4px">${
+          restOpen ? '收起舊字表' : `更多 ${rest.length} 份`}</button>` : '')
+      + `<button class="linky danger" id="wsDel" style="margin-left:10px">刪除目前字表</button>`;
     if (!wsCurrent || !d.sets.some(x => x.id === wsCurrent)) await selectSet(d.sets[0].id);
   } catch (e){
     el('wsList').innerHTML = `<span class="hint">載入失敗：${esc(e.message)}</span>`;
@@ -1816,7 +1834,22 @@ el('wsCreate').addEventListener('click', async () => {
 el('wsList').addEventListener('click', async e => {
   const b = e.target.closest('.wchip');
   if (b) return selectSet(Number(b.dataset.id));
-  if (e.target.id === 'wsDel' && wsCurrent){
+  if (e.target.id === 'wsMore'){
+    el('wsList').dataset.expanded = el('wsList').dataset.expanded === '1' ? '0' : '1';
+    return loadWordsets();
+  }
+  const del = e.target.closest('#wsDel');
+  if (del && wsCurrent){
+    // 刪除會連同該字表的所有練習進度一起消失，所以要按兩次
+    if (del.dataset.armed !== '1'){
+      const name = document.querySelector(`.wchip[data-id="${wsCurrent}"]`)?.firstChild?.textContent?.trim() ?? '';
+      del.dataset.armed = '1';
+      del.textContent = `再按一次刪除「${name}」`;
+      clearTimeout(del._t);
+      del._t = setTimeout(() => { del.dataset.armed = '0'; del.textContent = '刪除目前字表'; }, 4000);
+      return;
+    }
+    clearTimeout(del._t);
     await fetch(`/api/wordsets?id=${wsCurrent}`, { method:'DELETE',
       headers: TOKEN ? { 'x-auth-token': TOKEN } : {} });
     wsCurrent = null; await loadWordsets();

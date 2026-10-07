@@ -245,7 +245,7 @@ export function openCache(file = 'data/cache.db'){
           (SELECT COUNT(*) FROM words w WHERE w.set_id = s.id) AS word_count,
           (SELECT COUNT(*) FROM words w JOIN word_progress p
              ON p.word_id = w.id AND p.user_token = ? WHERE w.set_id = s.id AND p.box >= 3) AS mastered
-        FROM wordsets s ORDER BY s.created_at DESC`).all(userToken);
+        FROM wordsets s ORDER BY s.created_at DESC, s.id DESC`).all(userToken);
     },
 
     /** 取出一份字表的所有單字，附上該使用者的進度 */
