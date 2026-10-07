@@ -444,6 +444,53 @@ export function openCache(file = 'data/cache.db'){
 
     count(){ return db.prepare('SELECT COUNT(*) n FROM sentences').get().n; },
 
+    // ---------- 範例句：從分析過的句子裡挑，而不是只有內建那 12 句 ----------
+    // 標籤的分類條件就寫在這裡。資料量小（上百句），直接掃 JSON 比另外建索引實際。
+    sampleKinds(){
+      const main = d => d.clauses?.find(c => c.role === 'main') ?? d.clauses?.[0];
+      const roles = d => new Set((main(d)?.constituents ?? []).map(x => x.role));
+      return {
+        p1: d => main(d)?.pattern?.id === 1,
+        p2: d => main(d)?.pattern?.id === 2,
+        p3: d => main(d)?.pattern?.id === 3,
+        p4: d => main(d)?.pattern?.id === 4,
+        p5: d => main(d)?.pattern?.id === 5,
+        standard:   d => ['M-manner','M-place','M-time','M-freq'].filter(r => roles(d).has(r)).length >= 2,
+        compare45:  d => [4, 5].includes(main(d)?.pattern?.id),
+        splitVerb:  d => (main(d)?.constituents ?? []).filter(x => x.role === 'V').length > 1,
+        errorCase:  d => (d.notes ?? []).some(n => n.type === 'error'),
+        compound:   d => (d.clauses ?? []).length > 1,
+        outOfScope: d => d.inScope === false,
+      };
+    },
+
+    /** 每個類別有幾句可用（給前端決定要不要顯示「換一句」） */
+    sampleCounts(){
+      const kinds = this.sampleKinds();
+      const out = {};
+      for (const k of Object.keys(kinds)) out[k] = 0;
+      for (const r of this._allAnalyzed())
+        for (const [k, f] of Object.entries(kinds)) if (f(r.data)) out[k]++;
+      return out;
+    },
+
+    /** 取某一類的第 n 句（會繞回去，所以可以一直按「換一句」） */
+    sampleOf(kind, n = 0){
+      const f = this.sampleKinds()[kind];
+      if (!f) return null;
+      const hit = this._allAnalyzed().filter(r => f(r.data));
+      if (!hit.length) return null;
+      const i = ((n % hit.length) + hit.length) % hit.length;
+      return { total: hit.length, index: i, sentence: hit[i].data, original: hit[i].original };
+    },
+
+    _allAnalyzed(){
+      return db.prepare(`SELECT original, result FROM sentences
+        WHERE issue IS NULL AND pattern_id IS NOT NULL ORDER BY created_at DESC`).all()
+        .map(r => { try { return { original: r.original, data: JSON.parse(r.result) }; } catch { return null; } })
+        .filter(Boolean);
+    },
+
     // 出好的題目（含答案）。原本只放記憶體，伺服器一重啟就全部失效，
     // 作答到一半的人按交卷只會看到「這份測驗已失效」。
     putQuiz(id, kind, questions){

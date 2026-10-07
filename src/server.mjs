@@ -563,6 +563,15 @@ const server = createServer(async (req, res) => {
         correct: results.filter(r=>r.correct).length, total: results.length }));
     }
 
+    // 範例句：讓標籤能改抓分析過的真實句子
+    if (url.pathname === '/api/samples'){
+      const kind = url.searchParams.get('kind');
+      res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+      if (!kind) return res.end(JSON.stringify({ counts: cache.sampleCounts() }));
+      const n = Number(url.searchParams.get('n')) || 0;
+      return res.end(JSON.stringify(cache.sampleOf(kind, n) ?? { total: 0 }));
+    }
+
     if (url.pathname === '/api/history'){
       const id = url.searchParams.get('id');
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });

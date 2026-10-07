@@ -750,6 +750,9 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
     <nav class="chips-group" aria-label="範例句">
       <div class="cg"><b>五大句型</b><div class="chips" id="chips-a"></div></div>
       <div class="cg"><b>其他情境</b><div class="chips" id="chips-b"></div></div>
+      <div class="cg" id="swapRow" hidden><b></b>
+        <button class="linky" id="swapSample"></button>
+        <span class="hint" id="swapHint"></span></div>
     </nav>
 
     <div class="toolbar">
@@ -851,6 +854,13 @@ const POS = {
   to:{zh:'不定詞 to',why:'後面接原形動詞'},
   interj:{zh:'感嘆詞',why:'表達情緒或引起注意'},
 };
+// 這兩個全檔都在用，宣告放最前面避免 TDZ
+const el = id => document.getElementById(id);
+
+// 範例句的狀態。宣告在最前面 —— render() 初始化時就會用到，
+// 放後面會踩到 TDZ，整個頁面會死掉（之前 Spk 就是這樣壞過一次）。
+let sampleCounts = {}, curKind = null, curIdx = -1;   // curIdx -1 = 正在顯示內建範例
+
 const SAMPLES_A = [
   ['p1','句型一 S+V'],['p2','句型二 S+V+C'],['p3','句型三 S+V+O'],
   ['p4','句型四 S+V+IO+DO'],['p5','句型五 S+V+O+C'],
@@ -1101,6 +1111,8 @@ function render(key){
     c.setAttribute('aria-pressed', String(c.dataset.key === key));
   if (out.dataset.mode === 'full') openAll(true);
   layoutPosLabels();
+  curKind = key; curIdx = -1;      // 點標籤＝回到內建範例
+  renderSwap();
 }
 
 function openAll(open){
@@ -1210,6 +1222,7 @@ try {
 fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
   API = h;
   updateCount();
+  loadSampleCounts();
   hintEl.textContent = h.authRequired && !TOKEN
     ? '這個後端需要存取權杖。請用帶有 ?token=… 的網址開啟。'
     : `已連上分析後端（${h.model}）。可貼上一句話或一段文章，上限 ${h.maxChars} 字 / ${h.maxSentences} 句。`;
@@ -1236,6 +1249,7 @@ function placeholder(index, original, state){
 }
 
 async function analyzeLive(text){
+  curKind = null; renderSwap();     // 分析自己的句子時不是在看範例
   goBtn.disabled = true;
   Spk.stop();
   usageBar.hidden = true;
@@ -1854,7 +1868,6 @@ function hardenAnswers(root){
 const WMODES = [['zh2en','中考英'],['en2zh','英考中'],['listen','聽考'],
                 ['cloze','例句填空'],['sense','詞義辨析']];
 const WMODE_NAME = Object.fromEntries(WMODES);
-const el = id => document.getElementById(id);
 let wsSel = [];                    // 選取的字表 id（可多選）
 let wsMerged = { dup: 0, words: 0 };       // 跨字表合併時有幾個字重複被併起來
 let wsAllSets = [];                // 全部字表，新增表單要列出來當目標
@@ -2292,6 +2305,41 @@ function scrollToFirstQuestion(container){
     t = null;
   }, { passive: true });
 })();
+
+// ===== 範例句也可以改用自己分析過的句子 =====
+// 內建那 12 句是教學用的標準範例，當入口很好；但真正貼近孩子在讀的，
+// 是他自己貼過、分析過的句子。資料庫裡有就讓標籤能換過去。
+async function loadSampleCounts(){
+  if (API === false) return;
+  try { sampleCounts = (await fetch('/api/samples').then(r => r.json())).counts || {}; }
+  catch { sampleCounts = {}; }
+  renderSwap();
+}
+
+function renderSwap(){
+  const n = sampleCounts[curKind] || 0;
+  const row = el('swapRow');
+  row.hidden = !curKind || n === 0;
+  if (row.hidden) return;
+  el('swapSample').textContent = curIdx < 0 ? `換成我分析過的句子（${n} 句）` : '再換一句';
+  el('swapHint').textContent = curIdx < 0
+    ? '目前顯示的是內建範例。'
+    : `我分析過的第 ${curIdx + 1} / ${n} 句。`;
+}
+
+el('swapSample').addEventListener('click', async () => {
+  if (!curKind) return;
+  try {
+    const d = await fetch(`/api/samples?kind=${encodeURIComponent(curKind)}&n=${curIdx + 1}`)
+      .then(r => r.json());
+    if (!d.total) return;
+    curIdx = d.index;
+    out.innerHTML = renderSentence(d.sentence, false);
+    setInput(d.original);
+    layoutPosLabels();
+    renderSwap();
+  } catch { /* 拿不到就維持現狀 */ }
+});
 
 // 手機上開頭說明收成兩行，點了才展開。桌機不顯示這個鈕。
 (() => {
