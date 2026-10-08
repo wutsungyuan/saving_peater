@@ -49,6 +49,8 @@
 
 ## 換到 Windows
 
+搬機器的完整步驟在 [MIGRATION.md](MIGRATION.md)。下面是為什麼需要那些步驟：
+
 程式本身是跨平台的 Node，但有兩處原本會在 Windows 上直接失敗，已經處理：
 
 - **Claude CLI 的執行檔名**：Windows 裝的是 `claude.cmd`，而 `child_process.spawn`
