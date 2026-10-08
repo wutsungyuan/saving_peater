@@ -11,7 +11,7 @@ const SYSTEM_PROMPT_PATH = join(__dirname, '..', 'prompts', 'analyzer-system.md'
 export const MODEL = process.env.ANALYZER_MODEL || 'opus';
 
 /** 呼叫模型，回傳 { text, usage, costUsd, durationMs } */
-export function callModel(userPrompt, { model = MODEL, timeoutMs = 120_000 } = {}) {
+function callModel(userPrompt, { model = MODEL, timeoutMs = 120_000 } = {}) {
   return new Promise((resolve, reject) => {
     const args = [
       '-p', userPrompt,
@@ -81,7 +81,7 @@ export function parseModelJson(text) {
  * 回傳 { aligned: [...含 start/end], ok: boolean, failures: [...] }
  * ok=false 時前端應降級為純標籤列表顯示，不標色。
  */
-export function alignConstituents(original, constituents) {
+function alignConstituents(original, constituents) {
   let cursor = 0;
   const aligned = [];
   const failures = [];
@@ -104,7 +104,7 @@ export function alignConstituents(original, constituents) {
  * 詞性對齊：把模型回傳的單字依序在原句中找出字元區間。
  * 與 alignConstituents 同策略 —— 模型只回文字，座標由程式算。
  */
-export function alignWords(original, words) {
+function alignWords(original, words) {
   let cursor = 0;
   const aligned = [];
   const failures = [];

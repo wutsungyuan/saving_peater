@@ -88,17 +88,13 @@ export function enrich(items, { model = MODEL, timeoutMs = 180_000 } = {}){
 // ---------------------------------------------------------------------------
 
 export const WORD_MODES = ['zh2en', 'en2zh', 'listen', 'cloze', 'sense', 'forms'];
-export const MODE_NAMES = {
-  zh2en:'中考英', en2zh:'英考中', listen:'聽考', cloze:'例句填空', sense:'詞義辨析',
-};
-
 const rand = n => Math.floor(Math.random() * n);
 const pick = a => a[rand(a.length)];
 const shuffle = a => { const r=[...a]; for(let i=r.length-1;i>0;i--){const j=rand(i+1);[r[i],r[j]]=[r[j],r[i]];} return r; };
 const norm = s => String(s ?? '').trim().toLowerCase().replace(/\s+/g,' ').replace(/[.!?,;:]+$/,'');
 
 /** 在例句裡找出這個字實際出現的形式（可能是變化形：teach → teaches） */
-export function findForm(example, term){
+function findForm(example, term){
   if (!example) return null;
   const t = term.trim();
   // 片語：把 ... 當萬用，整串寬鬆比對

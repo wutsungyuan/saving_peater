@@ -140,40 +140,6 @@ function qPos({ hash, data }){
   };
 }
 
-/** 有些三態有兩種寫法（got up / gotten up、was / were），
- *  拆成陣列讓兩種都算對 —— 整串當成一個答案比對的話，
- *  填了其中一種反而算錯。 */
-const altsOf = v => String(v ?? '').split(/[/,]/).map(x => x.trim()).filter(Boolean);
-
-function qVerbForms({ hash, data }){
-  // be 的過去式是 was／were，取決於主詞，不適合當單一填空答案
-  const cl = (data.clauses ?? []).find(c =>
-    c.verb?.irregular && c.verb?.forms?.past && c.verb.forms.base !== 'be');
-  if (!cl) return null;
-  const f = cl.verb.forms;
-  const pastAlts = altsOf(f.past), ppAlts = altsOf(f.pastParticiple);
-  if (!pastAlts.length || !ppAlts.length) return null;
-
-  const note = [
-    pastAlts.length > 1 ? `過去式 ${pastAlts.join(' 和 ')} 都可以` : '',
-    ppAlts.length > 1 ? `過去分詞 ${ppAlts.join(' 和 ')} 都可以` : '',
-  ].filter(Boolean).join('；');
-
-  return {
-    type: 'verb-forms',
-    prompt: `寫出 ${f.base} 的過去式與過去分詞`,
-    sentence: data.original,
-    display: `${f.base}　→　______　→　______`,
-    inputMode: 'text',
-    blanks: 2,
-    answer: [pastAlts[0], ppAlts[0]],            // 顯示用：各取第一種
-    accept: [pastAlts, ppAlts],                  // 批改用：每一格各自可接受的寫法
-    explain: `${f.base} / ${pastAlts[0]} / ${ppAlts[0]}（不規則變化）\n` +
-      (note ? `${note}\n` : '') +
-      `現在分詞 ${f.ing}　第三人稱單數 ${f.third}\n例句：${data.original}`,
-    meta: { hash },
-  };
-}
 
 function qErrorFix({ hash, data }){
   if (hasBlank(data.original)) return null;        // 空格本身不是文法錯誤，別拿來當改錯題

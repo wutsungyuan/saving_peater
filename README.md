@@ -350,7 +350,6 @@ src/wordset.mjs              單字表：充實（呼叫模型一次）與測驗
 src/server.mjs               HTTP + SSE 串流 API
 prototype/index.html         前端（單檔，無後端時自動降級為範例展示模式）
 eval/                        60 案例黃金測試集 ＋ 評測腳本
-fixtures/samples.json        12 組預先分析好的範例，給靜態展示用
 ```
 
 ## API

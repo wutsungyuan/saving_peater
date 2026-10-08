@@ -711,7 +711,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
               <span class="hint">題數</span>
               <select id="wsCount"><option>5</option><option selected>10</option><option>15</option><option>20</option></select>
               <button class="primary" id="wsStart">出題</button>
-              <span class="hint" id="wsQuizHint">沒背熟的字會優先出現，答對後間隔變長、答錯馬上再考。</span>
+              <span class="hint">沒背熟的字會優先出現，答對後間隔變長、答錯馬上再考。</span>
             </div>
           </div>
           <div id="wsSummary" hidden></div>
@@ -1742,7 +1742,6 @@ historyOut.addEventListener('click', async e => {
     if (text){
       el('wsForm').hidden = false;
       setFormMode(true);
-      fillDefaultName();
       el('wsText').value = text;
       el('wsText').dispatchEvent(new Event('input'));
       el('wsHint').textContent = '已帶回上次辨識的結果，核對後可直接建立字表。';
@@ -1933,7 +1932,6 @@ el('wsModes').addEventListener('click', e => {
 async function loadWordsets(){
   try {
     const d = await fetch(`/api/wordsets?user=${encodeURIComponent(USER)}`).then(r => r.json());
-    wsNames = d.sets.map(x => x.name);
     wsAllSets = d.sets;
     if (!d.sets.length){
       el('wsList').innerHTML = '<span class="hint">還沒有字表。按「＋ 新增字表」貼上老師給的範圍。</span>';
@@ -2654,21 +2652,6 @@ async function submitWordset(appendTo){
   finally { wsBusy(false); el('wsCreate').disabled = false; el('wsPhoto').disabled = false; }
 }
 
-/** 預設名稱。同名就加序號 —— 字表上已經獨立顯示建立日期，名稱不用再重複。 */
-let wsNames = [];
-function defaultSetName(){
-  const base = '單字';      // 日期不用寫進名稱，字表本身就顯示建立日期了
-  if (!wsNames.includes(base)) return base;
-  for (let n = 2; ; n++){
-    const name = `${base} (${n})`;
-    if (!wsNames.includes(name)) return name;
-  }
-}
-/** 開表單時填上預設名稱；使用者已經打了字就不要蓋掉 */
-/** 名稱不預填 —— 使用者本來就會自己取（Unit1、Unit2…），
- *  預填「單字」只是多一步刪除。送出時沒填才用後備名稱。 */
-function fillDefaultName(){ /* 保留空實作，開表單時不再塞預設值 */ }
-
 /** 輸入框上的進度指示。模型要跑十秒到一分鐘，沒有動的東西會讓人以為當掉了。 */
 /** 兩個輸入框共用。prefix 是 'ws'（單字表）或 'an'（分析）。 */
 const busyTimers = {};
@@ -2747,7 +2730,6 @@ el('wsFile').addEventListener('change', e => {
 // ---- 拖曳：整個單字分頁都能接，表單沒開就自動打開 ----
 const openFormFor = (msg) => {
   if (el('wsForm').hidden){ el('wsForm').hidden = false; setFormMode(true); }
-  fillDefaultName();
   if (msg) el('wsHint').textContent = msg;
 };
 let dragDepth = 0;
@@ -2789,7 +2771,6 @@ el('wsNew').addEventListener('click', () => {
   const f = el('wsForm'); f.hidden = !f.hidden;
   setFormMode(!f.hidden);
   if (!f.hidden){
-    fillDefaultName();
     renderFormActions();
   }
 });

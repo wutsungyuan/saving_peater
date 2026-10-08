@@ -7,7 +7,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { normalize } from './segment.mjs';
 
-export const hashOf = (sentence) =>
+const hashOf = (sentence) =>
   createHash('sha256').update(normalize(sentence), 'utf8').digest('hex');
 
 /** 把存起來的「A: 內容」拆成 { speaker, text }。多行就取第一行當代表。 */
