@@ -201,7 +201,7 @@ export async function analyze(text, opts = {}) {
 // ---------------------------------------------------------------------------
 
 /** 分析多個句子。回傳與輸入等長的陣列，分析失敗的位置是 null。 */
-export async function analyzeMany(sentences, { groupSize = 8, onDone, ...opts } = {}){
+export async function analyzeMany(sentences, { groupSize = 8, onDone, onGroup, ...opts } = {}){
   const out = new Array(sentences.length).fill(null);
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 };
   const addUsage = m => {
@@ -244,6 +244,9 @@ export async function analyzeMany(sentences, { groupSize = 8, onDone, ...opts } 
         if (s){ out[i] = s; onDone?.(i, s); }
       } catch { /* 這句就是分析不出來，留 null */ }
     }
+    // 每一批跑完就回報，呼叫端可以立刻存檔並更新進度 ——
+    // 全部跑完才一次交付的話，中途斷線就白做了。
+    onGroup?.({ done: Math.min(g + groupSize, sentences.length), total: sentences.length, usage });
   }
   return { results: out, usage, missed: out.filter(x => !x).length };
 }

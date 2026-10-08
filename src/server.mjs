@@ -536,37 +536,61 @@ const server = createServer(async (req, res) => {
         return res.end(JSON.stringify({ total: all.length, cached: all.length, analyzed: 0,
           usage: { costUsd: 0, outputTokens: 0 } }));
       }
+      // 改用 SSE：一批（8 句）跑完就存檔並回報進度。
+      // 幾十句塞在一個請求裡跑好幾分鐘，中途斷線會全部白做，畫面上也完全沒有動靜。
+      res.writeHead(200, {
+        'content-type':'text/event-stream; charset=utf-8',
+        'cache-control':'no-cache, no-transform',
+        'connection':'keep-alive',
+        'x-accel-buffering':'no',
+      });
+      const send = (ev, d) => { if (!res.writableEnded) res.write(`event: ${ev}\ndata: ${JSON.stringify(d)}\n\n`); };
+      const beat = setInterval(() => { if (!res.writableEnded) res.write(': ping\n\n'); }, 8000);
+      send('meta', { total: all.length, cached: all.length - todo.length, todo: todo.length });
       const t0 = Date.now();
+      const groupResults = [];
+      let saved = 0, lastDone = 0;
+      const total = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 };
       try {
-        const { results, usage, missed } = await analyzeMany(todo);
-        const got = results.filter(Boolean).length || 1;
-        // 批次沒有逐句的用量，按句數分攤，帳才對得起來
-        const per = {
-          inputTokens:  Math.round(usage.inputTokens  / got),
-          outputTokens: Math.round(usage.outputTokens / got),
-          costUsd: usage.costUsd / got,
-        };
-        let saved = 0;
-        results.forEach((r, i) => {
-          if (!r) return;
-          try {
-            fixPronounCase(r.words ?? []);
-            cache.put(todo[i], r, MODEL, per);
-            saved++;
-          } catch (err){ console.error('存快取失敗：', todo[i].slice(0, 40), err.message); }
+        await analyzeMany(todo, {
+          onGroup: ({ done, usage }) => {
+            // 這一批剛完成的句子立刻寫進快取 —— 斷線最多只損失一批
+            const n = Math.max(1, done - lastDone);
+            const per = {
+              inputTokens:  Math.round((usage.inputTokens  - total.inputTokens)  / n),
+              outputTokens: Math.round((usage.outputTokens - total.outputTokens) / n),
+              costUsd: (usage.costUsd - total.costUsd) / n,
+            };
+            for (let i = lastDone; i < done; i++){
+              const r = groupResults[i];
+              if (!r) continue;
+              try { fixPronounCase(r.words ?? []); cache.put(todo[i], r, MODEL, per); saved++; }
+              catch (err){ console.error('存快取失敗：', todo[i].slice(0, 40), err.message); }
+            }
+            lastDone = done;
+            Object.assign(total, usage);
+            send('progress', { done: saved, total: todo.length, costUsd: usage.costUsd });
+          },
+          onDone: (i, s) => { groupResults[i] = s; },
         });
+        clearInterval(beat);
         cache.log({ kind:'analyze', chars: todo.join(' ').length, sentences: todo.length,
           cached: all.length - todo.length, analyzed: saved, ms: Date.now() - t0,
-          text: todo.join('\n'), ...usage });
-        res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ total: all.length, cached: all.length - todo.length,
-          analyzed: saved, missed, usage }));
+          text: todo.join('\n'), ...total });
+        send('done', { total: all.length, cached: all.length - todo.length,
+          analyzed: saved, usage: total, ms: Date.now() - t0 });
+        return res.end();
       } catch (e){
+        clearInterval(beat);
         const kind = e.kind || 'other';
-        res.writeHead(kind === 'rate-limit' ? 429 : 500, { 'content-type':'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ error: kind, message:
+        // 已經存進去的不會白費，照樣記帳
+        if (saved) cache.log({ kind:'analyze', chars: todo.join(' ').length, sentences: todo.length,
+          cached: all.length - todo.length, analyzed: saved, ms: Date.now() - t0,
+          text: todo.join('\n'), ...total });
+        send('failed', { kind, analyzed: saved, message:
           kind === 'rate-limit' ? 'Claude 訂閱額度似乎已用盡，等額度重置後再試。'
-        : '分析失敗：' + String(e.message).slice(0, 200) }));
+        : '分析失敗：' + String(e.message).slice(0, 200) });
+        return res.end();
       }
     }
 

@@ -2527,20 +2527,47 @@ el('wsAnalyze').addEventListener('click', async () => {
   }
   const b = el('wsAnalyze');
   b.disabled = true;
-  b.textContent = `分析中…${left} 句併成一次送，約 ${Math.max(20, Math.round(left * 6))} 秒`;
+  // 改用串流：每 8 句一批，跑完就存檔並回報進度。
+  // 幾十句要跑好幾分鐘，沒有進度的話看起來就像當掉了。
+  let done = 0, cost = 0;
+  const show = () => { b.textContent = `分析中…${done} / ${left} 句（${money(cost)}）`; };
+  show();
   try {
-    const d = await fetch('/api/wordset-analyze', {
+    const res = await fetch('/api/wordset-analyze', {
       method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
       body: JSON.stringify({ setIds: wsSel, userToken: USER }),
-    }).then(r => r.json());
-    if (d.error){ b.textContent = d.message || d.error; return; }
-    // 交給 refreshExamples 去比對與重畫 —— 先改 wsExamples 的話，
-    // 它的「有沒有變」判斷會變成 false，清單就不會更新
+    });
+    if (!res.ok || !res.body){
+      const d = await res.json().catch(() => ({}));
+      b.textContent = d.message || '分析失敗'; b.disabled = false; return;
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', failed = null;
+    for (;;){
+      const { value, done: fin } = await reader.read();
+      if (fin) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split('\n\n'); buf = parts.pop() ?? '';
+      for (const p of parts){
+        const ev = /^event: (\w+)/m.exec(p)?.[1];
+        const dataLine = /^data: (.*)$/m.exec(p)?.[1];
+        if (!ev || !dataLine) continue;
+        let d; try { d = JSON.parse(dataLine); } catch { continue; }
+        if (ev === 'progress'){ done = d.done; cost = d.costUsd ?? cost; show(); }
+        else if (ev === 'failed') failed = d;
+        else if (ev === 'done'){ done = d.analyzed; cost = d.usage?.costUsd ?? cost; }
+      }
+    }
     await refreshExamples();
-    el('wsHint').textContent =
-      `分析完 ${d.analyzed} 句（參考費用 ${money(d.usage.costUsd)}）。現在點任何例句的「分析」都是瞬間的。`;
     loadHistory?.();
-  } catch (e){ b.textContent = '分析失敗：' + e.message; b.disabled = false; }
+    el('wsHint').textContent = failed
+      ? `${failed.message}（已完成的 ${failed.analyzed} 句已經存起來，再按一次會從沒分析的接著跑）`
+      : `分析完 ${done} 句（參考費用 ${money(cost)}）。現在點任何例句的「分析」都是瞬間的。`;
+  } catch (e){
+    el('wsHint').textContent = '連線中斷：' + e.message + '（已完成的部分已經存起來，再按一次會接著跑）';
+    await refreshExamples();
+  } finally { b.disabled = false; renderAnalyzeBtn(); }
 });
 
 // 點例句的「分析」：切到分析頁，命中快取的話瞬間出結果
