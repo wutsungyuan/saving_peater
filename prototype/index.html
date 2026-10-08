@@ -1128,7 +1128,10 @@ const chipHtml = list => list.filter(([k]) => DATA[k])
 document.getElementById('chips-a').innerHTML = chipHtml(SAMPLES_A);
 document.getElementById('chips-b').innerHTML = chipHtml(SAMPLES_B);
 document.querySelector('.chips-group').addEventListener('click', e => {
-  const b = e.target.closest('.chip'); if (b) render(b.dataset.key);
+  const b = e.target.closest('.chip'); if (!b) return;
+  // 再點一次同一個標籤＝換下一句（內建範例 → 自己分析過的 1、2、3… → 回到內建）
+  if (b.dataset.key === curKind) nextSample();
+  else render(b.dataset.key);
 });
 
 for (const b of document.querySelectorAll('.seg button')){
@@ -2316,19 +2319,24 @@ async function loadSampleCounts(){
   renderSwap();
 }
 
+const chipLabel = k => SAMPLES.find(([key]) => key === k)?.[1] ?? '';
 function renderSwap(){
   const n = sampleCounts[curKind] || 0;
   const row = el('swapRow');
   row.hidden = !curKind || n === 0;
   if (row.hidden) return;
-  el('swapSample').textContent = curIdx < 0 ? `換成我分析過的句子（${n} 句）` : '再換一句';
+  el('swapSample').textContent = '換下一句';
   el('swapHint').textContent = curIdx < 0
-    ? '目前顯示的是內建範例。'
-    : `我分析過的第 ${curIdx + 1} / ${n} 句。`;
+    ? `內建範例。再點一次「${chipLabel(curKind)}」或按這裡，可以換成我分析過的句子（${n} 句）。`
+    : `我分析過的第 ${curIdx + 1} / ${n} 句` +
+      (curIdx + 1 >= n ? '（最後一句，再按一次回到內建範例）。' : '。');
 }
 
-el('swapSample').addEventListener('click', async () => {
-  if (!curKind) return;
+/** 往下換一句。走完自己分析過的那些就回到內建範例，形成一個循環。 */
+async function nextSample(){
+  const n = sampleCounts[curKind] || 0;
+  if (!n) return;                               // 沒有可換的就維持內建範例
+  if (curIdx + 1 >= n){ curIdx = -1; return render(curKind); }
   try {
     const d = await fetch(`/api/samples?kind=${encodeURIComponent(curKind)}&n=${curIdx + 1}`)
       .then(r => r.json());
@@ -2339,7 +2347,8 @@ el('swapSample').addEventListener('click', async () => {
     layoutPosLabels();
     renderSwap();
   } catch { /* 拿不到就維持現狀 */ }
-});
+}
+el('swapSample').addEventListener('click', nextSample);
 
 // 手機上開頭說明收成兩行，點了才展開。桌機不顯示這個鈕。
 (() => {
