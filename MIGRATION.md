@@ -120,9 +120,12 @@ npm run cache:info
 
 ---
 
-## 讓手機也能連
+## 讓其他裝置連進來（手機、Tailscale）
 
-預設只接受本機連線。要讓同一個 Wi-Fi 下的手機連進來：
+**預設只綁 `127.0.0.1`**，所以只有這台電腦自己連得到。
+別台機器連過去會完全沒反應 —— 不是錯誤畫面，是連線根本沒被接受。
+
+PowerShell 要先設環境變數再啟動，而且 `set` 和 `$env:` 的寫法跟 bash 不一樣：
 
 ```powershell
 $env:HOST = "0.0.0.0"
@@ -130,10 +133,56 @@ $env:AUTH_TOKEN = "自己取一個字串"
 npm start
 ```
 
-手機開 `http://<這台電腦的區網 IP>:8787/?token=自己取的那個字串`。
+然後在別的裝置開：
 
-**設了 `HOST=0.0.0.0` 就一定要設 `AUTH_TOKEN`** —— 否則同網段的任何裝置都能用你的
-Claude 額度。Windows 防火牆第一次會跳出詢問，選「私人網路」允許。
+```
+http://<這台電腦的 IP>:8787/?token=自己取的那個字串
+```
+
+Tailscale 就填 Tailscale 給的那個 100.x.x.x；同一個 Wi-Fi 就填區網 IP。
+**網址一定要帶 `?token=`**，不然除了首頁什麼都叫不動。
+
+啟動後看一下訊息，應該要印：
+
+```
+對外開放 (0.0.0.0)，已啟用 AUTH_TOKEN。分享網址時要帶 ?token=<你的字串>
+```
+
+印的是「只接受本機連線」就代表 `$env:HOST` 沒吃到 —— 多半是開了新的 PowerShell 視窗
+（環境變數只在設定它的那個視窗有效），或是用 `set HOST=...`（那是 cmd 的語法）。
+
+**設了 `HOST=0.0.0.0` 就一定要設 `AUTH_TOKEN`**。
+沒設的話，同網段或同 tailnet 的任何裝置都能用你的 Claude 額度，啟動時也會印警告。
+
+### 連不上時依序查
+
+1. **伺服器有對外開放嗎** —— 看上面那行啟動訊息。
+2. **Windows 防火牆** —— 第一次對外監聽時會跳出詢問，錯過或按了取消就會被擋，
+   而且之後不會再問。手動開一條規則：
+
+   ```powershell
+   # 系統管理員身分執行 PowerShell
+   New-NetFirewallRule -DisplayName "saving_peater 8787" -Direction Inbound `
+     -LocalPort 8787 -Protocol TCP -Action Allow -Profile Private
+   ```
+
+   走 Tailscale 的話，Tailscale 介面通常被歸在「公用網路」，
+   那就把 `-Profile Private` 改成 `-Profile Any`。
+3. **埠有在聽嗎** —— `netstat -ano | findstr :8787`，
+   要看到 `0.0.0.0:8787`；看到 `127.0.0.1:8787` 就是第 1 點沒做到。
+
+### 只想開給 Tailscale、不想對區網開放
+
+`HOST` 可以直接填某一個位址，只綁那張網卡：
+
+```powershell
+$env:HOST = "100.69.116.17"     # Tailscale 給你的位址
+$env:AUTH_TOKEN = "自己取一個字串"
+npm start
+```
+
+這樣同 Wi-Fi 的其他人連不到。代價是**本機也不能再用 127.0.0.1**，
+要改用同一個 100.x 位址開。
 
 ---
 
