@@ -295,6 +295,8 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .q-sent mark{background:color-mix(in srgb,var(--accent) 20%,transparent);color:inherit;
   padding:1px 3px;border-radius:2px;font-weight:600}
 .q-hint{font-family:var(--font-en);color:var(--accent);font-size:1rem}
+/* 時態填空的中文提示。少了它，否定句與沒有時間副詞的句子根本猜不到答案。 */
+.q-zh{font-size:.95rem;color:var(--muted);line-height:1.7}
 .q-opts{display:flex;flex-direction:column;gap:7px}
 .q-opt{display:flex;gap:9px;align-items:center;font-size:.92rem;cursor:pointer;
   border:1px solid var(--rule);border-radius:3px;padding:8px 12px;background:var(--surface-2)}
@@ -1545,6 +1547,7 @@ function renderQuestion(q, n){
       <span class="who">${esc(q.context.speaker || '對方')}</span>${esc(q.context.text)}</div>` : ''}
     <div class="q-sent">${qDisplay(q)}</div>
     ${q.hint ? `<div class="q-hint">（${esc(q.hint)}）</div>` : ''}
+    ${q.zh ? `<div class="q-zh">${esc(q.zh)}</div>` : ''}
     ${q.type === 'error-fix' ? '<div class="hint">只要填改正後的那一小段就好，例如 tastes good</div>' : ''}
     ${body}
   </article>`;
@@ -1633,7 +1636,7 @@ async function submitQuiz(){
         ? `<div class="sum-break">這是訂正，<b>不列入弱點統計</b> —— 答案剛才已經看過了。</div>`
         : `<div class="sum-break">作答已記錄，可到「弱點」看各句型與時態的正確率。</div>`);
     quizSummary.hidden = false;
-    wrongFirst(quizOut, d.results, r => `q-${r.id}`);
+    wrongFirst(quizOut, d.results, r => `card-${r.id}`);   // 卡片的 id 是 card-xxx
     quizWrong = { quizId: currentQuiz.quizId, ids: d.results.filter(r => !r.correct).map(r => r.id) };
     el('quizFix').hidden = !quizWrong.ids.length;
     el('quizFix').textContent = `訂正錯題（${quizWrong.ids.length} 題）`;
@@ -2216,6 +2219,9 @@ function wrongFirst(outEl, results, idOf){
     const card = document.getElementById(idOf(r));
     if (card) (r.correct ? right : wrong).push(card);
   }
+  // id 字首打錯的話一張都抓不到，畫面看起來只是「沒重排」，很難發現。
+  if (results.length && !wrong.length && !right.length)
+    console.error('[wrongFirst] 找不到任何題目卡片，id 對不上：', idOf(results[0]));
   if (!wrong.length || !right.length) return;      // 全對或全錯就不用重排
   const frag = document.createDocumentFragment();
   for (const c of wrong) frag.appendChild(c);

@@ -86,12 +86,22 @@ function qTense({ hash, data }){
   if (!vs.length || !cl?.verb?.lemma || !cl?.tense) return null;
   const { display, blanks } = blankOut(data.original, vs);
   const ev = (cl.tense.evidence ?? []).filter(e => !blanks.some(b => b.includes(e)));
+  // 三種會讓人猜不到答案的情況，各補一個線索：
+  // 1. 空格吃掉助動詞或否定（I do not like → 答案是三個字，提示卻只有 like）
+  // 2. 時態線索全在空格裡（He ___ bread. 看不出是現在還是過去）
+  // 3. 兩者皆是
+  const words = blanks.reduce((n, b) => n + b.trim().split(/\s+/).length, 0);
+  const multi = words > blanks.length;              // 有空格不只一個字
+  const noCue = ev.length === 0;                    // 句子裡看不到時態線索
   return {
     type: 'tense',
-    prompt: `用括號裡動詞的正確形式填空`,
+    prompt: noCue
+      ? `用括號裡動詞的${cl.tense.label}填空`        // 沒線索就直接講時態，否則無從判斷
+      : `用括號裡動詞的正確形式填空`,
     sentence: data.original,
     display,
-    hint: cl.verb.lemma,
+    hint: cl.verb.lemma + (multi ? `，共 ${words} 個字` : ''),
+    zh: data.translation ?? null,                   // 中文提示：否定、語氣都看得出來
     inputMode: 'text',
     blanks: blanks.length,
     answer: blanks,
