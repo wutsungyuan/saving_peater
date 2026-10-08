@@ -209,6 +209,7 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
    顯示時把容器撐開到放得下為止。 */
 .ta-wrap.busyon{min-height:136px}
 .ta-wrap > textarea{margin-top:0}
+#wsText{overflow-y:auto;-webkit-overflow-scrolling:touch}   /* 全域是 hidden；單字表沒有 autoGrow，內容多了會捲不動 */
 .busy{position:absolute;inset:0;z-index:12;border-radius:4px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
   background:color-mix(in srgb,var(--surface) 93%,var(--accent));
@@ -714,7 +715,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
           </div>
           <div class="row">
             <button id="wsPhoto">拍照／選課本照片</button>
-            <input type="file" id="wsFile" accept="image/*" hidden>
+            <input type="file" id="wsFile" accept="image/*" multiple hidden>
             <span class="hint">也可以把圖片直接拖進來，或按 <b id="pasteKey">⌘V</b> 貼上。辨識完會填進上面的框，核對後再按建立。</span>
           </div>
           <div class="row">
@@ -799,7 +800,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
       </div>
       <div class="row">
         <button id="anPhoto">拍照／選課本照片</button>
-        <input type="file" id="anFile" accept="image/*" hidden>
+        <input type="file" id="anFile" accept="image/*" multiple hidden>
         <span class="hint">也可以把圖片直接拖進來，或按 <b id="pasteKey2">⌘V</b> 貼上。<span
           class="longonly">辨識完會填進上面的框，核對後再按分析。</span></span>
       </div>
@@ -2396,43 +2397,56 @@ function scrollToFirstQuestion(container){
 // ===== 分析分頁的拍照辨識 =====
 // 辨識只負責把照片變成文字填進輸入框，之後完全走原本的流程
 // （斷句 → 逐句分析 → 快取），和自己貼上一整段沒有任何差別。
-async function handleAnalyzeImage(file){
-  if (!file) return;
+async function handleAnalyzeImage(files){
+  const list = [].concat(files || []).filter(Boolean);
+  if (!list.length) return;
   const btn = el('anPhoto'), hint = el('inp-hint');
   btn.disabled = true; goBtn.disabled = true;
-  anBusy(true, '讀取照片', '縮圖中');
-  hint.textContent = '讀取照片…';
+  let ok = 0, lines = 0, filled = 0, cost = 0; const failed = [];
   try {
-    const image = await shrinkImage(file);
-    if (!image){ hint.textContent = '讀不到這個檔案。'; return; }
-    anBusy(true, '辨識中', '把課本上的英文句子抄下來，大約十幾秒');
-    hint.textContent = '辨識中…';
-    const d = await fetch('/api/analyze-ocr', {
-      method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
-      body: JSON.stringify({ image }),
-    }).then(r => r.json());
-    if (d.error){ hint.textContent = d.message || d.error; return; }
-    if (!d.text){ hint.textContent = '這張照片沒抄到完整的英文句子。單字表請改用「單字」分頁的拍照。'; return; }
-    // 輸入框裡如果是範例句（curKind 不為 null），那不是使用者打的內容，直接覆蓋。
-    // 真的是自己貼的才接在後面 —— 拍兩頁的情況就靠這個。
-    const own = curKind === null ? inp.value.trim() : '';
-    setInput(own ? own + '\n' + d.text : d.text);
-    curKind = null;
-    inp.focus();
-    const lines = d.text.split('\n').filter(Boolean).length;
-    hint.textContent = `抄到 ${lines} 行（參考費用 ${money(d.usage.costUsd)}）。` +
-      (d.filled ? `考卷的 ${d.filled} 個空格已依選項填上答案 —— 那是分析出來的，不是解答本，請自己核對。` 
-                : '請核對上面的內容，刪掉不需要的部分再按分析。');
-  } catch (err){
-    hint.textContent = '辨識失敗：' + err.message;
+    for (let i = 0; i < list.length; i++){
+      const tag = list.length > 1 ? `第 ${i + 1}／${list.length} 張：` : '';
+      anBusy(true, tag + '讀取照片', '縮圖中');
+      hint.textContent = tag + '讀取照片…';
+      try {
+        const image = await shrinkImage(list[i]);
+        if (!image){ failed.push(`第 ${i + 1} 張讀不到`); continue; }
+        anBusy(true, tag + '辨識中', '把課本上的英文句子抄下來，大約十幾秒');
+        hint.textContent = tag + '辨識中…';
+        const d = await fetch('/api/analyze-ocr', {
+          method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
+          body: JSON.stringify({ image }),
+        }).then(r => r.json());
+        if (d.error){ failed.push(`第 ${i + 1} 張：${d.message || d.error}`); continue; }
+        if (!d.text){ failed.push(`第 ${i + 1} 張沒抄到完整的英文句子（單字表請改用「單字」分頁的拍照）`); continue; }
+        // 輸入框裡如果是範例句（curKind 不為 null），那不是使用者打的內容，直接覆蓋。
+        // 真的是自己貼的才接在後面 —— 拍兩頁、或一次選兩張都靠這個。
+        const own = curKind === null ? inp.value.trim() : '';
+        const seen = new Set(own.split('\n').map(l => l.trim().toLowerCase()).filter(Boolean));
+        const fresh = d.text.split('\n').filter(l => l.trim() && !seen.has(l.trim().toLowerCase())).join('\n');
+        setInput(own ? [own, fresh].filter(Boolean).join('\n') : d.text);
+        curKind = null;
+        ok++; lines += d.text.split('\n').filter(Boolean).length; filled += d.filled || 0; cost += d.usage.costUsd || 0;
+      } catch (err){
+        failed.push(`第 ${i + 1} 張辨識失敗：${err.message}`);
+      }
+    }
+    if (ok) inp.focus();
+    const total = inp.value.split('\n').filter(l => l.trim()).length;
+    const parts = [];
+    if (ok) parts.push(`辨識了 ${ok} 張，抄到 ${lines} 行，輸入框目前共 ${total} 行（參考費用 ${money(cost)}）。` +
+      (filled ? `考卷的 ${filled} 個空格已依選項填上答案 —— 那是分析出來的，不是解答本，請自己核對。`
+              : '請核對上面的內容，刪掉不需要的部分再按分析。'));
+    if (failed.length) parts.push('失敗：' + failed.join('；') + '。');
+    hint.textContent = parts.join(' ');
   } finally { anBusy(false); btn.disabled = false; goBtn.disabled = false; }
 }
 
 el('anPhoto').addEventListener('click', () => el('anFile').click());
 el('anFile').addEventListener('change', e => {
-  const f = e.target.files?.[0];
+  const fs = [...(e.target.files || [])];
   e.target.value = '';
-  handleAnalyzeImage(f);
+  handleAnalyzeImage(fs);
 });
 
 // 拖曳與貼上：和單字分頁同一套來源判斷
@@ -2451,11 +2465,11 @@ el('anFile').addEventListener('change', e => {
   });
   view.addEventListener('dragleave', () => { if (--depth <= 0){ depth = 0; view.classList.remove('dropping'); } });
   view.addEventListener('drop', e => {
-    const f = imageFromTransfer(e.dataTransfer);
-    if (!f && !(e.dataTransfer?.files?.length)) return;
+    const f = imagesFromTransfer(e.dataTransfer);
+    if (!f.length && !(e.dataTransfer?.files?.length)) return;
     e.preventDefault();
     depth = 0; view.classList.remove('dropping');
-    if (!f){ el('inp-hint').textContent = '拖進來的不是圖片。請拖 JPG 或 PNG 的課本照片。'; return; }
+    if (!f.length){ el('inp-hint').textContent = '拖進來的不是圖片。請拖 JPG 或 PNG 的課本照片。'; return; }
     handleAnalyzeImage(f);
   });
   view.addEventListener('paste', e => {
@@ -2701,6 +2715,11 @@ function anBusy(on, main, sub){ showBusy('an', on, main, sub); }
 if (!/Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent))
   for (const id of ['pasteKey', 'pasteKey2']) { const n = el(id); if (n) n.textContent = 'Ctrl+V'; }
 
+/** 拖曳時一次丟多張：挑出全部圖片 */
+function imagesFromTransfer(dt){
+  return [...(dt?.files || [])].filter(f => f.type?.startsWith('image/'));
+}
+
 /** 從拖曳或貼上的事件裡挑出第一張圖片 */
 function imageFromTransfer(dt){
   if (!dt) return null;
@@ -2714,39 +2733,58 @@ function imageFromTransfer(dt){
   return null;
 }
 
-/** 選圖、拖曳、貼上三種來源都走這裡 */
-async function handleImageFile(file){
-  if (!file) return;
+/** 一次選多張時，同一個字可能出現在兩張（跨頁）。以英文部分（逗號前）比對，已經有的就略過。 */
+function mergeWordLines(old, add){
+  const head = l => l.split(/[,，]/)[0].trim().toLowerCase();
+  const seen = new Set(old.split('\n').filter(l => l.trim()).map(head));
+  const fresh = add.split('\n').filter(l => l.trim() && !seen.has(head(l)));
+  return { text: [old, ...fresh].filter(Boolean).join('\n'), added: fresh.length, dup: add.split('\n').filter(l => l.trim()).length - fresh.length };
+}
+
+/** 選圖、拖曳、貼上三種來源都走這裡。可以一次給多張，依序辨識、逐張接在文字框後面。 */
+async function handleImageFile(files){
+  const list = [].concat(files || []).filter(Boolean);
+  if (!list.length) return;
   el('wsPhoto').disabled = true; el('wsCreate').disabled = true;
-  wsBusy(true, '讀取照片', '縮圖中');
-  el('wsHint').textContent = '讀取照片…';
+  let ok = 0, dupTotal = 0, cost = 0; const failed = [];
   try {
-    const image = await shrinkImage(file);
-    if (!image){ el('wsHint').textContent = '讀不到這個檔案。'; return; }
-    wsBusy(true, '辨識中', '把課本上的單字抄下來，大約十秒');
-    el('wsHint').textContent = '辨識中…';
-    const d = await fetch('/api/wordset-ocr', {
-      method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
-      body: JSON.stringify({ image }),
-    }).then(r => r.json());
-    if (d.error){ el('wsHint').textContent = d.message || d.error; return; }
-    if (!d.words.length){ el('wsHint').textContent = '這張照片沒抄到單字，換一張清楚一點的試試。'; return; }
-    // 填進文字框讓使用者核對再建立 —— 辨識可能有誤，不直接拿去花額度充實
-    const old = el('wsText').value.trim();
-    el('wsText').value = old ? old + '\n' + d.text : d.text;
-    el('wsText').dispatchEvent(new Event('input'));
-    el('wsHint').textContent = `抄到 ${d.words.length} 個字（參考費用 ${money(d.usage.costUsd)}）。` +
-      `請核對上面的內容，刪掉不考的部分再按建立字表。`;
-  } catch (err){
-    el('wsHint').textContent = '辨識失敗：' + err.message;
+    for (let i = 0; i < list.length; i++){
+      const tag = list.length > 1 ? `第 ${i + 1}／${list.length} 張：` : '';
+      wsBusy(true, tag + '讀取照片', '縮圖中');
+      el('wsHint').textContent = tag + '讀取照片…';
+      try {
+        const image = await shrinkImage(list[i]);
+        if (!image){ failed.push(`第 ${i + 1} 張讀不到`); continue; }
+        wsBusy(true, tag + '辨識中', '把課本上的單字抄下來，大約十秒');
+        el('wsHint').textContent = tag + '辨識中…';
+        const d = await fetch('/api/wordset-ocr', {
+          method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
+          body: JSON.stringify({ image }),
+        }).then(r => r.json());
+        if (d.error){ failed.push(`第 ${i + 1} 張：${d.message || d.error}`); continue; }
+        if (!d.words.length){ failed.push(`第 ${i + 1} 張沒抄到單字`); continue; }
+        // 填進文字框讓使用者核對再建立 —— 辨識可能有誤，不直接拿去花額度充實
+        const m = mergeWordLines(el('wsText').value.trim(), d.text);
+        el('wsText').value = m.text;
+        el('wsText').dispatchEvent(new Event('input'));
+        ok++; dupTotal += m.dup; cost += d.usage.costUsd || 0;
+      } catch (err){
+        failed.push(`第 ${i + 1} 張辨識失敗：${err.message}`);
+      }
+    }
+    const total = el('wsText').value.split('\n').filter(l => l.trim()).length;
+    const parts = [];
+    if (ok) parts.push(`辨識了 ${ok} 張，目前共 ${total} 行（參考費用 ${money(cost)}）${dupTotal ? `，略過 ${dupTotal} 個重複的字` : ''}。請核對上面的內容，刪掉不考的部分再按建立字表。`);
+    if (failed.length) parts.push('失敗：' + failed.join('；') + '。');
+    el('wsHint').textContent = parts.join(' ');
   } finally { wsBusy(false); el('wsPhoto').disabled = false; el('wsCreate').disabled = false; }
 }
 
 el('wsPhoto').addEventListener('click', () => el('wsFile').click());
 el('wsFile').addEventListener('change', e => {
-  const f = e.target.files?.[0];
+  const fs = [...(e.target.files || [])];
   e.target.value = '';                          // 讓同一張照片可以再選一次
-  handleImageFile(f);
+  handleImageFile(fs);
 });
 
 // ---- 拖曳：整個單字分頁都能接，表單沒開就自動打開 ----
@@ -2771,11 +2809,11 @@ wordsView.addEventListener('dragleave', () => {
   if (--dragDepth <= 0){ dragDepth = 0; wordsView.classList.remove('dropping'); }
 });
 wordsView.addEventListener('drop', e => {
-  const f = imageFromTransfer(e.dataTransfer);
-  if (!f && !(e.dataTransfer?.files?.length)) return;   // 不是檔案就讓瀏覽器自己處理
+  const f = imagesFromTransfer(e.dataTransfer);
+  if (!f.length && !(e.dataTransfer?.files?.length)) return;   // 不是檔案就讓瀏覽器自己處理
   e.preventDefault();
   dragDepth = 0; wordsView.classList.remove('dropping');
-  if (!f){ openFormFor('拖進來的不是圖片。請拖 JPG 或 PNG 的課本照片。'); return; }
+  if (!f.length){ openFormFor('拖進來的不是圖片。請拖 JPG 或 PNG 的課本照片。'); return; }
   openFormFor('');
   handleImageFile(f);
 });
