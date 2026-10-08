@@ -286,6 +286,11 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .q-type{font-family:var(--font-mono);font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;
   color:var(--faint);border:1px solid var(--rule);border-radius:999px;padding:2px 9px}
 .q-prompt{font-size:.95rem;color:var(--fg);font-weight:500}
+/* 對話題的前一句。灰字、縮排，看得出是脈絡而不是要作答的句子。 */
+.q-ctx{font-family:var(--font-en);font-size:1rem;line-height:1.7;color:var(--faint);
+  border-left:2px solid var(--rule);padding-left:11px;margin-bottom:2px}
+.q-ctx .who{font-family:var(--font-mono);font-size:.72rem;font-weight:700;color:var(--muted);
+  margin-right:8px;text-transform:uppercase}
 .q-sent{font-family:var(--font-en);font-size:1.22rem;line-height:1.75;color:var(--fg)}
 .q-sent mark{background:color-mix(in srgb,var(--accent) 20%,transparent);color:inherit;
   padding:1px 3px;border-radius:2px;font-weight:600}
@@ -1536,6 +1541,8 @@ function renderQuestion(q, n){
   return `<article class="q" id="card-${q.id}">
     <div class="q-head"><span class="q-no">${n}</span><span class="q-type">${esc(typeLabel)}</span>
       <span class="q-prompt">${esc(q.prompt)}</span></div>
+    ${q.context ? `<div class="q-ctx" title="這題是對話的一部分">
+      <span class="who">${esc(q.context.speaker || '對方')}</span>${esc(q.context.text)}</div>` : ''}
     <div class="q-sent">${qDisplay(q)}</div>
     ${q.hint ? `<div class="q-hint">（${esc(q.hint)}）</div>` : ''}
     ${q.type === 'error-fix' ? '<div class="hint">只要填改正後的那一小段就好，例如 tastes good</div>' : ''}
@@ -2367,8 +2374,10 @@ async function handleAnalyzeImage(file){
     setInput(own ? own + '\n' + d.text : d.text);
     curKind = null; renderSwap();
     inp.focus();
-    hint.textContent = `抄到 ${d.text.length} 個字元（參考費用 ${money(d.usage.costUsd)}）。` +
-      `請核對上面的內容，刪掉不需要的部分再按分析。`;
+    const lines = d.text.split('\n').filter(Boolean).length;
+    hint.textContent = `抄到 ${lines} 行（參考費用 ${money(d.usage.costUsd)}）。` +
+      (d.filled ? `考卷的 ${d.filled} 個空格已依選項填上答案 —— 那是分析出來的，不是解答本，請自己核對。` 
+                : '請核對上面的內容，刪掉不需要的部分再按分析。');
   } catch (err){
     hint.textContent = '辨識失敗：' + err.message;
   } finally { anBusy(false); btn.disabled = false; goBtn.disabled = false; }

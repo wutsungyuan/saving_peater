@@ -37,6 +37,28 @@ function isBoundary(text, i){
   return true;
 }
 
+/** 對話的說話者標記（A: / B: / Man: / Woman: / Tom:）。
+ *  考卷的對話題會帶這個，分析時要拆掉，但要記下誰說的、跟誰對話。 */
+const SPEAKER = /^\s*([A-Z][A-Za-z]{0,9})\s*[:：]\s*/;
+/** 課本上這些也是「字+冒號」但不是說話者，不能當成對話。 */
+const NOT_SPEAKER = new Set(['note','tip','example','answer','answers','hint','key','warning',
+  'ps','ex','question','note1','attention','remember','caution','important','see','also']);
+
+/** 把帶說話者標記的文字拆成 [{ speaker, text }]，沒有標記就回 null。 */
+export function splitDialogue(input){
+  const lines = String(input ?? '').split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return null;
+  const turns = lines.map(l => {
+    const m = SPEAKER.exec(l);
+    if (!m || NOT_SPEAKER.has(m[1].toLowerCase())) return null;
+    return { speaker: m[1], text: l.slice(m[0].length).trim() };
+  });
+  // 必須每一行都有標記、而且至少兩個不同的說話者，才算對話
+  if (turns.some(t => !t || !t.text)) return null;
+  if (new Set(turns.map(t => t.speaker)).size < 2) return null;
+  return turns;
+}
+
 export function splitSentences(input){
   const text = String(input ?? '');
   const out = [];

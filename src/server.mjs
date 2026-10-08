@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { join, extname, normalize as pathNormalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyze, analyzeMany, extractProse, fixPronounCase, MODEL } from './analyzer.mjs';
-import { splitSentences } from './segment.mjs';
+import { splitSentences, splitDialogue } from './segment.mjs';
 import { openCache } from './cache.mjs';
 import { generate, grade, TYPES } from './exercises.mjs';
 import { parseWordList, enrich, generateWordQuiz, gradeWord, WORD_MODES,
@@ -133,7 +133,16 @@ async function handleAnalyze(req, res, url){
     return res.end(JSON.stringify({ error: `too long`, maxChars: MAX_CHARS, got: text.length }));
   }
 
-  let segs = splitSentences(text);
+  // 對話題（A: … / B: …）：拆掉說話者標記再分析，但記下誰說的、對方說了什麼。
+  // 不這樣做的話「A: What did you make for…」會把標記當成句子的一部分。
+  const turns = splitDialogue(text);
+  let segs, dlg = null;
+  if (turns){
+    dlg = turns;
+    segs = turns.map(t => ({ text: t.text }));
+  } else {
+    segs = splitSentences(text);
+  }
   const truncated = segs.length > MAX_SENTENCES;
   if (truncated) segs = segs.slice(0, MAX_SENTENCES);
 
@@ -189,7 +198,12 @@ async function handleAnalyze(req, res, url){
         costUsd: meta?.costUsd ?? 0,
       };
       for (const k of Object.keys(usage)) usage[k] += one[k];
-      cache.put(seg.text, sentence, MODEL, one);
+      // 對話的話，把對方說的話一起存起來（meta 這個名字上面已經用掉了）
+      const dlgMeta = dlg ? {
+        speaker: dlg[i]?.speaker ?? null,
+        context: dlg.filter((_, k) => k !== i).map(t => `${t.speaker}: ${t.text}`).join('\n') || null,
+      } : {};
+      cache.put(seg.text, sentence, MODEL, one, dlgMeta);
       analyzed++;
       if (!closed) send('sentence', { index: i, cached: false, sentence, usage: one });
     } catch (e){
@@ -422,14 +436,14 @@ const server = createServer(async (req, res) => {
       try {
         await mkdir(dir, { recursive: true });
         await writeFile(file, img.buf);
-        const { text, usage } = await extractProse(file);
+        const { text, filled, usage } = await extractProse(file);
         // 和單字表辨識分開記 —— 兩者抄的東西不一樣，歷史上要看得出來
         cache.log({ kind:'ocr-text', chars: img.buf.length,
           sentences: text ? splitSentences(text).length : 0,
           cached:0, analyzed:0, ms: Date.now() - t0,
           text: text || '（照片裡沒有抄到英文句子）', ...usage });
         res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ text, usage }));
+        return res.end(JSON.stringify({ text, filled, usage }));
       } catch (e){
         const kind = e.kind || 'other';
         res.writeHead(kind === 'rate-limit' ? 429 : 500, { 'content-type':'application/json; charset=utf-8' });

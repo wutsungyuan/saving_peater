@@ -257,7 +257,11 @@ export function generate(records, { count = 10, types = TYPES, acc = null } = {}
   for (const rec of shuffle(records))
     for (const t of wanted){
       const q = BUILDERS[t](rec);
-      if (q) candidates.push(q);
+      if (!q) continue;
+      // 對話題要把對方說的話一起帶上 —— 少了它，
+      // 「make ... for」和「made ... some cards」的對照就看不出來了。
+      if (rec.data?.context) q.context = rec.data.context;
+      candidates.push(q);
     }
   if (!candidates.length) return [];
 

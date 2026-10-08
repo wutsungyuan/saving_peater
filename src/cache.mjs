@@ -10,6 +10,13 @@ import { normalize } from './segment.mjs';
 export const hashOf = (sentence) =>
   createHash('sha256').update(normalize(sentence), 'utf8').digest('hex');
 
+/** 把存起來的「A: 內容」拆成 { speaker, text }。多行就取第一行當代表。 */
+function parseContext(raw){
+  const line = String(raw).split('\n')[0].trim();
+  const m = /^([A-Za-z][A-Za-z]{0,9})\s*[:：]\s*(.+)$/.exec(line);
+  return m ? { speaker: m[1], text: m[2] } : { speaker: '', text: line };
+}
+
 export function openCache(file = 'data/cache.db'){
   mkdirSync(dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
@@ -96,7 +103,10 @@ export function openCache(file = 'data/cache.db'){
                         ['output_tokens','INTEGER DEFAULT 0'], ['cache_read_tokens','INTEGER DEFAULT 0'],
                         ['cost_usd','REAL DEFAULT 0']]) addCol('requests', n, d);
   for (const [n, d] of [['input_tokens','INTEGER DEFAULT 0'], ['output_tokens','INTEGER DEFAULT 0'],
-                        ['cost_usd','REAL DEFAULT 0']]) addCol('sentences', n, d);
+                        ['cost_usd','REAL DEFAULT 0'],
+                        // 對話題：這句是誰說的、對方說了什麼。出題時要一起呈現，
+                        // 否則「make...for」和「made...some cards」的對照就斷了。
+                        ['speaker','TEXT'], ['context','TEXT']]) addCol('sentences', n, d);
   addCol('attempts', 'pron_case', 'TEXT');
   // 訂正的作答要留紀錄但不計入統計與排程
   addCol('attempts', 'is_fix', 'INTEGER DEFAULT 0');
@@ -106,8 +116,8 @@ export function openCache(file = 'data/cache.db'){
   const qHit  = db.prepare('UPDATE sentences SET hits = hits + 1 WHERE hash = ?');
   const qPut  = db.prepare(`INSERT OR REPLACE INTO sentences
     (hash, original, result, model, pattern_id, tense_time, tense_aspect, in_scope, issue, created_at, hits,
-     input_tokens, output_tokens, cost_usd)
-    VALUES (?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT hits FROM sentences WHERE hash = ?), 0), ?,?,?)`);
+     input_tokens, output_tokens, cost_usd, speaker, context)
+    VALUES (?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT hits FROM sentences WHERE hash = ?), 0), ?,?,?,?,?)`);
   const qLog  = db.prepare(`INSERT INTO requests
     (chars, sentences, cached, analyzed, ms, created_at, kind, ref_id, text,
      input_tokens, output_tokens, cache_read_tokens, cost_usd)
@@ -130,13 +140,14 @@ export function openCache(file = 'data/cache.db'){
       qHit.run(h);
       try { return JSON.parse(row.result); } catch { return null; }
     },
-    put(sentence, result, model, usage = {}){
+    put(sentence, result, model, usage = {}, meta = {}){
       const h = hashOf(sentence);
       const main = result?.clauses?.find(c => c.role === 'main') ?? result?.clauses?.[0];
       qPut.run(h, sentence, JSON.stringify(result), model,
         main?.pattern?.id ?? null, main?.tense?.time ?? null, main?.tense?.aspect ?? null,
         result?.inScope === false ? 0 : 1, result?.issue ?? null, Date.now(), h,
-        usage.inputTokens ?? 0, usage.outputTokens ?? 0, usage.costUsd ?? 0);
+        usage.inputTokens ?? 0, usage.outputTokens ?? 0, usage.costUsd ?? 0,
+        meta.speaker ?? null, meta.context ?? null);
     },
     log(row){
       qLog.run(row.chars, row.sentences, row.cached, row.analyzed, row.ms, Date.now(),
@@ -237,10 +248,17 @@ export function openCache(file = 'data/cache.db'){
 
     /** 取出可出題的句子（之後 M4 可依弱點加權） */
     pickSentences(limit = 40){
-      return db.prepare(`SELECT hash, result FROM sentences
+      return db.prepare(`SELECT hash, result, speaker, context FROM sentences
         WHERE issue IS NULL AND pattern_id IS NOT NULL
         ORDER BY RANDOM() LIMIT ?`).all(limit)
-        .map(r => { try { return { hash: r.hash, data: JSON.parse(r.result) }; } catch { return null; } })
+        .map(r => { try {
+          const data = JSON.parse(r.result);
+          // 對話題要把對方說的話一起帶出去，否則出題時看不出前後情境。
+          // context 存的是「A: 內容」，說話者要從那一行拆出來，
+          // 不能用 r.speaker —— 那是「這句」的說話者，不是對方的。
+          if (r.context) data.context = parseContext(r.context);
+          return { hash: r.hash, data };
+        } catch { return null; } })
         .filter(Boolean);
     },
 

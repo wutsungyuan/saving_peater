@@ -292,7 +292,7 @@ export function extractProse(imagePath, { model = MODEL, timeoutMs = 180_000 } =
       try { data = parseModelJson(env.result); }
       catch (e){ return reject(new Error('辨識結果無法解析：' + e.message)); }
       const u = env.usage ?? {};
-      resolve({ text: String(data.text ?? '').trim(), usage: {
+      resolve({ text: String(data.text ?? '').trim(), filled: Number(data.filled) || 0, usage: {
         inputTokens: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
         outputTokens: u.output_tokens ?? 0,
         cacheReadTokens: u.cache_read_input_tokens ?? 0,
