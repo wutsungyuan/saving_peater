@@ -360,6 +360,7 @@ body:not(.has-speech) .say{display:none}
 .badge b{font-weight:700;color:var(--fg)}
 .badge code{font-family:var(--font-mono);font-size:.73rem;color:var(--accent);margin-left:6px;font-weight:600}
 .badge.warn{border-color:var(--err);color:var(--err);background:var(--err-bg);font-weight:600}
+.badge.blank{border-color:var(--pos-adj);color:var(--pos-adj);background:#fdf4e6;font-weight:600}
 .badge.idx{font-family:var(--font-mono);border:0;background:none;color:var(--faint);padding:0;font-size:.76rem}
 
 .body{padding:40px 22px 20px}
@@ -1050,9 +1051,16 @@ function renderSentence(sent, showIdx){
     'fragment':     '不是完整句子',
     'unintelligible':'無法辨識',
   };
+  /** 考卷填空題本來就有空格，標成紅色的「不是完整句子」像是出錯了。
+   *  句子裡有底線空格時改標中性的「填空題」，其餘情況照舊。 */
+  const hasBlank = t => /_{2,}/.test(String(t ?? ''));
+  const issueBadge = sent => {
+    if (hasBlank(sent.original)) return '<span class="badge blank">填空題</span>';
+    return sent.issue ? `<span class="badge warn">${esc(ISSUE[sent.issue] || sent.issue)}</span>` : '';
+  };
   const badges = [
     showIdx ? `<span class="badge idx">${(sent.index ?? 0) + 1}</span>` : '',
-    sent.issue ? `<span class="badge warn">${esc(ISSUE[sent.issue] || sent.issue)}</span>` : '',
+    issueBadge(sent),
     main.pattern?.name ? `<span class="badge"><b>${esc(main.pattern.name)}</b><code>${esc(main.pattern.label || '')}</code></span>` : '',
     main.tense?.label ? `<span class="badge"><b>${esc(main.tense.label)}</b></span>` : '',
     errs.length ? `<span class="badge warn">${errs.length} 處文法問題</span>` : '',
