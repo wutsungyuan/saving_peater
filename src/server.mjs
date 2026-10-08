@@ -290,7 +290,7 @@ const server = createServer(async (req, res) => {
         cache.putQuiz(quizId, 'sentence-fix', questions);
         res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ quizId, pool: questions.length, focusWeak: false, weakDims: null,
-          redo: true, questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest) }));
+          redo: true, questions: questions.map(({ answer, alsoAccept, accept, explain, ...rest }) => rest) }));
       }
       const records = cache.pickSentences(60);
       if (!records.length){
@@ -310,7 +310,7 @@ const server = createServer(async (req, res) => {
           tenses: Object.entries(acc.tenses).filter(([, a]) => a < 0.7).map(([k]) => k),
           pos: Object.entries(acc.pos).filter(([, a]) => a < 0.7).map(([k]) => k),
         } : null,
-        questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest),
+        questions: questions.map(({ answer, alsoAccept, accept, explain, ...rest }) => rest),
       }));
     }
 
@@ -585,7 +585,7 @@ const server = createServer(async (req, res) => {
         cache.putQuiz(quizId, 'word-fix', questions);
         res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ quizId, total: questions.length, redo: true,
-          questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest) }));
+          questions: questions.map(({ answer, alsoAccept, accept, explain, ...rest }) => rest) }));
       }
       const words = cache.wordsOf(setIdList(b.setIds, b.setId), userToken);
       if (!words.length){
@@ -599,7 +599,7 @@ const server = createServer(async (req, res) => {
       cache.putQuiz(quizId, 'word', questions);
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ quizId, total: words.length,
-        questions: questions.map(({ answer, alsoAccept, explain, ...rest }) => rest) }));
+        questions: questions.map(({ answer, alsoAccept, accept, explain, ...rest }) => rest) }));
     }
 
     if (req.method === 'POST' && url.pathname === '/api/wordattempts'){
