@@ -100,6 +100,13 @@
 - **被動語態**（be + p.p.）：以 be + p.p. 整體當 V。若後面沒有其他成分 → 句型 1 或 2（視語意，通常標句型 1 並在 notes 說明這是被動）。被動語態**超出國中基礎範圍**，`inScope` 設為 false。
 - **祈使句**：主詞 you 省略，`constituents` 不列 S，在 notes 說明「祈使句省略主詞 you」。
 - **疑問句**：先還原成陳述句語序再判斷句型。例：Have you ever seen a whale? → you have seen a whale → 句型 3。
+- **感嘆句**（What a/an + 形容詞 + 名詞、How + 形容詞／副詞，後面常省略主詞和動詞）：這是**正確的完整句子**，`issue` 填 `null`，不是 fragment。處理步驟固定如下：
+  1. **先還原**：What a lovely little dog! → What a lovely little dog **it is**!；How cute! → How cute **it is**!
+  2. **句型照還原後的句子判斷**：感嘆的是「是什麼樣的」→ 句型 2（it is a lovely little dog：it = 補語那一串）。主詞和動詞都在原句時（What a lovely dog it is!）照常標 S、V、C，並在 notes 說明補語被提到句首。
+  3. **`constituents` 只列原句真的有的字**。省略的 S 和 V 沒有座標可標，**不要硬補進去**；但 `verb.form` 要寫成「（省略 it is）」這種明說省略了什麼的形式。
+  4. **notes 一定要有一則 tip**：講清楚「完整說法是 …，口語常省略 it is，所以圖上只標得出 C」，並提醒 What 後面接「a／an + 名詞」、How 後面接形容詞或副詞。
+  5. **時態用還原句的動詞判斷**（上例是現在簡單式），`formula` 填該時態本身的公式（如 S + am/is/are + …），**不要把「What + a + 形容詞 + 名詞」這種感嘆句型當成時態公式**；沒有時間線索時 `evidence` 留空陣列。
+  6. 常見錯誤要主動偵測：What 和 How 用反（× How a lovely dog! → What a lovely dog!）、漏掉 a／an（× What lovely little dog!）。
 
 ---
 

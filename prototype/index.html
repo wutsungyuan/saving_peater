@@ -1104,10 +1104,20 @@ function renderSentence(sent, showIdx){
     if (hasBlank(sent.original)) return '<span class="badge blank">填空題</span>';
     return sent.issue ? `<span class="badge warn">${esc(ISSUE[sent.issue] || sent.issue)}</span>` : '';
   };
+  /** 句型寫 S+V+C 但原句沒有 S 或 V（祈使句省略 you、感嘆句省略 it is…）時，圖上自然只會有其餘成分。
+   *  標出被省略的是哪些，避免標題和圖對不起來。已標「不是完整句子」或填空題的不重複。 */
+  const omittedBadge = (cl, s) => {
+    if (s.issue || hasBlank(s.original) || !cl.pattern?.label) return '';
+    const have = new Set((cl.constituents || []).map(c => c.role));
+    const miss = ['S', 'V'].filter(r => new RegExp('\\b' + r + '\\b').test(cl.pattern.label) && !have.has(r));
+    return miss.length
+      ? `<span class="badge" title="這句沒有寫出 ${miss.join('、')}，詳見下方提醒">${miss.join('、')} 省略</span>` : '';
+  };
   const badges = [
     showIdx ? `<span class="badge idx">${(sent.index ?? 0) + 1}</span>` : '',
     issueBadge(sent),
     main.pattern?.name ? `<span class="badge"><b>${esc(main.pattern.name)}</b><code>${esc(main.pattern.label || '')}</code></span>` : '',
+    omittedBadge(main, sent),
     main.tense?.label ? `<span class="badge"><b>${esc(main.tense.label)}</b></span>` : '',
     errs.length ? `<span class="badge warn">${errs.length} 處文法問題</span>` : '',
     sent.inScope === false ? `<span class="badge warn">超出國中範圍</span>` : '',
