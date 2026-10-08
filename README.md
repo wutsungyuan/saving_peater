@@ -47,6 +47,20 @@
 **空格要填什麼詞性、為什麼、可以填哪些字** —— 那正是題目在考的觀念。
 介面上標成中性的「填空題」而不是紅色警告。真的另有文法錯誤時才會標出來。
 
+## 換到 Windows
+
+程式本身是跨平台的 Node，但有兩處原本會在 Windows 上直接失敗，已經處理：
+
+- **Claude CLI 的執行檔名**：Windows 裝的是 `claude.cmd`，而 `child_process.spawn`
+  不透過 shell 執行不了批次檔。`src/claude-bin.mjs` 依平台選檔名；
+  安裝路徑特殊時用環境變數 `CLAUDE_BIN` 指定完整路徑。
+  用 `shell: true` 也能繞過，但參數含使用者貼上的文字，等於開了命令注入的洞。
+- **Node 版本**：`node:sqlite` 要 22.5 以上（22.14 起免旗標），
+  `engines` 原本寫 `>=20` 會讓人裝到跑不起來的版本，已改成 `>=22.14`。
+
+另外加了 `.gitattributes` 把行尾固定成 LF —— `seed-cache.jsonl` 是一行一筆，
+行尾被改成 CRLF 的話 git diff 會整檔變動，匯入也可能多出 `\r`。
+
 ## 手機
 
 伺服器送出 `prototype/index.html` 時會補上 doctype、charset 與 viewport ——

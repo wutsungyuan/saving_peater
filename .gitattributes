@@ -1,0 +1,13 @@
+# 這個專案在 macOS 與 Windows 之間搬動。
+# 資料檔用 LF 固定住：seed-cache.jsonl 是一行一筆，
+# 行尾被改成 CRLF 的話 git diff 會整檔變動，匯入也可能多出 \r。
+*               text=auto eol=lf
+*.jsonl         text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
+*.mjs           text eol=lf
+*.js            text eol=lf
+*.html          text eol=lf
+*.db            binary
+*.png -text
+*.jpg -text

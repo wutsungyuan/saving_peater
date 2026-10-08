@@ -2,6 +2,7 @@
 // 之後若要改走 API key，只需替換 callModel()，其餘邏輯與 schema 完全不動。
 
 import { spawn } from 'node:child_process';
+import { CLAUDE_BIN, claudeNotFound } from './claude-bin.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -21,13 +22,14 @@ function callModel(userPrompt, { model = MODEL, timeoutMs = 120_000 } = {}) {
       '--model', model,
       '--output-format', 'json',
     ];
-    const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(CLAUDE_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '';
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')); }, timeoutMs);
 
     child.stdout.on('data', d => { out += d; });
     child.stderr.on('data', d => { err += d; });
-    child.on('error', e => { clearTimeout(timer); reject(e); });
+    child.on('error', e => { clearTimeout(timer);
+      const msg = claudeNotFound(e); reject(msg ? Object.assign(new Error(msg), { kind: 'auth' }) : e); });
     child.on('close', code => {
       clearTimeout(timer);
       if (code !== 0){
@@ -271,12 +273,13 @@ export function extractProse(imagePath, { model = MODEL, timeoutMs = 180_000 } =
       '--model', model,
       '--output-format', 'json',
     ];
-    const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(CLAUDE_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '';
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')); }, timeoutMs);
     child.stdout.on('data', d => { out += d; });
     child.stderr.on('data', d => { err += d; });
-    child.on('error', e => { clearTimeout(timer); reject(e); });
+    child.on('error', e => { clearTimeout(timer);
+      const msg = claudeNotFound(e); reject(msg ? Object.assign(new Error(msg), { kind: 'auth' }) : e); });
     child.on('close', code => {
       clearTimeout(timer);
       if (code !== 0){
