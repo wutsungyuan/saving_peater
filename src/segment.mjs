@@ -59,8 +59,20 @@ export function splitDialogue(input){
   return turns;
 }
 
+/** 換行也是句子邊界。標題、條列、OCR 抄出來的每一行常常沒有句點，
+ *  不在換行處斷的話會和下一句黏成一段，快取的鍵就會對不上分析結果。 */
 export function splitSentences(input){
   const text = String(input ?? '');
+  if (/\n/.test(text)){
+    const out = [];
+    let base = 0;
+    for (const line of text.split('\n')){
+      for (const seg of splitSentences(line))
+        out.push({ ...seg, start: seg.start + base, end: seg.end + base });
+      base += line.length + 1;
+    }
+    return out;
+  }
   const out = [];
   let start = 0;
 

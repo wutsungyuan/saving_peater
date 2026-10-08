@@ -29,6 +29,10 @@ const pick = a => a[rand(a.length)];
 const mainOf = d => d.clauses?.find(c => c.role === 'main') ?? d.clauses?.[0];
 
 /** 把原句的若干區間換成底線，回傳 { display, blanks } */
+/** 句子本身就有空格（考卷填空題）時，不能再挖空出題 ——
+ *  畫面上會出現兩個空格卻只收一個答案，根本看不出要填哪一個。 */
+const hasBlank = t => /_{2,}/.test(String(t ?? ''));
+
 function blankOut(original, spans){
   const ordered = [...spans].sort((a, b) => a.start - b.start);
   let out = '', pos = 0;
@@ -84,6 +88,7 @@ function qTense({ hash, data }){
   const cl = mainOf(data);
   const vs = (cl?.constituents ?? []).filter(c => c.role === 'V' && Number.isInteger(c.start));
   if (!vs.length || !cl?.verb?.lemma || !cl?.tense) return null;
+  if (hasBlank(data.original)) return null;        // 已經有空格了，不能再挖
   const { display, blanks } = blankOut(data.original, vs);
   const ev = (cl.tense.evidence ?? []).filter(e => !blanks.some(b => b.includes(e)));
   // 三種會讓人猜不到答案的情況，各補一個線索：
@@ -157,6 +162,7 @@ function qVerbForms({ hash, data }){
 }
 
 function qErrorFix({ hash, data }){
+  if (hasBlank(data.original)) return null;        // 空格本身不是文法錯誤，別拿來當改錯題
   const n = (data.notes ?? []).find(x => x.type === 'error' && x.correction && x.span);
   if (!n) return null;
   return {
@@ -199,6 +205,7 @@ function qPronounCase({ hash, data }){
 }
 
 function qPronounFill({ hash, data }){
+  if (hasBlank(data.original)) return null;        // 已經有空格了，不能再挖
   // 只挑「提示的主格 ≠ 答案」的字，否則 (I) → I 等於直接給答案，沒有練習價值
   const ws = pronWords(data).filter(w =>
     PERSON[w.text.toLowerCase()].toLowerCase() !== w.text.toLowerCase());

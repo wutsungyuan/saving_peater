@@ -203,7 +203,14 @@ async function handleAnalyze(req, res, url){
         speaker: dlg[i]?.speaker ?? null,
         context: dlg.filter((_, k) => k !== i).map(t => `${t.speaker}: ${t.text}`).join('\n') || null,
       } : {};
-      cache.put(seg.text, sentence, MODEL, one, dlgMeta);
+      // 模型回傳的原句必須和我們送出去的一致，否則快取的鍵會對不上內容，
+      // 之後查這一句永遠查不到，還會污染範例與題庫。
+      if (sentence.original && sentence.original.trim() !== seg.text.trim()){
+        console.error('[analyze] 模型回傳的原句與輸入不符，不寫入快取：',
+          JSON.stringify(seg.text.slice(0, 60)), '→', JSON.stringify(String(sentence.original).slice(0, 60)));
+      } else {
+        cache.put(seg.text, sentence, MODEL, one, dlgMeta);
+      }
       analyzed++;
       if (!closed) send('sentence', { index: i, cached: false, sentence, usage: one });
     } catch (e){
