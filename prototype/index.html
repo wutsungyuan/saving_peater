@@ -219,8 +219,8 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .busy-t{font-family:var(--font-mono);font-size:.82rem;color:var(--faint);
   font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion:reduce){ .busy .spin{animation-duration:2.4s} }
-#view-words.dropping{position:relative}
-#view-words.dropping::after{content:'放開就開始辨識課本照片';
+#view-words.dropping,#view-analyze.dropping{position:relative}
+#view-words.dropping::after,#view-analyze.dropping::after{content:'放開就開始辨識課本照片';
   position:absolute;inset:-6px;z-index:20;pointer-events:none;
   display:flex;align-items:center;justify-content:center;
   font-size:1.05rem;font-weight:700;color:var(--accent);
@@ -741,6 +741,12 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
     <div class="box">
       <div class="lblrow"><label for="inp">輸入英文</label><span class="count" id="inpCount"></span></div>
       <textarea id="inp" placeholder="Tom played basketball happily in the park yesterday."></textarea>
+      <div class="row">
+        <button id="anPhoto">拍照／選課本照片</button>
+        <input type="file" id="anFile" accept="image/*" capture="environment" hidden>
+        <span class="hint">也可以把圖片直接拖進來，或按 <b id="pasteKey2">⌘V</b> 貼上。
+          辨識完會填進上面的框，核對後再按分析。</span>
+      </div>
       <div class="row">
         <button class="primary" id="go">分析</button>
         <span class="hint" id="inp-hint">原型版內建 8 組已分析好的範例，可直接點下方標籤切換。</span>
@@ -1657,10 +1663,11 @@ async function loadHistory(){
     }
     historyOut.innerHTML = d.items.map(it => {
       const gone = !it.preview;
-      const KIND = { analyze:['分析句子','句',''], wordset:['建立字表','字','word'], ocr:['照片辨識','字','ocr'] };
+      const KIND = { analyze:['分析句子','句',''], wordset:['建立字表','字','word'],
+        ocr:['照片抄單字','字','ocr'], 'ocr-text':['照片抄句子','句','ocr'] };
       const [kindName, unit, kindCls] = KIND[it.kind] || KIND.analyze;
       const isWord = it.kind === 'wordset';
-      const isOcr  = it.kind === 'ocr';
+      const isOcr  = it.kind === 'ocr' || it.kind === 'ocr-text';
       const dead = isWord && !it.ref_alive;           // 字表已被刪除
       // 字表的原文是「名稱\n單字清單」，拆開顯示才讀得懂
       const lines = (it.preview || '').split('\n');
@@ -1694,7 +1701,13 @@ async function loadHistory(){
 
 historyOut.addEventListener('click', async e => {
   const b = e.target.closest('.hitem'); if (!b || b.disabled) return;
-  if (b.dataset.kind === 'ocr'){            // 把辨識結果帶回表單，省得重拍一次
+  if (b.dataset.kind === 'ocr-text'){       // 句子辨識：把抄到的文字帶回分析的輸入框
+    const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
+    document.querySelector('.tabs button[data-view="analyze"]').click();
+    if (text){ curKind = null; renderSwap(); setInput(text); }
+    return;
+  }
+  if (b.dataset.kind === 'ocr'){            // 單字表辨識：把結果帶回新增字表的表單
     const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
     document.querySelector('.tabs button[data-view="words"]').click();
     if (text){
@@ -2309,6 +2322,75 @@ function scrollToFirstQuestion(container){
   }, { passive: true });
 })();
 
+// ===== 分析分頁的拍照辨識 =====
+// 辨識只負責把照片變成文字填進輸入框，之後完全走原本的流程
+// （斷句 → 逐句分析 → 快取），和自己貼上一整段沒有任何差別。
+async function handleAnalyzeImage(file){
+  if (!file) return;
+  const btn = el('anPhoto'), hint = el('inp-hint');
+  btn.disabled = true; goBtn.disabled = true;
+  hint.textContent = '讀取照片…';
+  try {
+    const image = await shrinkImage(file);
+    if (!image){ hint.textContent = '讀不到這個檔案。'; return; }
+    hint.textContent = '辨識中…把課本上的英文句子抄下來，約十幾秒。';
+    const d = await fetch('/api/analyze-ocr', {
+      method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
+      body: JSON.stringify({ image }),
+    }).then(r => r.json());
+    if (d.error){ hint.textContent = d.message || d.error; return; }
+    if (!d.text){ hint.textContent = '這張照片沒抄到完整的英文句子。單字表請改用「單字」分頁的拍照。'; return; }
+    // 輸入框裡如果是範例句（curKind 不為 null），那不是使用者打的內容，直接覆蓋。
+    // 真的是自己貼的才接在後面 —— 拍兩頁的情況就靠這個。
+    const own = curKind === null ? inp.value.trim() : '';
+    setInput(own ? own + '\n' + d.text : d.text);
+    curKind = null; renderSwap();
+    inp.focus();
+    hint.textContent = `抄到 ${d.text.length} 個字元（參考費用 ${money(d.usage.costUsd)}）。` +
+      `請核對上面的內容，刪掉不需要的部分再按分析。`;
+  } catch (err){
+    hint.textContent = '辨識失敗：' + err.message;
+  } finally { btn.disabled = false; goBtn.disabled = false; }
+}
+
+el('anPhoto').addEventListener('click', () => el('anFile').click());
+el('anFile').addEventListener('change', e => {
+  const f = e.target.files?.[0];
+  e.target.value = '';
+  handleAnalyzeImage(f);
+});
+
+// 拖曳與貼上：和單字分頁同一套來源判斷
+{
+  const view = el('view-analyze');
+  let depth = 0;
+  view.addEventListener('dragenter', e => {
+    if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+    e.preventDefault();
+    if (depth++ === 0) view.classList.add('dropping');
+  });
+  view.addEventListener('dragover', e => {
+    if ([...(e.dataTransfer?.types || [])].includes('Files')){
+      e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+  view.addEventListener('dragleave', () => { if (--depth <= 0){ depth = 0; view.classList.remove('dropping'); } });
+  view.addEventListener('drop', e => {
+    const f = imageFromTransfer(e.dataTransfer);
+    if (!f && !(e.dataTransfer?.files?.length)) return;
+    e.preventDefault();
+    depth = 0; view.classList.remove('dropping');
+    if (!f){ el('inp-hint').textContent = '拖進來的不是圖片。請拖 JPG 或 PNG 的課本照片。'; return; }
+    handleAnalyzeImage(f);
+  });
+  view.addEventListener('paste', e => {
+    const f = imageFromTransfer(e.clipboardData);
+    if (!f) return;               // 貼文字就照常貼進輸入框
+    e.preventDefault();
+    handleAnalyzeImage(f);
+  });
+}
+
 // ===== 範例句也可以改用自己分析過的句子 =====
 // 內建那 12 句是教學用的標準範例，當入口很好；但真正貼近孩子在讀的，
 // 是他自己貼過、分析過的句子。資料庫裡有就讓標籤能換過去。
@@ -2538,7 +2620,7 @@ function wsBusy(on, main = '', sub = ''){
 }
 // Windows 之後也會用到，鍵位提示跟著平台走
 if (!/Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent))
-  el('pasteKey').textContent = 'Ctrl+V';
+  for (const id of ['pasteKey', 'pasteKey2']) { const n = el(id); if (n) n.textContent = 'Ctrl+V'; }
 
 /** 從拖曳或貼上的事件裡挑出第一張圖片 */
 function imageFromTransfer(dt){

@@ -247,3 +247,57 @@ export async function analyzeMany(sentences, { groupSize = 8, onDone, ...opts } 
   }
   return { results: out, usage, missed: out.filter(x => !x).length };
 }
+
+// ---------------------------------------------------------------------------
+// 拍照辨識：把課本、講義或考卷上的英文句子抄下來
+//
+// 和單字表的辨識分開 —— 那邊要的是「一行一個單字＋中文」的表格，
+// 這邊要的是完整的句子與段落，略過的東西也不一樣（中文翻譯、題號、手寫筆記）。
+// ---------------------------------------------------------------------------
+
+const PROSE_PROMPT = join(__dirname, '..', 'prompts', 'analyze-ocr.md');
+
+/** 從圖片抄出英文句子。回傳 { text, usage } */
+export function extractProse(imagePath, { model = MODEL, timeoutMs = 180_000 } = {}){
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-p', `Read the image at ${imagePath} and transcribe the English sentences.`,
+      '--system-prompt-file', PROSE_PROMPT,
+      '--allowedTools', 'Read',
+      '--exclude-dynamic-system-prompt-sections',
+      '--model', model,
+      '--output-format', 'json',
+    ];
+    const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '', err = '';
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')); }, timeoutMs);
+    child.stdout.on('data', d => { out += d; });
+    child.stderr.on('data', d => { err += d; });
+    child.on('error', e => { clearTimeout(timer); reject(e); });
+    child.on('close', code => {
+      clearTimeout(timer);
+      if (code !== 0){
+        const e = new Error(`claude exited ${code}: ${err.slice(0, 400)}`);
+        e.kind = classifyError(err);
+        return reject(e);
+      }
+      let env;
+      try { env = JSON.parse(out); } catch { return reject(new Error('CLI 回傳非 JSON')); }
+      if (env.is_error){
+        const e = new Error(String(env.result).slice(0, 300));
+        e.kind = classifyError(env.result);
+        return reject(e);
+      }
+      let data;
+      try { data = parseModelJson(env.result); }
+      catch (e){ return reject(new Error('辨識結果無法解析：' + e.message)); }
+      const u = env.usage ?? {};
+      resolve({ text: String(data.text ?? '').trim(), usage: {
+        inputTokens: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+        outputTokens: u.output_tokens ?? 0,
+        cacheReadTokens: u.cache_read_input_tokens ?? 0,
+        costUsd: env.total_cost_usd ?? 0,
+      } });
+    });
+  });
+}

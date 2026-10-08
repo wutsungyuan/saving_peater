@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, extname, normalize as pathNormalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { analyze, analyzeMany, fixPronounCase, MODEL } from './analyzer.mjs';
+import { analyze, analyzeMany, extractProse, fixPronounCase, MODEL } from './analyzer.mjs';
 import { splitSentences } from './segment.mjs';
 import { openCache } from './cache.mjs';
 import { generate, grade, TYPES } from './exercises.mjs';
@@ -60,6 +60,23 @@ function authed(req, url){
   const sent = req.headers['x-auth-token'] || url.searchParams.get('token') || '';
   // 長度相同才比對，避免洩漏長度；這裡是本機小工具，常數時間比對非必要
   return sent === AUTH_TOKEN;
+}
+
+/** 解析前端送來的 data URL：驗 MIME、大小與檔頭。
+ *  只信前端說的格式不夠 —— 檔頭才是真的。 */
+function decodeImage(dataUrl){
+  const m = /^data:image\/(jpeg|jpg|png|webp|heic|heif);base64,(.+)$/i.exec(String(dataUrl || ''));
+  if (!m) return { error:'bad-image', code:400, message:'看不出這是圖片，請選 JPG 或 PNG。' };
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 10e6) return { error:'too-large', code:413, message:'圖片超過 10MB。' };
+  const sig = buf.subarray(0, 12);
+  const isJpeg = sig[0] === 0xFF && sig[1] === 0xD8 && sig[2] === 0xFF;
+  const isPng  = sig.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A]));
+  const isWebp = sig.subarray(0,4).toString() === 'RIFF' && sig.subarray(8,12).toString() === 'WEBP';
+  const isHeic = sig.subarray(4,8).toString() === 'ftyp';
+  if (!isJpeg && !isPng && !isWebp && !isHeic)
+    return { error:'bad-image', code:400, message:'檔案內容不是圖片。' };
+  return { buf, ext: isPng ? 'png' : isWebp ? 'webp' : isHeic ? 'heic' : 'jpg' };
 }
 
 /** 從查詢字串或 body 解析出字表 id 陣列（相容舊的單一 id） */
@@ -385,6 +402,46 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    // 拍照辨識：課本上的英文句子 → 文字，填進分析的輸入框
+    // 之後完全走原本的流程（斷句 → 逐句分析 → 快取），和自己貼上一段沒有差別。
+    if (req.method === 'POST' && url.pathname === '/api/analyze-ocr'){
+      if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+      let b = {};
+      try { b = JSON.parse(await readBody(req, 14e6)) || {}; } catch {
+        res.writeHead(413, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error:'too-large', message:'圖片太大，請用手機相簿壓縮後再試。' }));
+      }
+      const img = decodeImage(b.image);
+      if (img.error){
+        res.writeHead(img.code, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: img.error, message: img.message }));
+      }
+      const dir = join(ROOT, 'data', 'tmp');
+      const file = join(dir, `ocr-${randomBytes(8).toString('hex')}.${img.ext}`);
+      const t0 = Date.now();
+      try {
+        await mkdir(dir, { recursive: true });
+        await writeFile(file, img.buf);
+        const { text, usage } = await extractProse(file);
+        // 和單字表辨識分開記 —— 兩者抄的東西不一樣，歷史上要看得出來
+        cache.log({ kind:'ocr-text', chars: img.buf.length,
+          sentences: text ? splitSentences(text).length : 0,
+          cached:0, analyzed:0, ms: Date.now() - t0,
+          text: text || '（照片裡沒有抄到英文句子）', ...usage });
+        res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ text, usage }));
+      } catch (e){
+        const kind = e.kind || 'other';
+        res.writeHead(kind === 'rate-limit' ? 429 : 500, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: kind, message:
+          kind === 'rate-limit' ? 'Claude 訂閱額度似乎已用盡，等額度重置後再試。'
+        : kind === 'auth' ? 'Claude 認證失效，請在終端機執行 claude 重新登入。'
+        : '辨識失敗：' + String(e.message).slice(0, 200) }));
+      } finally {
+        await unlink(file).catch(() => {});
+      }
+    }
+
     // 拍照辨識：讀課本單字表的照片，抄成可編輯的文字給使用者核對
     if (req.method === 'POST' && url.pathname === '/api/wordset-ocr'){
       if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
@@ -393,28 +450,12 @@ const server = createServer(async (req, res) => {
         res.writeHead(413, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error:'too-large', message:'圖片太大，請用手機相簿壓縮後再試。' }));
       }
-      const m = /^data:image\/(jpeg|jpg|png|webp|heic|heif);base64,(.+)$/i.exec(String(b.image || ''));
-      if (!m){
-        res.writeHead(400, { 'content-type':'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ error:'bad-image', message:'看不出這是圖片，請選 JPG 或 PNG。' }));
+      const img = decodeImage(b.image);
+      if (img.error){
+        res.writeHead(img.code, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: img.error, message: img.message }));
       }
-      const buf = Buffer.from(m[2], 'base64');
-      if (buf.length > 10e6){
-        res.writeHead(413, { 'content-type':'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ error:'too-large', message:'圖片超過 10MB。' }));
-      }
-      // 再驗一次檔頭，不能只信前端說的 MIME
-      const sig = buf.subarray(0, 12);
-      const isJpeg = sig[0] === 0xFF && sig[1] === 0xD8 && sig[2] === 0xFF;
-      const isPng  = sig.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A]));
-      const isWebp = sig.subarray(0,4).toString() === 'RIFF' && sig.subarray(8,12).toString() === 'WEBP';
-      const isHeic = sig.subarray(4,8).toString() === 'ftyp';
-      if (!isJpeg && !isPng && !isWebp && !isHeic){
-        res.writeHead(400, { 'content-type':'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ error:'bad-image', message:'檔案內容不是圖片。' }));
-      }
-
-      const ext = isPng ? 'png' : isWebp ? 'webp' : isHeic ? 'heic' : 'jpg';
+      const { buf, ext } = img;
       const dir = join(ROOT, 'data', 'tmp');
       const file = join(dir, `ocr-${randomBytes(8).toString('hex')}.${ext}`);
       const t0 = Date.now();
