@@ -246,10 +246,11 @@ function qPronounFill({ hash, data }){
 }
 
 const BUILDERS = {
-  'pattern': qPattern, 'tense': qTense, 'pos': qPos,
-  'verb-forms': qVerbForms, 'error-fix': qErrorFix,
-  'pronoun-case': qPronounCase, 'pronoun-fill': qPronounFill,
+  'pattern': qPattern, 'tense': qTense, 'pos': qPos, 'error-fix': qErrorFix,
+  'pronoun-case': qPronounCase, 'pronoun-fill': qPronounFill
 };
+// 動詞三態已移到「單字測驗」—— 那是單字層級的知識，
+// 放在有間隔複習的地方才有用；這裡專注在句子層級的能力。
 export const TYPES = Object.keys(BUILDERS);
 
 /** 這題涉及的維度目前正確率多低 → 權重多高。沒資料視為中性 */
@@ -279,6 +280,11 @@ function weightedTake(bucket, acc){
 
 /** 從已分析的句子生成題目。records = [{ hash, data }]
  *  acc = 各維度正確率；給了就會優先出弱點題 */
+/** 判斷兩題算不算「同一題」。動詞三態問的是動詞，其餘問的是句子。 */
+function dedupeKey(q){
+  return q.type === 'verb-forms' ? `v:${q.answer?.[0] ?? ''}:${q.prompt}` : `s:${q.meta?.hash}`;
+}
+
 export function generate(records, { count = 10, types = TYPES, acc = null } = {}){
   const wanted = types.filter(t => BUILDERS[t]);
   if (!wanted.length || !records.length) return [];
@@ -301,24 +307,26 @@ export function generate(records, { count = 10, types = TYPES, acc = null } = {}
   for (const q of shuffle(candidates)) byType.get(q.type)?.push(q);
 
   const out = [];
-  const usedHash = new Set();
+  const used = new Set();
   let guard = 0;
   while (out.length < count && guard++ < count * 12){
     for (const t of shuffle(wanted)){
       if (out.length >= count) break;
       const bucket = byType.get(t);
       if (!bucket?.length) continue;
-      // 先排除已出過的句子，再依弱點加權抽
-      const fresh = bucket.filter(q => !usedHash.has(q.meta.hash));
+      // 先排除重複的，再依弱點加權抽。
+      // 動詞三態的「重複」是同一個動詞 —— 它問的是動詞本身，
+      // 句子只是附帶的例句，不同句子裡的 make 問起來一模一樣。
+      const fresh = bucket.filter(q => !used.has(dedupeKey(q)));
       const q = weightedTake(fresh.length ? fresh : bucket, acc);
       if (!q) continue;
       const at = bucket.indexOf(q);
       if (at !== -1) bucket.splice(at, 1);
-      usedHash.add(q.meta.hash);
+      used.add(dedupeKey(q));
       out.push({ ...q, id: `q${out.length + 1}` });
     }
     if (wanted.every(t => !byType.get(t)?.length)) break;
-    if (usedHash.size >= records.length) usedHash.clear();   // 句子用完就允許重複
+    if (used.size >= records.length) used.clear();   // 句子用完就允許重複
   }
   return out.slice(0, count);
 }

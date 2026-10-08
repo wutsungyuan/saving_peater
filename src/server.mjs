@@ -594,7 +594,11 @@ const server = createServer(async (req, res) => {
       }
       const modes = Array.isArray(b.modes) && b.modes.length
         ? b.modes.filter(m => WORD_MODES.includes(m)) : WORD_MODES;
-      const questions = generateWordQuiz(words, { count: Math.min(Math.max(Number(b.count)||10,1),30), modes });
+      // 三態直接取自分析過的句子，不用再問模型
+      const questions = generateWordQuiz(words, {
+        count: Math.min(Math.max(Number(b.count)||10,1),30), modes,
+        verbForms: cache.verbForms(),
+      });
       const quizId = 'w' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
       cache.putQuiz(quizId, 'word', questions);
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });

@@ -1480,7 +1480,7 @@ autoGrow(); updateCount();
 // ===== 練習 =====
 const QTYPES = [
   ['pattern','句型判斷'], ['tense','時態填空'], ['pos','詞性判斷'],
-  ['verb-forms','動詞三態'], ['error-fix','改錯'],
+  ['error-fix','改錯'],
   ['pronoun-case','代名詞格位'], ['pronoun-fill','代名詞填空'],
 ];
 const USER = (() => {
@@ -1911,7 +1911,7 @@ function hardenAnswers(root){
 
 // ===== 單字表 =====
 const WMODES = [['zh2en','中考英'],['en2zh','英考中'],['listen','聽考'],
-                ['cloze','例句填空'],['sense','詞義辨析']];
+                ['cloze','例句填空'],['sense','詞義辨析'],['forms','動詞三態']];
 const WMODE_NAME = Object.fromEntries(WMODES);
 let wsSel = [];                    // 選取的字表 id（可多選）
 let wsMerged = { dup: 0, words: 0 };       // 跨字表合併時有幾個字重複被併起來
@@ -2045,8 +2045,11 @@ function renderWordQ(q, n){
   const body = q.inputMode === 'choice'
     ? `<div class="q-opts">${q.choices.map(c =>
         `<label class="q-opt"><input type="radio" name="${q.id}" value="${esc(c.value)}"> ${esc(c.label)}</label>`).join('')}</div>`
-    : `<div class="q-blanks"><input type="text" data-q="${q.id}" autocomplete="off"
-         spellcheck="false" autocapitalize="off" placeholder="填入答案"></div>`;
+    // 多格題（動詞三態要填過去式與過去分詞）要有對應數量的輸入框
+    : `<div class="q-blanks">${Array.from({ length: q.blanks || 1 }, (_, i) =>
+        `<input type="text" data-q="${q.id}" data-i="${i}" autocomplete="off"
+           spellcheck="false" autocapitalize="off"
+           placeholder="${(q.blanks || 1) > 1 ? `第 ${i + 1} 格` : '填入答案'}">`).join('')}</div>`;
   const head = q.mode === 'listen'
     ? `<button class="q-speak" type="button" data-say="${esc(q.speak)}"><span class="ico"></span>播放</button>`
     : q.mode === 'zh2en' ? `<div class="q-zh">${esc(q.question)}</div>`
@@ -2104,7 +2107,8 @@ async function submitWordQuiz(){
   for (const q of wsQuiz.questions)
     answers[q.id] = q.inputMode === 'choice'
       ? [el('wsOut').querySelector(`input[name="${q.id}"]:checked`)?.value ?? '']
-      : [el('wsOut').querySelector(`input[data-q="${q.id}"]`)?.value ?? ''];
+      // 多格題要把每一格都收進來，只讀第一格的話第二格永遠是空的
+      : [...el('wsOut').querySelectorAll(`input[data-q="${q.id}"]`)].map(x => x.value ?? '');
   try {
     const d = await fetch('/api/wordattempts', {
       method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },

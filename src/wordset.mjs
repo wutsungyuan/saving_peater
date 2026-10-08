@@ -87,7 +87,7 @@ export function enrich(items, { model = MODEL, timeoutMs = 180_000 } = {}){
 // 出題：純程式，從充實好的資料生成，不呼叫模型
 // ---------------------------------------------------------------------------
 
-export const WORD_MODES = ['zh2en', 'en2zh', 'listen', 'cloze', 'sense'];
+export const WORD_MODES = ['zh2en', 'en2zh', 'listen', 'cloze', 'sense', 'forms'];
 export const MODE_NAMES = {
   zh2en:'中考英', en2zh:'英考中', listen:'聽考', cloze:'例句填空', sense:'詞義辨析',
 };
@@ -223,11 +223,46 @@ function qSense(w){
   };
 }
 
-const WORD_BUILDERS = { zh2en:qZh2En, en2zh:qEn2Zh, listen:qListen, cloze:qCloze, sense:qSense };
+const WORD_BUILDERS = { zh2en:qZh2En, en2zh:qEn2Zh, listen:qListen, cloze:qCloze, sense:qSense, forms:qForms };
 
 /** 從一份字表生成測驗。words 要帶進度欄位（box / dueAt / total）
  *  題型用輪流取的方式，確保五種平均分佈，不是每個字各自隨機挑 */
-export function generateWordQuiz(words, { count = 10, modes = WORD_MODES } = {}){
+
+/** 動詞三態。三態是「單字本身的知識」，放在有間隔複習的單字測驗才合理；
+ *  句子練習是練句型結構的地方。三態資料直接取自分析過的句子，不另外花額度。 */
+function qForms(w, _all, ctx){
+  const f = ctx?.verbForms?.get(String(w.term).toLowerCase());
+  if (!f) return null;                       // 還沒有這個動詞的三態就跳過
+  const alts = v => String(v ?? '').split(/[/,]/).map(x => x.trim()).filter(Boolean);
+  const past = alts(f.past), pp = alts(f.pastParticiple);
+  if (!past.length || !pp.length) return null;
+  if (String(f.base).toLowerCase() === 'be') return null;   // was／were 取決於主詞
+  const note = [
+    past.length > 1 ? `過去式 ${past.join(' 和 ')} 都可以` : '',
+    pp.length > 1 ? `過去分詞 ${pp.join(' 和 ')} 都可以` : '',
+  ].filter(Boolean).join('；');
+  const sense = (w.senses ?? []).find(s => s.pos === 'v') ?? w.senses?.[0];
+  return {
+    mode: 'forms',
+    wordId: w.id, wordIds: w.mergedIds ?? [w.id],
+    term: w.term,
+    prompt: `寫出 ${w.term} 的過去式與過去分詞`,
+    question: `${w.term}　→　______　→　______`,
+    hint: sense?.zh ?? '',
+    inputMode: 'text',
+    blanks: 2,
+    answer: [past[0], pp[0]],
+    accept: [past, pp],
+    explain: `${f.base} / ${past[0]} / ${pp[0]}` +
+      (f.irregular ? '（不規則變化）' : '（規則變化）') +
+      (note ? `\n${note}` : '') +
+      (f.ing ? `\n現在分詞 ${f.ing}　第三人稱單數 ${f.third}` : '') +
+      (sense?.example ? `\n例句：${sense.example}` : ''),
+    meta: { senseIdx: 0 },
+  };
+}
+
+export function generateWordQuiz(words, { count = 10, modes = WORD_MODES, verbForms = null } = {}){
   const want = modes.filter(m => WORD_BUILDERS[m]);
   if (!want.length || !words.length) return [];
 
@@ -235,12 +270,20 @@ export function generateWordQuiz(words, { count = 10, modes = WORD_MODES } = {})
   const picked = selectWords(words, Math.max(count, Math.min(count * 2, words.length)));
 
   // 每種題型各自列出做得出來的題目
-  const buckets = new Map(want.map(m => [m, []]));
-  for (const w of picked)
-    for (const m of want){
-      const q = WORD_BUILDERS[m](w, words);
-      if (q) buckets.get(m).push(q);
-    }
+  const fill = (src) => {
+    const b = new Map(want.map(m => [m, []]));
+    for (const w of src)
+      for (const m of want){
+        const q = WORD_BUILDERS[m](w, words, { verbForms });
+        if (q) b.get(m).push(q);
+      }
+    return b;
+  };
+  let buckets = fill(picked);
+  // 有些題型只有部分單字做得出來（三態只適用動詞），
+  // Leitner 先挑的那批湊不滿題數時，就把全部單字都納入候選。
+  const total = b => [...b.values()].reduce((n, x) => n + x.length, 0);
+  if (total(buckets) < count && picked.length < words.length) buckets = fill(words);
   for (const m of want) buckets.set(m, shuffle(buckets.get(m)));
 
   const out = [];
@@ -266,7 +309,11 @@ export function generateWordQuiz(words, { count = 10, modes = WORD_MODES } = {})
 
 export function gradeWord(q, given){
   const got = Array.isArray(given) ? given : [given];
-  const ok = q.answer.length === got.length && q.answer.every((a, i) => norm(a) === norm(got[i]));
+  // accept 在時，每一格只要符合該格的任一種寫法就算對（got / gotten）
+  const ok = q.accept
+    ? q.accept.length === got.length &&
+      q.accept.every((list, i) => list.some(a => norm(a) === norm(got[i])))
+    : q.answer.length === got.length && q.answer.every((a, i) => norm(a) === norm(got[i]));
   const alt = (q.alsoAccept ?? []).some(a => norm(a) === norm(got.join(' ')));
   return { correct: ok || alt, expected: q.answer, given: got };
 }

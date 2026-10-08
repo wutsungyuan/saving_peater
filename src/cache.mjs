@@ -17,6 +17,8 @@ function parseContext(raw){
   return m ? { speaker: m[1], text: m[2] } : { speaker: '', text: line };
 }
 
+let _verbFormsCache = null, _verbFormsCount = -1;
+
 export function openCache(file = 'data/cache.db'){
   mkdirSync(dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
@@ -461,6 +463,26 @@ export function openCache(file = 'data/cache.db'){
     checkpoint(){ db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); },
 
     count(){ return db.prepare('SELECT COUNT(*) n FROM sentences').get().n; },
+
+    /** 分析過的句子裡有動詞三態，拿來給單字測驗用 —— 不用再花額度問一次模型。
+     *  回傳 { 原形小寫 → forms }。 */
+    verbForms(){
+      // 每次出題都重新 parse 全部句子太浪費，存起來，有新句子時才重算
+      const n = db.prepare('SELECT COUNT(*) n FROM sentences').get().n;
+      if (_verbFormsCache && _verbFormsCount === n) return _verbFormsCache;
+      const out = new Map();
+      for (const r of db.prepare(`SELECT result FROM sentences WHERE issue IS NULL`).all()){
+        let d; try { d = JSON.parse(r.result); } catch { continue; }
+        for (const cl of d.clauses ?? []){
+          const f = cl.verb?.forms;
+          if (!f?.base || !f.past || !f.pastParticiple) continue;
+          const k = String(f.base).toLowerCase();
+          if (!out.has(k)) out.set(k, { ...f, irregular: Boolean(cl.verb.irregular) });
+        }
+      }
+      _verbFormsCache = out; _verbFormsCount = n;
+      return out;
+    },
 
     // ---------- 範例句：從分析過的句子裡挑，而不是只有內建那 12 句 ----------
     // 標籤的分類條件就寫在這裡。資料量小（上百句），直接掃 JSON 比另外建索引實際。
