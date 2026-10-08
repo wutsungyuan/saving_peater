@@ -205,6 +205,9 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .wchip small{font-family:var(--font-mono);font-size:.72rem;opacity:.75}
 .wchip small.when{opacity:.5}
 .ta-wrap{position:relative;margin-top:9px}
+/* 分析的輸入框只有 74px 高，指示框會被壓扁（轉圈和秒數都切掉），
+   顯示時把容器撐開到放得下為止。 */
+.ta-wrap.busyon{min-height:136px}
 .ta-wrap > textarea{margin-top:0}
 .busy{position:absolute;inset:0;z-index:12;border-radius:4px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
@@ -740,7 +743,15 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
     <div id="view-analyze">
     <div class="box">
       <div class="lblrow"><label for="inp">輸入英文</label><span class="count" id="inpCount"></span></div>
-      <textarea id="inp" placeholder="Tom played basketball happily in the park yesterday."></textarea>
+      <div class="ta-wrap" style="margin-top:0">
+        <textarea id="inp" placeholder="Tom played basketball happily in the park yesterday."></textarea>
+        <div class="busy" id="anBusy" hidden>
+          <div class="spin"></div>
+          <div class="busy-main" id="anBusyMain">辨識中</div>
+          <div class="busy-sub" id="anBusySub">把課本上的英文句子抄下來</div>
+          <div class="busy-t" id="anBusyT">0 秒</div>
+        </div>
+      </div>
       <div class="row">
         <button id="anPhoto">拍照／選課本照片</button>
         <input type="file" id="anFile" accept="image/*" capture="environment" hidden>
@@ -2329,11 +2340,13 @@ async function handleAnalyzeImage(file){
   if (!file) return;
   const btn = el('anPhoto'), hint = el('inp-hint');
   btn.disabled = true; goBtn.disabled = true;
+  anBusy(true, '讀取照片', '縮圖中');
   hint.textContent = '讀取照片…';
   try {
     const image = await shrinkImage(file);
     if (!image){ hint.textContent = '讀不到這個檔案。'; return; }
-    hint.textContent = '辨識中…把課本上的英文句子抄下來，約十幾秒。';
+    anBusy(true, '辨識中', '把課本上的英文句子抄下來，大約十幾秒');
+    hint.textContent = '辨識中…';
     const d = await fetch('/api/analyze-ocr', {
       method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
       body: JSON.stringify({ image }),
@@ -2350,7 +2363,7 @@ async function handleAnalyzeImage(file){
       `請核對上面的內容，刪掉不需要的部分再按分析。`;
   } catch (err){
     hint.textContent = '辨識失敗：' + err.message;
-  } finally { btn.disabled = false; goBtn.disabled = false; }
+  } finally { anBusy(false); btn.disabled = false; goBtn.disabled = false; }
 }
 
 el('anPhoto').addEventListener('click', () => el('anFile').click());
@@ -2603,21 +2616,28 @@ function defaultSetName(){
 function fillDefaultName(){ /* 保留空實作，開表單時不再塞預設值 */ }
 
 /** 輸入框上的進度指示。模型要跑十秒到一分鐘，沒有動的東西會讓人以為當掉了。 */
-let busyTimer = null;
-function wsBusy(on, main = '', sub = ''){
-  const box = el('wsBusy');
-  clearInterval(busyTimer);
-  if (!on){ box.hidden = true; return; }
-  el('wsBusyMain').textContent = main;
-  el('wsBusySub').textContent = sub;
-  el('wsBusyT').textContent = '0 秒';
+/** 兩個輸入框共用。prefix 是 'ws'（單字表）或 'an'（分析）。 */
+const busyTimers = {};
+function showBusy(prefix, on, main = '', sub = ''){
+  const box = el(prefix + 'Busy');
+  if (!box) return;
+  const wrap = box.closest('.ta-wrap');
+  clearInterval(busyTimers[prefix]);
+  if (!on){ box.hidden = true; wrap?.classList.remove('busyon'); return; }
+  wrap?.classList.add('busyon');
+  el(prefix + 'BusyMain').textContent = main;
+  el(prefix + 'BusySub').textContent = sub;
+  el(prefix + 'BusyT').textContent = '0 秒';
   box.hidden = false;
   box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   const t0 = Date.now();
-  busyTimer = setInterval(() => {
-    el('wsBusyT').textContent = `${Math.round((Date.now() - t0) / 1000)} 秒`;
+  busyTimers[prefix] = setInterval(() => {
+    el(prefix + 'BusyT').textContent = `${Math.round((Date.now() - t0) / 1000)} 秒`;
   }, 250);
 }
+// 用函式宣告而不是 const —— 會提升，不管在哪裡呼叫都不會踩到 TDZ
+function wsBusy(on, main, sub){ showBusy('ws', on, main, sub); }
+function anBusy(on, main, sub){ showBusy('an', on, main, sub); }
 // Windows 之後也會用到，鍵位提示跟著平台走
 if (!/Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent))
   for (const id of ['pasteKey', 'pasteKey2']) { const n = el(id); if (n) n.textContent = 'Ctrl+V'; }
