@@ -31,7 +31,7 @@ const mainOf = d => d.clauses?.find(c => c.role === 'main') ?? d.clauses?.[0];
 /** 把原句的若干區間換成底線，回傳 { display, blanks } */
 /** 句子本身就有空格（考卷填空題）時，不能再挖空出題 ——
  *  畫面上會出現兩個空格卻只收一個答案，根本看不出要填哪一個。 */
-const hasBlank = t => /_{2,}/.test(String(t ?? ''));
+export const hasBlank = t => /_{2,}/.test(String(t ?? ''));
 
 function blankOut(original, spans){
   const ordered = [...spans].sort((a, b) => a.start - b.start);

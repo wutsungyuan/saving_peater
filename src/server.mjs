@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { analyze, analyzeMany, extractProse, fixPronounCase, MODEL } from './analyzer.mjs';
 import { splitSentences, splitDialogue } from './segment.mjs';
 import { openCache } from './cache.mjs';
-import { generate, grade, TYPES } from './exercises.mjs';
+import { generate, grade, TYPES, hasBlank } from './exercises.mjs';
 import { parseWordList, enrich, generateWordQuiz, gradeWord, WORD_MODES,
          extractFromImage, wordsToText } from './wordset.mjs';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
@@ -208,6 +208,10 @@ async function handleAnalyze(req, res, url){
       if (sentence.original && sentence.original.trim() !== seg.text.trim()){
         console.error('[analyze] 模型回傳的原句與輸入不符，不寫入快取：',
           JSON.stringify(seg.text.slice(0, 60)), '→', JSON.stringify(String(sentence.original).slice(0, 60)));
+      } else if (hasBlank(seg.text)){
+        // 考卷的空格沒被還原成答案。這種句子拿來分析沒有意義，
+        // 出題時也只會變成「兩個空格一個格子」那種看不懂的題目，所以不入庫。
+        console.error('[analyze] 句子仍有未還原的空格，不寫入快取：', JSON.stringify(seg.text.slice(0, 60)));
       } else {
         cache.put(seg.text, sentence, MODEL, one, dlgMeta);
       }
@@ -564,6 +568,7 @@ const server = createServer(async (req, res) => {
             for (let i = lastDone; i < done; i++){
               const r = groupResults[i];
               if (!r) continue;
+              if (hasBlank(todo[i])) continue;    // 仍有未還原的空格就不入庫，理由同上
               try { fixPronounCase(r.words ?? []); cache.put(todo[i], r, MODEL, per); saved++; }
               catch (err){ console.error('存快取失敗：', todo[i].slice(0, 40), err.message); }
             }

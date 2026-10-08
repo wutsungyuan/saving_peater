@@ -248,7 +248,12 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .wcard .box-tag.good{border-color:var(--st-good);color:var(--st-good)}
 .wsense{margin-top:9px;padding-left:11px;border-left:2px solid var(--rule);font-size:.88rem;line-height:1.75}
 .wsense b{font-family:var(--font-mono);font-size:.76rem;color:var(--pos-dim);margin-right:7px}
-.wsense .ex{font-family:var(--font-en);color:var(--muted);display:block}
+/* 排成 flex：文字佔滿剩餘寬度，兩顆按鈕跟在後面；
+   窄螢幕時整顆按鈕換到下一行，而不是和文字疊在一起。 */
+.wsense .ex{font-family:var(--font-en);color:var(--muted);
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.wsense .extxt{flex:1 1 12em;min-width:0}
+.wsense .ex .say{margin-left:0}
 .wsense .exz{color:var(--faint);font-size:.84rem;display:block}
 .wtip{margin-top:9px;font-size:.82rem;color:var(--st-mid);line-height:1.6}
 .wextra{margin-top:7px;font-size:.8rem;color:var(--faint);line-height:1.7}
@@ -333,6 +338,14 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .chip[aria-pressed="true"]{background:var(--fg);border-color:var(--fg);color:var(--surface);font-weight:600}
 
 .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.tlabel{font-family:var(--font-mono);font-size:.68rem;font-weight:700;letter-spacing:.09em;
+  color:var(--faint);display:none}
+.optbar{display:none;font-size:.78rem;color:var(--muted);background:transparent;
+  border:0;padding:6px 0;align-items:center;gap:6px}
+.optbar .caret{width:0;height:0;border-style:solid;border-width:5px 4px 0 4px;
+  border-color:currentColor transparent transparent transparent;transition:transform .15s}
+.optbar[aria-expanded="true"] .caret{transform:rotate(180deg)}
+
 .seg{display:inline-flex;border:1px solid var(--rule);border-radius:3px;overflow:hidden;flex-shrink:0}
 .seg button{border:0;border-radius:0;background:var(--surface);padding:7px 14px;font-size:.82rem;color:var(--muted)}
 .seg button+button{border-left:1px solid var(--rule)}
@@ -536,18 +549,36 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 .edge,.drawer,.scrim{display:none}
 @media (max-width:560px){
   .legend-inline{display:none}
-  /* 固定在邊緣一定會蓋到內容，所以盡量小、而且放在偏下的位置 ——
-     那一帶通常是句子卡，比壓在輸入框與按鈕上好。 */
+  /* 圖例改放工具列裡 —— 固定在畫面邊緣的按鈕一定會蓋到內容。
+     桌機有常駐側欄，不需要這組。 */
+  /* 控制項一組一行、標籤在上，和上面的「五大句型」同一個節奏，
+     不然三組寬度不一的切換疊在一起會很亂。 */
+  /* 顯示／詞性／朗讀偶爾才調，預設收起來，句子卡才不會被推到很下面 */
+  .optbar{display:inline-flex}
+  .toolbar{display:grid;grid-template-columns:1fr;gap:4px 10px;align-items:start}
+  .toolbar[hidden]{display:none}
+  /* 標籤縮一號：五大句型要滑過兩列、其他情境三列，壓一下省掉不少高度 */
+  /* 標籤不受 40px 點擊下限限制 —— 它們一次排好幾列，
+     34px 還是好按，但整區省下不少高度。 */
+  .chip{font-size:.75rem;padding:5px 10px;min-height:34px}
+  /* 朗讀鍵是正圓，套上 40px 的點擊下限會被拉成橢圓。
+     給它自己的尺寸：比桌機大一點，手指點得到，但維持圓形。 */
+  .sayx{width:30px;height:30px;min-height:0}
+  .longonly{display:none}        /* 次要說明在手機上佔的高度比價值多 */
+  .tlabel{display:block;margin-top:8px}
+  .toolbar .seg{justify-self:start}
+  /* 浮動把手：盡量小、放偏下，少擋一點內容；只在分析分頁出現 */
   .edge{display:none;position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 22%);z-index:58;
     writing-mode:vertical-rl;text-orientation:upright;letter-spacing:.1em;
     font-size:.7rem;font-weight:700;padding:10px 3px;border:1px solid var(--rule);
-    background:var(--surface);color:var(--faint);box-shadow:0 2px 8px rgba(15,23,28,.12);
-    opacity:.92}
-  .edge:active{opacity:1;color:var(--accent);border-color:var(--accent)}
+    background:var(--surface);color:var(--faint);box-shadow:0 2px 8px rgba(15,23,28,.12);opacity:.92}
+  .edge:active,.edge[aria-expanded="true"]{opacity:1;color:var(--accent);border-color:var(--accent)}
   #edgeL{left:0;border-left:0;border-radius:0 4px 4px 0}
   #edgeR{right:0;border-right:0;border-radius:4px 0 0 4px}
-  /* 只在分析分頁顯示，而且放在偏下的位置，少擋一點內容 */
   body[data-view="analyze"] .edge{display:block}
+  .spk{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .spk .tlabel{grid-column:1/-1;margin-top:8px}
+  .spk select{min-width:0;width:100%}
   .scrim{display:block;position:fixed;inset:0;z-index:59;background:rgba(15,23,28,.42);
     opacity:0;pointer-events:none;transition:opacity .2s}
   .scrim.on{opacity:1;pointer-events:auto}
@@ -769,8 +800,8 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
       <div class="row">
         <button id="anPhoto">拍照／選課本照片</button>
         <input type="file" id="anFile" accept="image/*" capture="environment" hidden>
-        <span class="hint">也可以把圖片直接拖進來，或按 <b id="pasteKey2">⌘V</b> 貼上。
-          辨識完會填進上面的框，核對後再按分析。</span>
+        <span class="hint">也可以把圖片直接拖進來，或按 <b id="pasteKey2">⌘V</b> 貼上。<span
+          class="longonly">辨識完會填進上面的框，核對後再按分析。</span></span>
       </div>
       <div class="row">
         <button class="primary" id="go">分析</button>
@@ -781,17 +812,18 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
     <nav class="chips-group" aria-label="範例句">
       <div class="cg"><b>五大句型</b><div class="chips" id="chips-a"></div></div>
       <div class="cg"><b>其他情境</b><div class="chips" id="chips-b"></div></div>
-      <div class="cg" id="swapRow" hidden><b>換句子</b>
-        <button class="linky" id="swapSample"></button>
-        <span class="hint" id="swapHint"></span></div>
     </nav>
 
-    <div class="toolbar">
+    <button class="optbar" id="optBar" aria-expanded="false" aria-controls="toolbar" hidden>
+      顯示選項<span class="caret"></span></button>
+    <div class="toolbar" id="toolbar">
+      <b class="tlabel">顯示</b>
       <div class="seg" role="group" aria-label="顯示模式">
         <button data-mode="clean" aria-pressed="false">乾淨</button>
         <button data-mode="mark" aria-pressed="true">標註</button>
         <button data-mode="full" aria-pressed="false">詳解</button>
       </div>
+      <b class="tlabel">詞性</b>
       <div class="seg" id="posSeg" role="group" aria-label="詞性層">
         <button data-pm="content" aria-pressed="true">實詞</button>
         <button data-pm="pron" aria-pressed="false">代名詞</button>
@@ -799,7 +831,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
         <button data-pm="off" aria-pressed="false">關</button>
       </div>
       <div class="spk" id="spkCtl" hidden>
-        <label for="spkVoice">朗讀</label>
+        <label for="spkVoice" class="tlabel">朗讀</label>
         <select id="spkVoice" aria-label="朗讀語音"></select>
         <select id="spkRate" aria-label="朗讀速度">
           <option value="0.6">慢</option>
@@ -823,9 +855,9 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 <div id="tip" role="tooltip" aria-hidden="true"></div>
 
 <!-- 手機：圖例收在左右邊緣，從邊緣往內滑或點把手拉出來 -->
-<div class="scrim" id="scrim" hidden></div>
 <button class="edge" id="edgeL" aria-controls="drawer-c" aria-expanded="false">成分</button>
 <button class="edge" id="edgeR" aria-controls="drawer-p" aria-expanded="false">詞性</button>
+<div class="scrim" id="scrim" hidden></div>
 <aside class="drawer drawer-l" id="drawer-c" aria-hidden="true" aria-label="句子成分圖例"></aside>
 <aside class="drawer drawer-r" id="drawer-p" aria-hidden="true" aria-label="詞性與代名詞格位圖例"></aside>
 
@@ -1150,7 +1182,6 @@ function render(key){
   if (out.dataset.mode === 'full') openAll(true);
   layoutPosLabels();
   curKind = key; curIdx = -1;      // 點標籤＝回到內建範例
-  renderSwap();
 }
 
 function openAll(open){
@@ -1290,7 +1321,7 @@ function placeholder(index, original, state){
 }
 
 async function analyzeLive(text){
-  curKind = null; renderSwap();     // 分析自己的句子時不是在看範例
+  curKind = null;                   // 分析自己的句子時不是在看範例
   goBtn.disabled = true;
   Spk.stop();
   usageBar.hidden = true;
@@ -1739,7 +1770,7 @@ historyOut.addEventListener('click', async e => {
   if (b.dataset.kind === 'ocr-text'){       // 句子辨識：把抄到的文字帶回分析的輸入框
     const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
     document.querySelector('.tabs button[data-view="analyze"]').click();
-    if (text){ curKind = null; renderSwap(); setInput(text); }
+    if (text){ curKind = null; setInput(text); }
     return;
   }
   if (b.dataset.kind === 'ocr'){            // 單字表辨識：把結果帶回新增字表的表單
@@ -2033,7 +2064,7 @@ function renderWordList(){
         : `<span class="setof" title="來自這份字表">${esc(setName(w.setId))}</span>`) : ''}
       ${tag}</div>
       ${(w.senses||[]).map(sn => `<div class="wsense"><b>${esc(sn.pos)}</b>${esc(sn.zh)}
-        ${sn.example ? `<span class="ex">${esc(sn.example)}${sayBtn(sn.example, '朗讀例句')}` +
+        ${sn.example ? `<span class="ex"><span class="extxt">${esc(sn.example)}</span>${sayBtn(sn.example, '朗讀例句')}` +
           `<button class="exan${sn.analyzed ? ' done' : ''}" data-an="${esc(sn.example)}"
              title="${sn.analyzed ? '已分析過，點了馬上看句型與詞性，不花額度'
                                   : '還沒分析，點了會花一次額度'}">分析</button></span>` : ''}
@@ -2386,7 +2417,7 @@ async function handleAnalyzeImage(file){
     // 真的是自己貼的才接在後面 —— 拍兩頁的情況就靠這個。
     const own = curKind === null ? inp.value.trim() : '';
     setInput(own ? own + '\n' + d.text : d.text);
-    curKind = null; renderSwap();
+    curKind = null;
     inp.focus();
     const lines = d.text.split('\n').filter(Boolean).length;
     hint.textContent = `抄到 ${lines} 行（參考費用 ${money(d.usage.costUsd)}）。` +
@@ -2442,21 +2473,8 @@ async function loadSampleCounts(){
   if (API === false) return;
   try { sampleCounts = (await fetch('/api/samples').then(r => r.json())).counts || {}; }
   catch { sampleCounts = {}; }
-  renderSwap();
 }
 
-const chipLabel = k => SAMPLES.find(([key]) => key === k)?.[1] ?? '';
-function renderSwap(){
-  const n = sampleCounts[curKind] || 0;
-  const row = el('swapRow');
-  row.hidden = !curKind || n === 0;
-  if (row.hidden) return;
-  el('swapSample').textContent = '換下一句';
-  el('swapHint').textContent = curIdx < 0
-    ? `內建範例。再點一次「${chipLabel(curKind)}」或按這裡，可以換成我分析過的句子（${n} 句）。`
-    : `我分析過的第 ${curIdx + 1} / ${n} 句` +
-      (curIdx + 1 >= n ? '（最後一句，再按一次回到內建範例）。' : '。');
-}
 
 /** 往下換一句。走完自己分析過的那些就回到內建範例，形成一個循環。 */
 async function nextSample(){
@@ -2471,10 +2489,8 @@ async function nextSample(){
     out.innerHTML = renderSentence(d.sentence, false);
     setInput(d.original);
     layoutPosLabels();
-    renderSwap();
   } catch { /* 拿不到就維持現狀 */ }
 }
-el('swapSample').addEventListener('click', nextSample);
 
 // 手機上開頭說明收成兩行，點了才展開。桌機不顯示這個鈕。
 (() => {
@@ -2997,4 +3013,22 @@ for (const b of document.querySelectorAll('.tabs button')){
 // 首頁預設停在「單字」，所以啟動時就要把字表載進來。
 document.body.dataset.view = 'words';   // 預設分頁，CSS 靠這個決定要不要顯示邊緣把手
 if (API !== false) loadWordsets();
+
+// 手機上「顯示／詞性／朗讀」預設收起 —— 那三列會把句子卡推到很下面，
+// 可是真正常調的只有少數人。桌機寬度夠，維持展開並隱藏這顆鈕。
+(function(){
+  const bar = el('optBar'), box = el('toolbar');
+  const narrow = matchMedia('(max-width:560px)');
+  const apply = () => {
+    bar.hidden = !narrow.matches;
+    if (!narrow.matches){ box.hidden = false; return; }
+    box.hidden = bar.getAttribute('aria-expanded') !== 'true';
+  };
+  bar.addEventListener('click', () => {
+    bar.setAttribute('aria-expanded', bar.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
+    apply();
+  });
+  narrow.addEventListener('change', apply);
+  apply();
+})();
 </script>
