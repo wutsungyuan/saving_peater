@@ -135,13 +135,29 @@ function selectWords(words, count){
 
 const senseLabel = (s) => `${s.pos}　${s.zh}`;
 
+/** 中翻英的長度提示：直接用文字說「共幾個字母、分幾個音節」。
+ *  舊版把音節字串的每個字母換成底線（cloud-y → _____-_），小朋友看不出那是音節、也數不出要填幾個字。
+ *  只給長度，不給任何字母，不會洩漏答案。 */
+export function lengthHint(text){
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+  const count = t => (t.match(/[a-z]/gi) || []).length;
+  if (!words.length) return '';
+  if (words.length > 1)                          // 片語：每個字各幾個字母
+    return `共 ${words.length} 個字，字母數：${words.map(count).join(' ＋ ')}`;
+  const parts = words[0].split('-').filter(Boolean);
+  const n = count(words[0]);
+  return parts.length > 1
+    ? `共 ${n} 個字母，分 ${parts.length} 個音節（${parts.map(count).join(' ＋ ')}）`
+    : `共 ${n} 個字母`;
+}
+
 function qZh2En(w){
   const s = pick(w.senses);
   if (!s?.zh) return null;
   return {
     mode: 'zh2en', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
     prompt: '寫出這個中文意思的英文單字',
-    question: s.zh, hint: `${s.pos}　${w.syllables ? w.syllables.replace(/[a-z]/gi, '_') : ''}`.trim(),
+    question: s.zh, hint: `${s.pos}　${lengthHint(w.syllables || w.term)}`.trim(),
     inputMode: 'text', blanks: 1,
     answer: [w.term],
     explain: `${w.term}（${w.syllables}）${s.pos} ${s.zh}` + (w.spellTip ? `\n拼字：${w.spellTip}` : ''),
