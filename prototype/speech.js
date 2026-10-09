@@ -82,7 +82,9 @@
   }
 
   const api = {
-    available: () => OK && englishVoices().length > 0,
+    // 只看瀏覽器有沒有語音合成。不看語音清單是不是空的：iOS 的 WebView 清單常常晚到或一直是空的，
+    // 但 speak() 不指定語音時系統仍會用預設的英語念出來。
+    available: () => OK,
 
     /** 語音清單在 Chrome 是非同步載入的，要等 */
     ready(){

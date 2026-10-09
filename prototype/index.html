@@ -359,7 +359,7 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .spk label{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.07em;
   text-transform:uppercase;color:var(--faint)}
 .spk select{max-width:11em}
-body:not(.has-speech) .say{display:none}
+body:not(.has-speech) .say, body:not(.has-speech) .sayx{display:none}
 .say{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:.78rem;
   padding:4px 11px;border-radius:999px;background:var(--surface);color:var(--muted)}
 .say:hover{border-color:var(--accent);color:var(--accent)}
@@ -1874,20 +1874,29 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') Spk.stop(); 
 window.addEventListener('pagehide', () => Spk.stop());
 
 (async () => {
-  await Spk.ready();
-  if (!Spk.available()) return;              // 不支援就讓按鈕維持隱藏
+  if (!Spk.available()) return;              // 瀏覽器根本沒有語音合成才維持隱藏
+  // 不等語音清單載入完成就先顯示按鈕：iPhone（尤其 App 內嵌瀏覽畫面）的清單常常很晚才有，
+  // 等不到就整個放棄的話，按鈕永遠不會出現。speak() 沒有指定語音時會用系統預設的英語。
   document.body.classList.add('has-speech');
   spkCtl.hidden = false;
 
-  const list = Spk.voices();
-  const active = Spk.activeVoice();
-  spkVoice.innerHTML = list.map(v =>
-    `<option value="${esc(v.id)}"${v.id === active?.id ? ' selected' : ''}>${esc(v.name)}${
-      v.wordEvents ? '' : '（無逐字標示）'}</option>`).join('');
+  const fillVoices = () => {
+    const list = Spk.voices();
+    const active = Spk.activeVoice();
+    spkVoice.innerHTML = list.map(v =>
+      `<option value="${esc(v.id)}"${v.id === active?.id ? ' selected' : ''}>${esc(v.name)}${
+        v.wordEvents ? '' : '（無逐字標示）'}</option>`).join('');
+    spkVoice.disabled = !list.length;
+  };
   spkRate.value = String(Spk.settings.rate);
-
   spkVoice.addEventListener('change', () => { Spk.stop(); Spk.setSettings({ voiceId: spkVoice.value }); });
   spkRate.addEventListener('change', () => { Spk.stop(); Spk.setSettings({ rate: Number(spkRate.value) }); });
+
+  fillVoices();
+  await Spk.ready();
+  fillVoices();
+  // 清單晚到（iOS）時再補一次
+  try { speechSynthesis.addEventListener('voiceschanged', fillVoices); } catch {}
 })();
 
 
@@ -2052,9 +2061,9 @@ async function selectSet(id, only = false){
   renderWordList();
 }
 
-/** 小朗讀鈕。沒有語音能力時不產生，避免出現按了沒反應的按鈕 */
+/** 小朗讀鈕。一律產生，沒有語音能力時由 CSS（body 沒有 has-speech）藏起來。
+ *  不能在這裡判斷 Spk.available()：iPhone 的語音清單載入得晚，單字清單先畫出來就永遠沒有按鈕了。 */
 function sayBtn(text, label){
-  if (!Spk.available()) return '';
   return `<button class="sayx" type="button" data-say="${esc(text)}"
     aria-label="${esc(label)}" title="${esc(label)}"><span class="ico"></span></button>`;
 }
