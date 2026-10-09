@@ -95,6 +95,10 @@ const pick = a => a[rand(a.length)];
 const shuffle = a => { const r=[...a]; for(let i=r.length-1;i>0;i--){const j=rand(i+1);[r[i],r[j]]=[r[j],r[i]];} return r; };
 const norm = s => String(s ?? '').trim().toLowerCase().replace(/\s+/g,' ').replace(/[.!?,;:]+$/,'');
 
+/** 批改用的比對：在 norm 之外再忽略所有句點。縮寫有沒有加點（ROC／R.O.C.、Rd／Rd.、PE／P.E.）都算對；
+ *  「not... at all」寫成 not at all 也算對。 */
+const cmp = s => norm(String(s ?? '').replace(/\./g, ''));
+
 /** 在例句裡找出這個字實際出現的形式（可能是變化形：teach → teaches） */
 function findForm(example, term){
   if (!example) return null;
@@ -135,6 +139,20 @@ function selectWords(words, count){
 
 const senseLabel = (s) => `${s.pos}　${s.zh}`;
 
+/** 縮寫：全大寫（ROC、PE）、短字加點（Rd.、Ms.）、或逐字母加點（R.O.C.）。
+ *  這類字沒有音節可言，音節提示反而讓人看不懂（R-O-C）。 */
+export function isAbbrev(term){
+  const t = String(term || '').trim();
+  return /^[A-Z]{2,}$/.test(t) || /^[A-Za-z]{1,4}\.$/.test(t) || /^([A-Za-z]\.){2,}$/.test(t);
+}
+
+/** 縮寫題的提示：說明是縮寫、幾個字母，並明講有沒有加點都算對（批改用 cmp 忽略句點）。 */
+export function abbrevHint(term){
+  if (!isAbbrev(term)) return '';
+  const n = (String(term).match(/[a-z]/gi) || []).length;
+  return `縮寫，共 ${n} 個字母，有沒有加點都算對`;
+}
+
 /** 中翻英的長度提示：直接用文字說「共幾個字母、分幾個音節」。
  *  舊版把音節字串的每個字母換成底線（cloud-y → _____-_），小朋友看不出那是音節、也數不出要填幾個字。
  *  只給長度，不給任何字母，不會洩漏答案。 */
@@ -157,7 +175,7 @@ function qZh2En(w){
   return {
     mode: 'zh2en', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
     prompt: '寫出這個中文意思的英文單字',
-    question: s.zh, hint: `${s.pos}　${lengthHint(w.syllables || w.term)}`.trim(),
+    question: s.zh, hint: `${s.pos}　${abbrevHint(w.term) || lengthHint(w.syllables || w.term)}`.trim(),
     inputMode: 'text', blanks: 1,
     answer: [w.term],
     explain: `${w.term}（${w.syllables}）${s.pos} ${s.zh}` + (w.spellTip ? `\n拼字：${w.spellTip}` : ''),
@@ -326,9 +344,9 @@ export function gradeWord(q, given){
   // accept 在時，每一格只要符合該格的任一種寫法就算對（got / gotten）
   const ok = q.accept
     ? q.accept.length === got.length &&
-      q.accept.every((list, i) => list.some(a => norm(a) === norm(got[i])))
-    : q.answer.length === got.length && q.answer.every((a, i) => norm(a) === norm(got[i]));
-  const alt = (q.alsoAccept ?? []).some(a => norm(a) === norm(got.join(' ')));
+      q.accept.every((list, i) => list.some(a => cmp(a) === cmp(got[i])))
+    : q.answer.length === got.length && q.answer.every((a, i) => cmp(a) === cmp(got[i]));
+  const alt = (q.alsoAccept ?? []).some(a => cmp(a) === cmp(got.join(' ')));
   return { correct: ok || alt, expected: q.answer, given: got };
 }
 
