@@ -36,6 +36,7 @@ el('artName').addEventListener('input', syncArticleDest);
 async function analyzeAsArticle(name, text){
   goBtn.disabled = true;
   usageBar.hidden = true;
+  el('artConfirm').hidden = true; el('artConfirm').innerHTML = '';
   hintEl.textContent = '先算一下要分析幾句、大概花多少…';
   const q = await artApi('/api/analyze', { method: 'POST', body: { text, article: true, dryRun: true } });
   goBtn.disabled = false;
@@ -49,17 +50,17 @@ async function analyzeAsArticle(name, text){
   const run = () => runArticle(name, text);
   if (!p.toAnalyze){ hintEl.textContent = `共 ${p.total} 句，全部分析過了，直接存成文章表。`; return run(); }
   const mins = Math.max(1, Math.round(p.estimate.seconds / 60));
-  usageBar.innerHTML = `<span class="u"><b>要分析 ${p.toAnalyze} 句</b>（共 ${p.total} 句，${p.cached} 句已分析過、不花額度）</span>
-    <span class="note">預估 ${money2(p.estimate.low)}～${money2(p.estimate.high)}、約 ${mins} 分鐘。` +
-    `${p.truncated ? `超過 ${p.limits.maxSentences} 句的部分不會處理，也就不會存成文章表，請分批。` : ''}
-    這是依最近的分析紀錄估的參考費用，只在你按確認後才會呼叫模型。</span>
-    <button class="retry" type="button" id="artGo">開始分析並存成文章表</button>
-    <button class="linky" type="button" id="artNo">取消</button>`;
-  usageBar.hidden = false;
-  hintEl.textContent = `「${name}」：${p.total} 句。要先看過下方的報價，按「開始分析並存成文章表」才會呼叫模型。`;
-  usageBar.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  el('artNo').onclick = () => { usageBar.hidden = true; hintEl.textContent = '已取消，沒有呼叫模型。'; };
-  el('artGo').onclick = () => { usageBar.hidden = true; run(); };
+  const box = el('artConfirm');
+  box.innerHTML = `<p class="ac-title">這份文章共 ${p.total} 句，其中 <b>${p.toAnalyze} 句要請模型分析</b>${p.cached ? `（另外 ${p.cached} 句以前分析過，不花額度）` : ''}。</p>
+    <p class="ac-cost">預估花費 <b>${money2(p.estimate.low)}～${money2(p.estimate.high)}</b>，約 ${mins} 分鐘。</p>
+    <p class="hint">${p.truncated ? `超過 ${p.limits.maxSentences} 句的部分不會處理，也就不會存成文章表，請分批。` : ''}費用是依你最近的分析紀錄估的參考值。按下確定才會呼叫模型。</p>
+    <div class="row"><button class="primary" type="button" id="artGo">確定，開始分析</button>
+    <button class="linky" type="button" id="artNo">取消</button></div>`;
+  box.hidden = false;
+  hintEl.textContent = '';
+  box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  el('artNo').onclick = () => { box.hidden = true; hintEl.textContent = '已取消，沒有呼叫模型。'; };
+  el('artGo').onclick = () => { box.hidden = true; run(); };
 }
 
 async function runArticle(name, text){

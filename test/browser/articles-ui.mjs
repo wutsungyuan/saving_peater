@@ -27,8 +27,8 @@ try {
   const text = 'I get up at seven. I eat breakfast.\\n\\nThen I go to school. School is fun.';
   await type('#inp', text.replace(/\\n/g, '\n'));
   await click('#go');
-  chk('先顯示報價與確認按鈕，還沒呼叫模型', await until(`!document.getElementById('usageBar').hidden && !!document.getElementById('artGo')`) && S.calls().length === base, JSON.stringify(S.calls()));
-  chk('報價寫明句數、已快取、預估花費與時間', await evl(`/要分析 4 句/.test(document.getElementById('usageBar').textContent) && /預估 \\$\\d/.test(document.getElementById('usageBar').textContent) && /分鐘/.test(document.getElementById('usageBar').textContent)`), await evl(`document.getElementById('usageBar').textContent`));
+  chk('先顯示報價與確認按鈕，還沒呼叫模型', await until(`!document.getElementById('artConfirm').hidden && !!document.getElementById('artGo')`) && S.calls().length === base, JSON.stringify(S.calls()));
+  chk('報價寫明句數、已快取、預估花費與時間', await evl(`/4 句要請模型分析/.test(document.getElementById('artConfirm').textContent) && /預估花費 \\$\\d/.test(document.getElementById('artConfirm').textContent) && /分鐘/.test(document.getElementById('artConfirm').textContent)`), await evl(`document.getElementById('artConfirm').textContent`));
   await click('#artNo');
   chk('取消：沒有呼叫模型', S.calls().length === base && await evl(`/沒有呼叫模型/.test(document.getElementById('inp-hint').textContent)`));
   await click('#go');
@@ -48,7 +48,7 @@ try {
   chk('提示會附加到既有的文章表', await evl(`/會附加到文章表「課文A」/.test(document.getElementById('artDest').textContent)`));
   await click('#go');
   await until(`!!document.getElementById('artGo')`);
-  chk('只有 1 句新的要分析（重複的不收費）', await evl(`/要分析 1 句/.test(document.getElementById('usageBar').textContent)`), await evl(`document.getElementById('usageBar').textContent`));
+  chk('只有 1 句新的要分析（重複的不收費）', await evl(`/1 句要請模型分析/.test(document.getElementById('artConfirm').textContent)`), await evl(`document.getElementById('artConfirm').textContent`));
   await click('#artGo');
   chk('附加成功、略過重複的 1 句', await until(`/已附加到文章表「課文A」：新增 1 句（略過重複的 1 句），共 5 句/.test(document.getElementById('inp-hint').textContent)`, 20000), await evl(`document.getElementById('inp-hint').textContent`));
 

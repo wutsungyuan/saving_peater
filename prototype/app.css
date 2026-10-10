@@ -744,3 +744,8 @@ mark.sw{background:var(--tip-bg);color:inherit;border-bottom:2px solid var(--acc
 .p-brow .p-pts{white-space:nowrap}
 .quote{background:var(--card,#fff8e6);border:1px solid var(--rule);border-radius:8px;padding:8px 12px;margin:10px 0}
 .quote p{margin:4px 0}
+.art-confirm{margin-top:12px;padding:12px 14px;border:1px solid var(--accent);border-radius:8px;background:var(--card,#fff)}
+.art-confirm p{margin:4px 0}
+.art-confirm .ac-title{font-size:1rem}
+.art-confirm .ac-cost{font-size:1.05rem}
+.art-confirm .ac-cost b{color:var(--accent);font-family:var(--font-mono)}
