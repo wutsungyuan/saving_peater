@@ -118,6 +118,10 @@ try {
   chk('只呼叫了一次，並顯示完成與花費', S.calls().length === calls3 + 1 && await evl(`/AI 批改完成/.test(document.getElementById('pFixMsg').textContent)`));
   chk('批改完不再顯示批改按鈕', await evl(`!document.getElementById('pAi')`));
 
+  await click('.tabs button[data-view="history"]');
+  chk('用量歷史把模型出題與 AI 批改標成自己的類型（不是「分析句子」），點了不會把它當原文重新分析', await until(`[...document.querySelectorAll('#historyOut .hkind')].some(k => /AI 批改/.test(k.textContent))`) && await evl(`(() => { const b = [...document.querySelectorAll('#historyOut .hitem')].find(x => x.dataset.kind === 'paper-grade'); const before = document.getElementById('inp').value; b.click(); return document.getElementById('inp').value === before; })()`), await evl(`document.getElementById('historyOut').innerText.slice(0, 200)`));
+  await click('.tabs button[data-view="exam"]');
+
   section('列印');
   await evl(`window.print = () => { window.__printed = true; }`);
   await click('[data-act2="print-ans"]');

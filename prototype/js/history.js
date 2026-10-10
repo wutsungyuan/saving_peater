@@ -40,10 +40,12 @@ async function loadHistory(){
     historyOut.innerHTML = d.items.map(it => {
       const gone = !it.preview;
       const KIND = { analyze:['分析句子','句',''], wordset:['建立字表','字','word'],
-        ocr:['照片抄單字','字','ocr'], 'ocr-text':['照片抄句子','句','ocr'] };
+        ocr:['照片抄單字','字','ocr'], 'ocr-text':['照片抄句子','句','ocr'],
+        'paper-gen':['測驗卷出題（模型）','題','paper'], 'paper-grade':['測驗卷 AI 批改','題','paper'] };
       const [kindName, unit, kindCls] = KIND[it.kind] || KIND.analyze;
       const isWord = it.kind === 'wordset';
       const isOcr  = it.kind === 'ocr' || it.kind === 'ocr-text';
+      const isPaper = it.kind === 'paper-gen' || it.kind === 'paper-grade';      // 用量紀錄而已，沒有原文可以重新分析
       const dead = isWord && !it.ref_alive;           // 字表已被刪除
       // 字表的原文是「名稱\n單字清單」，拆開顯示才讀得懂
       const lines = (it.preview || '').split('\n');
@@ -63,7 +65,7 @@ async function loadHistory(){
           <div class="hmeta">
             <span>${timeAgo(it.created_at)}</span>
             <span><b>${it.sentences}</b> ${unit}</span>
-            ${isWord || isOcr ? '' : `<span>新分析 <b>${it.analyzed}</b>／快取 <b>${it.cached}</b></span>`}
+            ${isWord || isOcr || isPaper ? '' : `<span>新分析 <b>${it.analyzed}</b>／快取 <b>${it.cached}</b></span>`}
             <span><b>${(it.ms / 1000).toFixed(1)}s</b></span>
             ${it.cost_usd ? `<span>參考費用 <b>${money(it.cost_usd)}</b></span>` : ''}
           </div>
@@ -77,6 +79,7 @@ async function loadHistory(){
 
 historyOut.addEventListener('click', async e => {
   const b = e.target.closest('.hitem'); if (!b || b.disabled) return;
+  if (b.dataset.kind === 'paper-gen' || b.dataset.kind === 'paper-grade') return;      // 出題與批改的用量紀錄：沒有可以重新分析的原文
   if (b.dataset.kind === 'ocr-text'){       // 句子辨識：把抄到的文字帶回分析的輸入框
     const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
     document.querySelector('.tabs button[data-view="analyze"]').click();
