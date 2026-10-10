@@ -651,3 +651,22 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 @media (max-width:380px){
   .tabs button{padding:10px 10px;font-size:.84rem}
 }
+/* 文章表（分析頁的第二個子分頁）。 */
+#artNameRow{align-items:center;gap:10px}
+#artNameRow input[type=text]{flex:1 1 220px;min-width:0}
+.desthint{margin:2px 0 0;font-size:.8rem;color:var(--faint);min-height:1.2em}
+.art-actions{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto}
+.art-card{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;cursor:pointer;
+  background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:14px;font:inherit;color:var(--fg)}
+.art-card b{font-size:1rem}
+.art-card:hover{border-color:var(--accent)}
+.art-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.art-para{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.art-para h4{margin:0;font-size:.74rem;letter-spacing:.1em;color:var(--faint);font-family:var(--font-mono);font-weight:700}
+.art-sent{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:11px 14px;display:flex;flex-direction:column;gap:4px}
+.art-en{margin:0;font-family:var(--font-en);font-size:1.05rem;line-height:1.55}
+.art-zh{margin:0;color:var(--muted);font-size:.9rem}
+.art-detail{margin-top:8px}
+mark.sw{background:var(--tip-bg);color:inherit;border-bottom:2px solid var(--accent);border-radius:2px;padding:0 1px}
+#artTitle{margin:6px 0 0;font-size:1.15rem}
+#artConfirm .row{align-items:center}

@@ -68,12 +68,17 @@ export const section = title => console.log(title);
 export const chk = (name, cond, detail = '') => { results.push(Boolean(cond)); console.log(`  ${cond ? '✓' : '✗'} ${name}${cond ? '' : '  ' + String(detail).slice(0, 300)}`); };
 export const fresh = (tag, n) => Array.from({ length: n }, (_, i) => `${tag} number ${i + 1} walks home.`);
 
-/** 收尾：關伺服器、清暫存、印結果並結束 */
-export async function finish(err) {
-  if (err) { console.log('ERR', err.stack || err.message); results.push(false); }
+/** 只關伺服器與清暫存，不結束程序（瀏覽器測試自己印結果） */
+export async function shutdown() {
   for (const s of servers) s.child.kill();
   await wait(400);
   try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+}
+
+/** 收尾：關伺服器、清暫存、印結果並結束 */
+export async function finish(err) {
+  if (err) { console.log('ERR', err.stack || err.message); results.push(false); }
+  await shutdown();
   const fail = results.filter(x => !x).length;
   console.log(fail ? `\n有失敗 (${fail}/${results.length})` : `\n全部通過 (${results.length})`);
   process.exit(fail ? 1 : 0);

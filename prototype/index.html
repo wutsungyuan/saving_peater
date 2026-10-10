@@ -134,6 +134,13 @@
     </div>
 
     <div id="view-analyze" hidden>
+    <div class="subrow">
+      <div class="subtabs" id="anTabs" role="group" aria-label="切換即時分析與文章表">
+        <button data-ap="live" aria-pressed="true">即時分析</button>
+        <button data-ap="articles" aria-pressed="false">文章表</button>
+      </div>
+    </div>
+    <div id="an-live">
     <div class="box">
       <div class="lblrow"><label for="inp">輸入英文</label><span class="count" id="inpCount"></span></div>
       <div class="ta-wrap" style="margin-top:0">
@@ -151,6 +158,13 @@
         <span class="hint">也可以把圖片直接拖進來，或按 <b id="pasteKey2">⌘V</b> 貼上。<span
           class="longonly">辨識完會填進上面的框，核對後再按分析。</span></span>
       </div>
+      <div class="row" id="artNameRow">
+        <label for="artName" class="hint">文章名稱（選填）</label>
+        <input type="text" id="artName" list="artNames" autocomplete="off" maxlength="60"
+          placeholder="填了就存成文章表；留空就只分析">
+        <datalist id="artNames"></datalist>
+      </div>
+      <p class="desthint" id="artDest"></p>
       <div class="row">
         <button class="primary" id="go">分析</button>
         <span class="hint" id="inp-hint">原型版內建 8 組已分析好的範例，可直接點下方標籤切換。</span>
@@ -195,6 +209,26 @@
     <main id="out" data-mode="mark" data-pos-mode="content"></main>
     </div>
 
+    <div id="an-articles" hidden>
+      <div id="artList"></div>
+      <div id="artView" hidden>
+        <div class="subrow">
+          <button class="linky" type="button" id="artBack">← 回到文章表</button>
+          <span class="art-actions">
+            <label for="artSets" class="hint">標出單字表的字</label>
+            <select id="artSets"><option value="">不標</option></select>
+            <button class="linky" type="button" id="artRename">改名</button>
+            <button class="linky danger" type="button" id="artDelete">刪除</button>
+          </span>
+        </div>
+        <div id="artConfirm" hidden></div>
+        <h3 id="artTitle"></h3>
+        <div id="artCover" class="hint"></div>
+        <div id="artBody"></div>
+      </div>
+    </div>
+    </div>
+
   </div>
 
   <aside class="rail rail-r" id="rail-p"></aside>
@@ -224,4 +258,5 @@
 <script src="js/samples.js"></script>
 <script src="js/wordset-form.js"></script>
 <script src="js/weakness.js"></script>
+<script src="js/articles.js"></script>
 <script src="js/init.js"></script>

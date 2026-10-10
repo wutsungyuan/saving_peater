@@ -12,7 +12,8 @@
     "cache": "node --no-warnings src/cache-cli.mjs",
     "cache:seed": "node --no-warnings src/cache-cli.mjs seed",
     "cache:info": "node --no-warnings src/cache-cli.mjs info",
-    "test": "node --no-warnings test/migrate.mjs && node --no-warnings test/length-hint.mjs && node --no-warnings test/api/contract.mjs && node --no-warnings test/api/model-routes.mjs && node --no-warnings test/api/articles.mjs"
+    "test": "node --no-warnings test/migrate.mjs && node --no-warnings test/length-hint.mjs && node --no-warnings test/api/contract.mjs && node --no-warnings test/api/model-routes.mjs && node --no-warnings test/api/articles.mjs",
+    "test:browser": "node --no-warnings test/browser/articles-ui.mjs"
   },
   "engines": {
     "node": ">=22.14"

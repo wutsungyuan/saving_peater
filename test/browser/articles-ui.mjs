@@ -1,0 +1,93 @@
+// 文章表的畫面流程：自己開接假 CLI 的伺服器（不花額度），在真的 Chrome 裡走一遍。
+//   輸入 → 填文章名稱 → 報價與確認 → 分析 → 存成文章表 → 清單 → 檢視 → 標單字 → 展開分析 → 改名 → 刪除
+// 跑法：node --no-warnings test/browser/articles-ui.mjs   （不需要先開伺服器）
+import { start, shutdown } from '../api/_harness.mjs';
+import { openPage, checker } from './_cdp.mjs';
+
+const { chk, section, done } = checker();
+let page, code = 1;
+try {
+  const S = await start('ui-articles');                               // 沒設 AUTH_TOKEN：頁面不需要 token
+  // 先建一份字表，之後檢視文章表時標單字用
+  await S.j('/api/wordsets', { method: 'POST', body: { name: '字表一', text: 'breakfast, 早餐\nschool, 學校' } });
+  const base = S.calls().length;                                      // 建字表那次也算一次呼叫，之後的計數都相對於它
+
+  page = await openPage(S.base + '/', { width: 1000, height: 1100, settle: 2500 });
+  const { evl, until, click, type, wait } = page;
+  await click('.tabs button[data-view="analyze"]');
+  await wait(300);
+
+  section('分析頁');
+  chk('有「即時分析／文章表」兩個子分頁', await evl(`document.querySelectorAll('#anTabs button').length === 2`));
+  chk('有文章名稱欄、預設留空，按鈕是「分析」', await evl(`document.getElementById('artName').value === '' && document.getElementById('go').textContent.trim() === '分析'`));
+  await type('#artName', '課文A');
+  chk('填了名稱：按鈕改成「分析並存成文章表」、提示會建立新的', await evl(`document.getElementById('go').textContent.includes('存成文章表') && document.getElementById('artDest').textContent.includes('建立新的文章表')`));
+
+  section('報價與確認');
+  const text = 'I get up at seven. I eat breakfast.\\n\\nThen I go to school. School is fun.';
+  await type('#inp', text.replace(/\\n/g, '\n'));
+  await click('#go');
+  chk('先顯示報價與確認按鈕，還沒呼叫模型', await until(`!document.getElementById('usageBar').hidden && !!document.getElementById('artGo')`) && S.calls().length === base, JSON.stringify(S.calls()));
+  chk('報價寫明句數、已快取、預估花費與時間', await evl(`/要分析 4 句/.test(document.getElementById('usageBar').textContent) && /預估 \\$\\d/.test(document.getElementById('usageBar').textContent) && /分鐘/.test(document.getElementById('usageBar').textContent)`), await evl(`document.getElementById('usageBar').textContent`));
+  await click('#artNo');
+  chk('取消：沒有呼叫模型', S.calls().length === base && await evl(`/沒有呼叫模型/.test(document.getElementById('inp-hint').textContent)`));
+  await click('#go');
+  await until(`!!document.getElementById('artGo')`);
+
+  section('分析並存檔');
+  await click('#artGo');
+  chk('分析完成後顯示「已存成文章表」', await until(`/已存成文章表「課文A」：新增 4 句/.test(document.getElementById('inp-hint').textContent)`, 20000), await evl(`document.getElementById('inp-hint').textContent`));
+  chk('模型被呼叫 4 次（每句一次）', S.calls().length === base + 4, JSON.stringify(S.calls().length));
+  chk('分析結果有顯示在下方', await evl(`document.querySelectorAll('#out article.sent').length === 4`));
+  const saved = (await S.j('/api/articles')).json.articles;
+  chk('後端真的有這份文章表（4 句、2 段）', saved.length === 1 && saved[0].sentences === 4 && saved[0].paragraphs === 2, JSON.stringify(saved));
+  chk('名稱欄的下拉選單有這份', await evl(`[...document.querySelectorAll('#artNames option')].some(o => o.value === '課文A')`));
+
+  section('同名再存一次 → 附加');
+  await type('#inp', 'Tonight I read a book. School is fun.');
+  chk('提示會附加到既有的文章表', await evl(`/會附加到文章表「課文A」/.test(document.getElementById('artDest').textContent)`));
+  await click('#go');
+  await until(`!!document.getElementById('artGo')`);
+  chk('只有 1 句新的要分析（重複的不收費）', await evl(`/要分析 1 句/.test(document.getElementById('usageBar').textContent)`), await evl(`document.getElementById('usageBar').textContent`));
+  await click('#artGo');
+  chk('附加成功、略過重複的 1 句', await until(`/已附加到文章表「課文A」：新增 1 句（略過重複的 1 句），共 5 句/.test(document.getElementById('inp-hint').textContent)`, 20000), await evl(`document.getElementById('inp-hint').textContent`));
+
+  section('全部分析過 → 不報價直接存');
+  await type('#artName', '課文B');
+  await type('#inp', 'I get up at seven.');
+  await click('#go');
+  chk('全部已分析過：直接存成文章表，不跳確認', await until(`/已存成文章表「課文B」/.test(document.getElementById('inp-hint').textContent)`, 8000) && S.calls().length === base + 5, `calls=${S.calls().length - base}`);
+
+  section('文章表清單與檢視');
+  await click('#anTabs button[data-ap="articles"]');
+  chk('清單列出兩份', await until(`document.querySelectorAll('#artList .art-card').length === 2`));
+  await evl(`[...document.querySelectorAll('#artList .art-card')].find(c => c.textContent.includes('課文A')).click()`);
+  chk('檢視：依段落顯示、有翻譯', await until(`document.querySelectorAll('#artBody .art-para').length === 3 && !!document.querySelector('#artBody .art-zh')`) && await evl(`document.getElementById('artTitle').textContent === '課文A'`));
+  await evl(`(() => { const s = document.getElementById('artSets'); s.value = s.options[1].value; s.dispatchEvent(new Event('change')); })()`);
+  chk('標出單字表的字（breakfast、school 有標記）', await until(`document.querySelectorAll('#artBody mark.sw').length >= 2`) && await evl(`/用到 2 個/.test(document.getElementById('artCover').textContent)`), await evl(`document.getElementById('artCover').textContent`));
+  await click('#artBody .art-more');
+  chk('展開分析：顯示句子卡片', await until(`!!document.querySelector('#artBody .art-detail:not([hidden]) article.sent')`));
+
+  section('改名與刪除');
+  await click('#artRename');
+  await type('#artNewName', '第一課');
+  await click('#artRenameOk');
+  chk('改名後標題更新', await until(`document.getElementById('artTitle').textContent === '第一課'`));
+  await click('#artDelete');
+  chk('刪除要按兩次（第一次只是確認）', await evl(`document.getElementById('artDelete').dataset.armed === '1'`) && (await S.j('/api/articles')).json.articles.length === 2);
+  await click('#artDelete');
+  chk('第二次才真的刪除，回到清單', await until(`document.querySelectorAll('#artList .art-card').length === 1`) && (await S.j('/api/articles')).json.articles.length === 1);
+
+  section('其他');
+  chk('沒有 JS 錯誤', page.errors.length === 0, page.errors.join(' | '));
+  await page.shot('articles-ui.png');
+  code = done();
+} catch (e) {
+  console.log('ERR', e.stack || e.message); code = 1;
+} finally {
+  try { page?.close(); } catch {}
+  // finish() 會 process.exit，所以把結果碼先存好
+  const c = code;
+  process.exitCode = c;
+  await shutdown().catch(() => {});
+}

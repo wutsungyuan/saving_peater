@@ -18,11 +18,15 @@ fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
   API = h;
   updateCount();
   loadSampleCounts();
+  if (typeof refreshArticleNames === 'function') refreshArticleNames();     // articles.js 在後面載入，這裡已經是非同步，一定有了
   hintEl.textContent = h.authRequired && !TOKEN
     ? '這個後端需要存取權杖。請用帶有 ?token=… 的網址開啟。'
     : `已連上分析後端（${h.model}）。可貼上一句話或一段文章，上限 ${h.maxChars} 字 / ${h.maxSentences} 句。`;
 }).catch(() => {
   API = false;
+  // 文章表要存在後端，展示模式用不到：藏起來，不要讓人以為可以用
+  document.getElementById('artNameRow')?.setAttribute('hidden', '');
+  document.getElementById('anTabs')?.setAttribute('hidden', '');
   hintEl.textContent = '展示模式：沒有連上後端，請點下方範例標籤。要分析任意輸入請在本機執行 npm start。';
   // 這三個分頁在展示模式下沒有資料可用，明確標出來，不要讓人以為點不動
   for (const v of ['words', 'practice', 'weak', 'history']){
@@ -43,7 +47,9 @@ function placeholder(index, original, state){
     <div class="body"><p class="line">${esc(original)}</p></div></article>`;
 }
 
-async function analyzeLive(text){
+/** opts.article：文章模式（上限較高，存文章表用）。回傳 { total, done, failed, halted, truncated, interrupted, error }，
+ *  呼叫端（例如存成文章表）靠它判斷是不是全部都分析成功。 */
+async function analyzeLive(text, opts = {}){
   curKind = null;                   // 分析自己的句子時不是在看範例
   goBtn.disabled = true;
   Spk.stop();
@@ -51,6 +57,7 @@ async function analyzeLive(text){
   out.innerHTML = '<p class="msg">斷句中…</p>';
   const t0 = Date.now();
   let total = 0, done = 0, gotDone = false;
+  const summary = { total: 0, done: false, failed: 0, halted: null, truncated: false, interrupted: false, error: null };
   const slots = new Map();
   const settled = new Set();      // 已有結果（成功或失敗）的句子
 
@@ -72,16 +79,17 @@ async function analyzeLive(text){
       method: 'POST',
       signal: ctrl.signal,
       headers: { 'content-type': 'application/json', ...(TOKEN ? { 'x-auth-token': TOKEN } : {}) },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, article: opts.article === true }),
     });
     if (!res.ok){
       const e = await res.json().catch(() => ({}));
+      summary.error = e.error || String(res.status);
       out.innerHTML = `<p class="msg">${esc(
         e.error === 'too long' ? `文章太長了（${e.got} 字），目前上限 ${e.maxChars} 字。請分批貼上。` :
         e.error === 'empty' ? '請先輸入英文。' :
         res.status === 401 ? '存取權杖不正確或未提供。請用帶有 ?token=… 的網址開啟。' :
         '分析失敗：' + (e.error || res.status))}</p>`;
-      return;
+      return summary;
     }
 
     const reader = res.body.getReader();
@@ -108,6 +116,7 @@ async function analyzeLive(text){
 
         if (ev === 'meta'){
           total = d.total;
+          summary.total = d.total; summary.truncated = Boolean(d.truncated);
           for (let i = 0; i < total; i++) slots.set(i, placeholder(i, '', '分析中'));
           paint();
           hintEl.textContent = d.truncated
@@ -118,6 +127,7 @@ async function analyzeLive(text){
           settled.add(d.index);
           paint();
         } else if (ev === 'failed'){
+          summary.failed++;
           slots.set(d.index, `<article class="sent"><div class="badges">
             <span class="badge idx">${d.index + 1}</span><span class="badge warn">分析失敗</span></div>
             <div class="body"><p class="line">${esc(d.original)}</p>
@@ -125,6 +135,7 @@ async function analyzeLive(text){
           settled.add(d.index);
           paint();
         } else if (ev === 'halted'){
+          summary.halted = d.kind;
           const msg = d.kind === 'rate-limit'
             ? 'Claude 訂閱額度似乎已用盡，剩下的句子沒有送出。等額度重置後再試，已完成的句子仍會保留在快取。'
             : 'Claude 認證失效。請在終端機執行 claude 重新登入後再試。';
@@ -137,22 +148,25 @@ async function analyzeLive(text){
           done = d.done;
           hintEl.textContent = `分析中 ${done} / ${d.total} 句…`;
         } else if (ev === 'done'){
-          gotDone = true;
+          gotDone = true; summary.done = true;
           showUsage(d);
           hintEl.textContent = '可以再貼新的一段，或切到「句子練習」從這些句子出題。';
         }
       }
     }
     if (!gotDone && total && settled.size < total){
+      summary.interrupted = true;
       markUnfinished(slots, settled, total, '分析被中斷');
       paint();
-      showInterrupted(total - settled.size, text);
+      showInterrupted(total - settled.size, text, opts);
     }
   } catch (e){
+    summary.error = e.message;
     if (total && settled.size < total){
+      summary.interrupted = true;
       markUnfinished(slots, settled, total, '分析中斷');
       paint();
-      showInterrupted(total - settled.size, text);
+      showInterrupted(total - settled.size, text, opts);
     } else {
       out.innerHTML = `<p class="msg">連線失敗：${esc(e.message)}。` +
         `請確認後端有在執行（npm start）後再試一次。</p>`;
@@ -161,6 +175,7 @@ async function analyzeLive(text){
     try { ctrl.abort(); } catch { /* 釋放連線，失敗無妨 */ }
     goBtn.disabled = false;
   }
+  return summary;
 }
 
 /** 把還在轉圈的句子換成「未完成」狀態，不要讓它永遠轉下去 */
@@ -175,18 +190,21 @@ function markUnfinished(slots, settled, total, reason){
   }
 }
 
-function showInterrupted(n, text){
+function showInterrupted(n, text, opts = {}){
   usageBar.innerHTML = `<span class="u halt"><b>⚠</b> 分析在完成前中斷，還有 ${n} 句沒有結果。</span>
     <span class="note">最常見的原因是後端重新啟動或停止。已完成的句子都存進快取了，
       按「重新分析」只會處理剩下那幾句。</span>
     <button class="retry" type="button">重新分析</button>`;
   usageBar.hidden = false;
-  usageBar.querySelector('.retry')?.addEventListener('click', () => analyzeLive(text));
+  // 存文章表的分析中斷時，重試要連「存成文章表」一起做（opts.retry 由 articles.js 提供）
+  usageBar.querySelector('.retry')?.addEventListener('click', () => (opts.retry ? opts.retry() : analyzeLive(text, opts)));
 }
 
 goBtn.addEventListener('click', () => {
   const text = inpEl.value.trim();
   if (!text) return;
+  // 填了文章名稱 → 存成文章表（流程在 articles.js）；沒填就是原本的分析
+  if (API && typeof articleNameValue === 'function' && articleNameValue()){ analyzeAsArticle(articleNameValue(), text); return; }
   if (API){ analyzeLive(text); return; }
   // 展示模式：比對內建範例
   const norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
