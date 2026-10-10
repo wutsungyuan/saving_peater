@@ -21,6 +21,10 @@ export const CONCURRENCY = Number(process.env.CONCURRENCY || 6);
 export const HOST = process.env.HOST || '127.0.0.1';
 export const AUTH_TOKEN = process.env.AUTH_TOKEN || '';
 export const HISTORY_DAYS = Number(process.env.HISTORY_DAYS || 30);
+// 測驗卷歷史（快取性質）：保留天數與份數，先到者為準；題庫（模型出的題）設上限
+export const PAPER_DAYS = Number(process.env.PAPER_DAYS || 30);
+export const PAPER_KEEP = Number(process.env.PAPER_KEEP || 20);
+export const QUESTION_MAX = Number(process.env.QUESTION_MAX || 500);
 export const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
 
 // DB_FILE 讓測試與開發分支可以用自己的資料庫，不碰正式資料

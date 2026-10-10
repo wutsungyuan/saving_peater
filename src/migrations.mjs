@@ -97,6 +97,61 @@ function baseline(db){
   addCol('word_attempts', 'is_fix', 'INTEGER DEFAULT 0');
 }
 
+/** 第 2 版：文章表。
+ *  文章表只存「句子的順序」：article_items 指向 sentences 表裡的分析結果（用 hash），
+ *  所以同一句出現在多篇文章或單字例句裡都不會重複分析、重複花錢。 */
+function articles(db){
+  db.exec(`
+    CREATE TABLE articles (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE article_items (
+      article_id INTEGER NOT NULL,
+      idx        INTEGER NOT NULL,           -- 在整份文章表裡的順序
+      para       INTEGER NOT NULL,           -- 段落編號（閱讀測驗與克漏字要用）
+      hash       TEXT NOT NULL,              -- sentences.hash
+      PRIMARY KEY (article_id, idx)
+    );
+    CREATE INDEX idx_article_items_hash ON article_items(hash);
+  `);
+}
+
+/** 第 3 版：測驗卷與題庫。
+ *  papers 是快取性質：帶到期時間，到期自動清除（歷史只用快取）。
+ *  questions 是題庫：模型出的題存起來重複用，不隨歷史清除（重出要花錢），改設上限淘汰。 */
+function papers(db){
+  db.exec(`
+    CREATE TABLE papers (
+      id           TEXT PRIMARY KEY,
+      created_at   INTEGER NOT NULL,
+      expires_at   INTEGER NOT NULL,
+      n            INTEGER NOT NULL,
+      settings     TEXT NOT NULL,            -- 範圍、難度、題型等出卷設定（JSON）
+      data         TEXT NOT NULL,            -- 題目（含答案）、作答、批改結果（JSON）
+      status       TEXT NOT NULL DEFAULT 'open',   -- open | submitted
+      score        REAL,
+      submitted_at INTEGER
+    );
+    CREATE INDEX idx_papers_time ON papers(created_at DESC);
+    CREATE TABLE questions (
+      id         TEXT PRIMARY KEY,
+      type       TEXT NOT NULL,              -- read | cloze-dist | mc | reorder | fix | trans ...
+      src        TEXT NOT NULL,              -- scope | ext-free | ext-model
+      ref        TEXT,                       -- 來源：文章 id 或字表 id 的組合鍵
+      anchors    TEXT,                       -- 延伸題依據的單字、句子或文章（JSON）
+      payload    TEXT NOT NULL,              -- 題目本體（JSON）
+      created_at INTEGER NOT NULL,
+      used       INTEGER NOT NULL DEFAULT 0,
+      wrong      INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX idx_questions_type ON questions(type, ref);
+  `);
+}
+
 export const MIGRATIONS = [
   { version: 1, name: 'baseline', up: baseline },
+  { version: 2, name: 'articles', up: articles },
+  { version: 3, name: 'papers-and-questions', up: papers },
 ];

@@ -99,7 +99,7 @@ const norm = s => String(s ?? '').trim().toLowerCase().replace(/\s+/g,' ').repla
 const cmp = s => norm(String(s ?? '').replace(/\./g, ''));
 
 /** 在例句裡找出這個字實際出現的形式（可能是變化形：teach → teaches） */
-function findForm(example, term){
+export function findForm(example, term){
   if (!example) return null;
   const t = term.trim();
   // 片語：把 ... 當萬用，整串寬鬆比對

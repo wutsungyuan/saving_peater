@@ -4,14 +4,15 @@
 
 import { createServer } from 'node:http';
 import { MODEL } from './analyzer.mjs';
-import { PORT, MAX_CHARS, MAX_SENTENCES, CONCURRENCY, HOST, AUTH_TOKEN, HISTORY_DAYS, isLoopback } from './config.mjs';
+import { PORT, MAX_CHARS, MAX_SENTENCES, CONCURRENCY, HOST, AUTH_TOKEN, HISTORY_DAYS, PAPER_KEEP, QUESTION_MAX, isLoopback } from './config.mjs';
 import { cache, seeded } from './context.mjs';
 import { serveStatic } from './http.mjs';
 import { routes as analyzeRoutes } from './routes/analyze.mjs';
 import { routes as practiceRoutes } from './routes/practice.mjs';
 import { routes as wordRoutes } from './routes/words.mjs';
+import { routes as articleRoutes } from './routes/articles.mjs';
 
-const ROUTES = [...analyzeRoutes, ...practiceRoutes, ...wordRoutes];
+const ROUTES = [...analyzeRoutes, ...practiceRoutes, ...wordRoutes, ...articleRoutes];
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -37,8 +38,11 @@ server.listen(PORT, HOST, () => {
   else console.log(`快取 ${cache.count()} 句`);
   const purged = cache.pruneHistory(HISTORY_DAYS);
   cache.pruneQuizzes(7);                       // 一週前的題目沒人會再交卷
+  // 測驗卷歷史是快取：過期或超過最近 20 份就清掉；題庫（模型出的題）不隨歷史清，只設上限
+  const prunePapers = () => { cache.prunePapers({ keep: PAPER_KEEP }); cache.pruneQuestions(QUESTION_MAX); };
+  prunePapers();
   if (purged) console.log(`已清掉 ${purged} 筆超過 ${HISTORY_DAYS} 天的歷史原文`);
-  setInterval(() => { cache.pruneHistory(HISTORY_DAYS); cache.pruneQuizzes(7); }, 6 * 3600_000).unref();
+  setInterval(() => { cache.pruneHistory(HISTORY_DAYS); cache.pruneQuizzes(7); prunePapers(); }, 6 * 3600_000).unref();
   console.log(`分析由本機 claude CLI 執行，額度計入這台機器登入的 Claude 帳號。`);
   console.log(`歷史原文保留 ${HISTORY_DAYS} 天後自動清除（分析快取不受影響）。`);
   console.log(`訂閱額度請在 Claude app → Settings → Usage 查看（CLI 沒有提供查詢介面）。`);

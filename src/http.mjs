@@ -13,6 +13,12 @@ export const readBody = (req, limit = 1e6) => new Promise((resolve, reject) => {
   req.on('error', reject);
 });
 
+/** 回 JSON。新路由用這個，舊路由還是各自 writeHead（逐字搬移，不動）。 */
+export function sendJson(res, status, obj){
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(obj));
+}
+
 /** 併發池：固定 n 個 worker 取任務，先完成先回報 */
 export async function pool(items, n, fn){
   let next = 0;
