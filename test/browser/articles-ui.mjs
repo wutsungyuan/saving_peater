@@ -105,7 +105,16 @@ try {
   await p3.wait(2500);
   chk('輸入後重新載入：輸入框消失、存取碼被記住', await p3.evl(`!document.getElementById('tokenBanner') && localStorage.getItem('analyzer-token') === 'secret123'`));
   chk('之後的請求有帶存取碼（提示變成已連上）', await p3.until(`/已連上分析後端/.test(document.getElementById('inp-hint').textContent)`));
+  await p3.evl(`fetch('/api/stats').then(r => { window.__st = r.status; })`);
+  chk('頁面自己發的 /api/ 請求會自動帶存取碼（唯讀 API 也要驗證）', await p3.until(`window.__st === 200`));
+  await p3.click('.tabs button[data-view="history"]'); await p3.wait(800);
+  chk('歷史頁讀得到資料、沒有跳出輸入框', await p3.evl(`!document.getElementById('tokenBanner') && document.getElementById('view-history') && !document.getElementById('view-history').hidden`));
   p3.close();
+  const p5 = await openPage(S3.base + '/', { width: 420, height: 900, settle: 2000 });      // 另一個沒存過存取碼的瀏覽器
+  await p5.evl(`localStorage.clear()`); await p5.send('Page.reload'); await p5.wait(2500);
+  await p5.evl(`fetch('/api/history').then(r => { window.__h = r.status; })`);
+  chk('沒帶存取碼讀歷史 → 401，並跳出輸入框', await p5.until(`window.__h === 401 && !!document.getElementById('tokenBanner') && !document.getElementById('tokenBanner').hidden`));
+  p5.close();
 
   section('分析中：明顯提示不要離開；中途離開 → 下次提示接續');
   const S2 = await start('ui-articles-slow', { FAKE_DELAY_MS: '1500' });

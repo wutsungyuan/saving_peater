@@ -18,6 +18,7 @@ export const routes = [
     handler: async (req, res, url) => {
       const userToken = String(url.searchParams.get('user') || 'anon').slice(0, 64);
       if (req.method === 'GET'){
+        if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
         res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ sets: cache.wordsets(userToken) }));
       }
@@ -134,6 +135,7 @@ export const routes = [
     handler: async (req, res, url) => {
       const userToken = String(url.searchParams.get('user') || 'anon').slice(0, 64);
       const ids = setIdList(url.searchParams.get('ids'), url.searchParams.get('id'));
+      if (req.method === 'GET' && !authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       const words = cache.wordsOf(ids, userToken);
       // 逐句標出例句分析過沒有，清單上的「分析」鍵才知道要顯示成哪一種

@@ -31,6 +31,21 @@ function showTokenBanner(msg){
   b.hidden = false;
 }
 
+// 同網域的 /api/ 請求一律自動帶存取碼；收到 401 就跳出輸入框。這樣每個頁面（單字、歷史、弱點…）
+// 不必各自記得帶，也不會因為忘了帶而讀不到資料。
+const _fetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => {
+  const url = typeof input === 'string' ? input : input?.url || '';
+  if (!url.startsWith('/api/') || !TOKEN) return _fetch(input, init).then(noteUnauthorized(url));
+  const headers = new Headers(init.headers || {});
+  if (!headers.has('x-auth-token')) headers.set('x-auth-token', TOKEN);
+  return _fetch(input, { ...init, headers }).then(noteUnauthorized(url));
+};
+const noteUnauthorized = url => res => {
+  if (res.status === 401 && url.startsWith('/api/')) showTokenBanner(TOKEN ? '存取碼不對，請重新輸入。' : '這個網站需要存取碼才能使用。請輸入存取碼（只要輸入一次，這個瀏覽器會記住）。');
+  return res;
+};
+
 fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
   API = h;
   updateCount();

@@ -204,6 +204,9 @@ try {
     ['POST', '/api/wordsets', { text: 'apple' }], ['DELETE', '/api/wordsets?ids=1', undefined],
     ['POST', '/api/wordset-ocr', { image: 'x' }], ['POST', '/api/wordset-analyze', { setIds: [999999] }],
     ['POST', '/api/wordquiz', { setIds: [1] }], ['POST', '/api/wordattempts', { quizId: 'x', answers: {} }],
+    // 唯讀的也要驗證（歷史、統計、弱點、單字表內容都是學習紀錄）；health 與 samples 維持公開
+    ['GET', '/api/history', undefined], ['GET', '/api/history?id=1', undefined], ['GET', '/api/stats', undefined],
+    ['GET', '/api/weakness?user=anon', undefined], ['GET', '/api/wordsets?user=anon', undefined], ['GET', '/api/wordset?ids=1&user=anon', undefined],
   ];
   const A = authed ?? (authed = await start({ AUTH_TOKEN: 'sekret' }));
   for (const [method, path, body] of ALL) {
@@ -211,6 +214,8 @@ try {
     chk(`${method} ${path.split('?')[0]} 沒帶 token → 401`, x.status === 401, `status ${x.status}`);
   }
   const H = { 'x-auth-token': 'sekret' };
+  for (const p of ['/api/health', '/api/samples']) chk(`GET ${p} 維持公開（頁面一開就要用）`, (await J(A.base, p)).status === 200);
+  for (const p of ['/api/history', '/api/stats', '/api/weakness?user=anon', '/api/wordsets?user=anon']) chk(`GET ${p} 帶 token → 200`, (await J(A.base, p, { headers: H })).status === 200);
   let x = await J(A.base, '/api/analyze-ocr', { method: 'POST', body: { image: 'x' }, headers: H });
   chk('analyze-ocr 圖片不合 → 400（不碰模型）', x.status === 400 && x.json.error === 'bad-image', x.text.slice(0, 100));
   x = await J(A.base, '/api/wordset-ocr', { method: 'POST', body: { image: 'x' }, headers: H });

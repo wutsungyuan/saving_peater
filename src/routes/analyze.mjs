@@ -226,6 +226,7 @@ export const routes = [
   {
     match: (req, url) => url.pathname === '/api/history',
     handler: async (req, res, url) => {
+      if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
       const id = url.searchParams.get('id');
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       if (id) return res.end(JSON.stringify({ text: cache.historyText(Number(id)) }));
@@ -239,6 +240,7 @@ export const routes = [
   {
     match: (req, url) => url.pathname === '/api/stats',
     handler: async (req, res, url) => {
+      if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify(cache.stats(), null, 2));
     },
