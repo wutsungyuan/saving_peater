@@ -205,7 +205,12 @@ export async function runModelWork(cache, pool, tasks, { capUsd } = {}){
       const t0 = Date.now();
       let res;
       try { res = await callExam(requestOf(task, pool, retry), { maxBudgetUsd: capUsd }); }
-      catch (e){ sum.error = { kind: e.kind || 'other', message: String(e.message).slice(0, 300) }; if (e.kind === 'rate-limit' || e.kind === 'auth') return sum; break; }
+      catch (e){
+        sum.error = { kind: e.kind || 'other', message: String(e.message).slice(0, 300) };
+        if (e.kind === 'rate-limit' || e.kind === 'auth') return sum;
+        if (e.kind === 'parse' && round === 0) continue;                // 模型偶爾格式跑掉：同一份工作再問一次
+        break;
+      }
       const r = ingest(cache, task, res.data, pool);
       sum.calls++; sum.added += r.added; sum.dropped += r.dropped.length; sum.costUsd += res.usage.costUsd;
       cache.log({ kind: 'paper-gen', chars: 0, sentences: r.added, cached: 0, analyzed: r.added, ms: Date.now() - t0, text: `題庫 ${task.kind}（${r.added} 題入庫，${r.dropped.length} 題被擋）`, ...res.usage });

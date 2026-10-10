@@ -68,6 +68,19 @@ export function classifyError(message){
 const sumUsage = (a = {}, b = {}) => Object.fromEntries(
   ['input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'].map(k => [k, (a[k] ?? 0) + (b[k] ?? 0)]));
 
+/** 從 start 開始取出第一個括號配對完整的 JSON 物件（字串裡的括號不算）；找不到回 null */
+function firstObject(s, start){
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < s.length; i++){
+    const c = s[i];
+    if (inStr){ if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) return s.slice(start, i + 1);
+  }
+  return null;
+}
+
 /** 容錯解析：去掉可能的 markdown fence、抓第一個 JSON 物件 */
 export function parseModelJson(text) {
   let s = text.trim();
@@ -75,7 +88,11 @@ export function parseModelJson(text) {
   try { return JSON.parse(s); } catch { /* 繼續嘗試 */ }
   const start = s.indexOf('{');
   const end = s.lastIndexOf('}');
-  if (start !== -1 && end > start) return JSON.parse(s.slice(start, end + 1));
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(s.slice(start, end + 1)); } catch { /* 可能有兩個物件或後面多了文字：取第一個完整的 */ }
+    const first = firstObject(s, start);
+    if (first) return JSON.parse(first);
+  }
   throw new Error(`無法解析為 JSON: ${s.slice(0, 300)}`);
 }
 

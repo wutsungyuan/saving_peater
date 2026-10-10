@@ -270,7 +270,9 @@ function candExtFree(type, pool, rng){
   const scopeZh = [...new Set(pool.words.filter(hasZh).flatMap(w => sensesZh(w).map(s => s.zh)))];
   const base = e => ({ src: 'ext-free', meta: { key: `e${lc(e.term)}`, anchors: [{ word: e.from, rel: e.rel }], stat: null } });
   if (type === 'mc') return ext.map(e => {
-    const wrong = shuffle([...scopeZh, ...ext.map(x => x.zh)]).filter(z => z !== e.zh);
+    // 干擾項不能和答案太像：中文有共同的兩個字以上（親切地／親切；善意）就會有兩個都說得通
+    const alike = z => { for (let i = 0; i + 2 <= e.zh.length; i++) if (z.includes(e.zh.slice(i, i + 2))) return true; return false; };
+    const wrong = shuffle([...scopeZh, ...ext.map(x => x.zh)]).filter(z => z !== e.zh && !alike(z));
     const d = [...new Set(wrong)].slice(0, 3); if (d.length < 3) return null;
     const b = base(e);
     return { type: 'mc', skill: 'word-ext', inputMode: 'choice', prompt: `「${e.term}」是什麼意思？`, question: e.term, hint: e.pos,
