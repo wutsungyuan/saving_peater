@@ -11,8 +11,9 @@ import { routes as analyzeRoutes } from './routes/analyze.mjs';
 import { routes as practiceRoutes } from './routes/practice.mjs';
 import { routes as wordRoutes } from './routes/words.mjs';
 import { routes as articleRoutes } from './routes/articles.mjs';
+import { routes as paperRoutes } from './routes/papers.mjs';
 
-const ROUTES = [...analyzeRoutes, ...practiceRoutes, ...wordRoutes, ...articleRoutes];
+const ROUTES = [...analyzeRoutes, ...practiceRoutes, ...wordRoutes, ...articleRoutes, ...paperRoutes];
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);

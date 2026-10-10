@@ -425,10 +425,13 @@ export function supplyOf(pool, rng, { clozeSemantic = [] } = {}){
  */
 export function generateType(type, n, pool, rng, { ext = 0, extFree = 0, modelItems = [], clozeSemantic = [] } = {}){
   const { shuffle } = mk(rng);
-  if (type === 'wbank'){ const r = buildWordBank(pool, n, rng); return r ? { questions: r.questions, passages: [r.passage] } : { questions: [], passages: [] }; }
-  if (type === 'cloze'){ const r = buildCloze(pool, n, rng, clozeSemantic); return r ? { questions: r.questions, passages: [r.passage] } : { questions: [], passages: [] }; }
+  if (type === 'wbank'){ const r = buildWordBank(pool, n, rng); return r ? { questions: r.questions, passages: [r.passage], ext: 0, extFree: 0 } : { questions: [], passages: [], ext: 0, extFree: 0 }; }
+  if (type === 'cloze'){ const r = buildCloze(pool, n, rng, clozeSemantic); return r ? { questions: r.questions, passages: [r.passage], ext: 0, extFree: 0 } : { questions: [], passages: [], ext: 0, extFree: 0 }; }
 
-  const scopeN = Math.max(0, n - ext);
+  // 延伸題先定下來：免費延伸 + 呼叫端備好的模型延伸。湊不到的部分改用範圍內的題目補，題數不能少。
+  const free = extFree ? sample(candExtFree(type, pool, rng), extFree, rng) : [];
+  const model = modelItems.slice(0, Math.max(0, ext - free.length));
+  const scopeN = Math.max(0, n - free.length - model.length);
   let scope = [];
   if (type === 'mc'){
     // 單字與文法各一半；只有一種素材就全出那一種
@@ -439,9 +442,8 @@ export function generateType(type, n, pool, rng, { ext = 0, extFree = 0, modelIt
   } else scope = sample(CANDS[type](pool, rng), scopeN, rng);
   if (type === 'match') scope = finishMatch(scope, pool, rng);
 
-  const free = extFree ? sample(candExtFree(type, pool, rng), extFree, rng) : [];
-  const model = modelItems.slice(0, Math.max(0, ext - free.length));
   let questions = shuffle([...scope, ...free, ...model]);
   if (type === 'match' && free.length) questions = finishMatch(questions.map(q => ({ ...q, choices: null })), pool, rng);
-  return { questions, passages: [] };
+  // 回報實際延伸了幾題（可能比要求的少：免費延伸字不夠、模型題還沒有）
+  return { questions, passages: [], ext: free.length + model.length, extFree: free.length };
 }
