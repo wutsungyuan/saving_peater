@@ -28,7 +28,9 @@ const AUTH_TOKEN = process.env.AUTH_TOKEN || '';
 const HISTORY_DAYS = Number(process.env.HISTORY_DAYS || 30);
 const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
 
-const cache = openCache(join(ROOT, 'data', 'cache.db'));
+// DB_FILE 讓測試與開發分支可以用自己的資料庫，不碰正式資料
+const DB_FILE = process.env.DB_FILE || join(ROOT, 'data', 'cache.db');
+const cache = openCache(DB_FILE);
 const seeded = autoSeed(cache);
 // 題目（含答案）存進 SQLite，不放記憶體 —— 伺服器重啟時，
 // 作答到一半的人才不會按交卷就看到「這份測驗已失效」。
@@ -600,6 +602,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && url.pathname === '/api/wordquiz'){
+      if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
       let b = {};
       try { b = JSON.parse(await readBody(req)) || {}; } catch {}
       const userToken = String(b.userToken || 'anon').slice(0, 64);
@@ -636,6 +639,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && url.pathname === '/api/wordattempts'){
+      if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
       let b = {};
       try { b = JSON.parse(await readBody(req)) || {}; } catch {}
       const quiz = cache.getQuiz(b.quizId);
