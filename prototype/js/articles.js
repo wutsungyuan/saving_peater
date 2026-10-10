@@ -56,7 +56,8 @@ async function analyzeAsArticle(name, text){
     <button class="retry" type="button" id="artGo">開始分析並存成文章表</button>
     <button class="linky" type="button" id="artNo">取消</button>`;
   usageBar.hidden = false;
-  hintEl.textContent = `「${name}」：${p.total} 句，等你確認。`;
+  hintEl.textContent = `「${name}」：${p.total} 句。要先看過下方的報價，按「開始分析並存成文章表」才會呼叫模型。`;
+  usageBar.scrollIntoView({ block: 'center', behavior: 'smooth' });
   el('artNo').onclick = () => { usageBar.hidden = true; hintEl.textContent = '已取消，沒有呼叫模型。'; };
   el('artGo').onclick = () => { usageBar.hidden = true; run(); };
 }
