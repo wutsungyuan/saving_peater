@@ -63,9 +63,20 @@ async function analyzeAsArticle(name, text){
   el('artGo').onclick = () => { box.hidden = true; run(); };
 }
 
+// ---- 分析到一半離開：記下來，下次進來提示可以接續 ----
+const PENDING_KEY = 'analyzer-art-pending';
+const setPending = v => { try { v ? localStorage.setItem(PENDING_KEY, JSON.stringify(v)) : localStorage.removeItem(PENDING_KEY); } catch {} };
+const getPending = () => { try { return JSON.parse(localStorage.getItem(PENDING_KEY) || 'null'); } catch { return null; } };
+const leaveWarn = e => { e.preventDefault(); e.returnValue = ''; };
+
 async function runArticle(name, text){
-  const s = await analyzeLive(text, { article: true, retry: () => runArticle(name, text) });
-  if (s.truncated){ hintEl.textContent = '文章超過上限，沒有存成文章表。請分批貼上。'; return; }
+  setPending({ name, text, at: Date.now() });
+  window.addEventListener('beforeunload', leaveWarn);
+  anBusy(true, '文章分析中，請不要離開這個畫面', '離開或切到別的 app 會中斷分析（已分析好的句子會保留，之後可以接續）');
+  let s;
+  try { s = await analyzeLive(text, { article: true, retry: () => runArticle(name, text) }); }
+  finally { anBusy(false); window.removeEventListener('beforeunload', leaveWarn); }
+  if (s.truncated){ setPending(null); hintEl.textContent = '文章超過上限，沒有存成文章表。請分批貼上。'; return; }
   if (s.error || s.halted || s.interrupted || s.failed || !s.done){
     hintEl.textContent = s.failed ? `有 ${s.failed} 句分析失敗，沒有存成文章表。重新分析會只處理失敗的句子。`
       : '分析沒有完成，所以沒有存成文章表。已完成的句子都在快取裡，重新分析只會處理剩下的。';
@@ -76,6 +87,7 @@ async function runArticle(name, text){
     hintEl.textContent = r.json.message || ('存成文章表失敗：' + (r.json.error || r.status));
     return;
   }
+  setPending(null);
   const d = r.json;
   hintEl.innerHTML = `已${d.appended ? '附加到' : '存成'}文章表「${esc(d.name)}」：新增 ${d.added} 句` +
     `${d.skipped ? `（略過重複的 ${d.skipped} 句）` : ''}，共 ${d.total} 句。 ` +
@@ -194,3 +206,18 @@ el('artDelete').addEventListener('click', async e => {
   const r = await artApi(`/api/articles?ids=${artCurrent}`, { method: 'DELETE' });
   if (r.ok){ artCurrent = null; el('artView').hidden = true; el('artList').hidden = false; await loadArticles(); await refreshArticleNames(); }
 });
+
+// ---- 上次分析沒完成：提示接續 ----
+function showPendingNotice(){
+  const p = getPending(), box = el('artConfirm');
+  if (!p || !box || !box.hidden) return;
+  const n = (p.text.match(/[.!?](s|$)/g) || []).length;
+  box.innerHTML = `<p class="ac-title">上次「${esc(p.name)}」的分析沒有完成（約 ${n} 句）。</p>
+    <p class="hint">已經分析好的句子還在，接續只會處理剩下的，也會先給你看報價。</p>
+    <div class="row"><button class="primary" type="button" id="artResume">按此繼續</button>
+    <button class="linky" type="button" id="artDrop">放棄</button></div>`;
+  box.hidden = false;
+  el('artResume').onclick = () => { box.hidden = true; el('inp').value = p.text; if (typeof updateCount === 'function') updateCount(); el('artName').value = p.name; analyzeAsArticle(p.name, p.text); };
+  el('artDrop').onclick = () => { setPending(null); box.hidden = true; };
+}
+showPendingNotice();

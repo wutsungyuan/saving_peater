@@ -81,6 +81,27 @@ try {
   section('其他');
   chk('沒有 JS 錯誤', page.errors.length === 0, page.errors.join(' | '));
   await page.shot('articles-ui.png');
+
+  section('分析中：明顯提示不要離開；中途離開 → 下次提示接續');
+  const S2 = await start('ui-articles-slow', { FAKE_DELAY_MS: '1500' });
+  const p2 = await openPage(S2.base + '/', { width: 1000, height: 1100, settle: 2500 });
+  await p2.click('.tabs button[data-view="analyze"]'); await p2.wait(300);
+  await p2.type('#inp', 'I like tea. We eat lunch. They read books. She sings well.');
+  await p2.type('#artName', '離開測試');
+  await p2.click('#go');
+  await p2.until(`!!document.getElementById('artGo')`);
+  await p2.click('#artGo');
+  chk('輸入框上蓋著「文章分析中，請不要離開」', await p2.until(`!document.getElementById('anBusy').hidden && /請不要離開/.test(document.getElementById('anBusyMain').textContent)`), await p2.evl(`document.getElementById('anBusyMain').textContent`));
+  chk('記下「分析未完成」', await p2.evl(`!!localStorage.getItem('analyzer-art-pending')`));
+  await p2.send('Page.reload'); await p2.wait(2500);
+  chk('重新整理（離開）後：提示「上次分析沒有完成」與「按此繼續」', await p2.until(`!document.getElementById('artConfirm').hidden && /沒有完成/.test(document.getElementById('artConfirm').textContent) && !!document.getElementById('artResume')`), await p2.evl(`document.getElementById('artConfirm').textContent`));
+  await p2.click('.tabs button[data-view="analyze"]');
+  await p2.click('#artResume');
+  chk('按「按此繼續」：文字與名稱帶回來（還有句子沒分析就先給報價；伺服器已跑完就直接存）', await p2.until(`(!!document.getElementById('artGo') || /已存成文章表/.test(document.getElementById('inp-hint').textContent)) && document.getElementById('artName').value === '離開測試' && /tea/.test(document.getElementById('inp').value)`), await p2.evl(`document.getElementById('inp-hint').textContent + '|' + document.getElementById('artName').value + '|' + document.getElementById('inp').value.slice(0,30)`));
+  if (await p2.evl(`!!document.getElementById('artGo') && !document.getElementById('artConfirm').hidden`)) await p2.click('#artGo');
+  chk('跑完存成文章表後，未完成的記號清掉', await p2.until(`/已存成文章表/.test(document.getElementById('inp-hint').textContent) && !localStorage.getItem('analyzer-art-pending')`, 30000), await p2.evl(`document.getElementById('inp-hint').textContent`));
+  chk('分析結束後蓋板拿掉', await p2.evl(`document.getElementById('anBusy').hidden`));
+  p2.close();
   code = done();
 } catch (e) {
   console.log('ERR', e.stack || e.message); code = 1;
