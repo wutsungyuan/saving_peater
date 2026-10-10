@@ -309,7 +309,7 @@ function layoutPosLabels(){
       if (!r.width) continue;                                    // 隱藏的虛詞標籤不參與排版
       if (lastTop === null || Math.abs(r.top - lastTop) > 6) rowRight = [-Infinity, -Infinity]; // 換行就重置
       lastTop = r.top;
-      const row = r.left < rowRight[0] + 2 ? 1 : 0;
+      const row = r.left < rowRight[0] + 6 ? 1 : 0;           // 兩個標籤之間至少留 6px，否則會黏成一個（v°art）
       if (row === 1){ l.classList.add('lower'); anyLower = true; }
       rowRight[row] = r.right;
     }

@@ -1,0 +1,192 @@
+{
+ "index": 1,
+ "original": "Our teacher, Ms. Jobs, is a four-time winner of the Taiwan Video Game Contest.",
+ "translation": "我們的老師賈伯斯女士曾四度贏得台灣電玩遊戲大賽。",
+ "words": [
+  {
+   "text": "Our",
+   "pos": "pron",
+   "case": "possessive",
+   "start": 0,
+   "end": 3
+  },
+  {
+   "text": "teacher",
+   "pos": "n",
+   "start": 4,
+   "end": 11
+  },
+  {
+   "text": "Ms",
+   "pos": "n",
+   "start": 13,
+   "end": 15
+  },
+  {
+   "text": "Jobs",
+   "pos": "n",
+   "start": 17,
+   "end": 21
+  },
+  {
+   "text": "is",
+   "pos": "v",
+   "start": 23,
+   "end": 25
+  },
+  {
+   "text": "a",
+   "pos": "art",
+   "start": 26,
+   "end": 27
+  },
+  {
+   "text": "four-time",
+   "pos": "adj",
+   "start": 28,
+   "end": 37
+  },
+  {
+   "text": "winner",
+   "pos": "n",
+   "start": 38,
+   "end": 44
+  },
+  {
+   "text": "of",
+   "pos": "prep",
+   "start": 45,
+   "end": 47
+  },
+  {
+   "text": "the",
+   "pos": "art",
+   "start": 48,
+   "end": 51
+  },
+  {
+   "text": "Taiwan",
+   "pos": "n",
+   "start": 52,
+   "end": 58
+  },
+  {
+   "text": "Video",
+   "pos": "n",
+   "start": 59,
+   "end": 64
+  },
+  {
+   "text": "Game",
+   "pos": "n",
+   "start": 65,
+   "end": 69
+  },
+  {
+   "text": "Contest",
+   "pos": "n",
+   "start": 70,
+   "end": 77
+  }
+ ],
+ "clauses": [
+  {
+   "text": "Our teacher, Ms. Jobs, is a four-time winner of the Taiwan Video Game Contest",
+   "role": "main",
+   "connector": null,
+   "pattern": {
+    "id": 2,
+    "label": "S + V + C",
+    "name": "句型二"
+   },
+   "constituents": [
+    {
+     "text": "Our teacher",
+     "role": "S",
+     "start": 0,
+     "end": 11
+    },
+    {
+     "text": "Ms. Jobs",
+     "role": "M-other",
+     "start": 13,
+     "end": 21
+    },
+    {
+     "text": "is",
+     "role": "V",
+     "start": 23,
+     "end": 25
+    },
+    {
+     "text": "a four-time winner",
+     "role": "C",
+     "start": 26,
+     "end": 44
+    },
+    {
+     "text": "of the Taiwan Video Game Contest",
+     "role": "M-other",
+     "start": 45,
+     "end": 77
+    }
+   ],
+   "tense": {
+    "time": "present",
+    "aspect": "simple",
+    "label": "現在簡單式",
+    "formula": "S + am/is/are + …",
+    "evidence": [
+     "is"
+    ],
+    "inScope": true
+   },
+   "verb": {
+    "lemma": "be",
+    "form": "is",
+    "irregular": true,
+    "forms": {
+     "base": "be",
+     "past": "was / were",
+     "pastParticiple": "been",
+     "ing": "being",
+     "third": "is"
+    }
+   },
+   "alignment": {
+    "ok": true,
+    "failures": []
+   }
+  }
+ ],
+ "wordOrder": {
+  "主": "Our teacher",
+  "動": "is",
+  "賓": "a four-time winner",
+  "方": null,
+  "地": null,
+  "時": null
+ },
+ "notes": [
+  {
+   "type": "tip",
+   "errorCode": null,
+   "span": "Ms. Jobs",
+   "message": "兩個逗號夾住的 Ms. Jobs 是「同位語」，用來補充說明 Our teacher 是誰，拿掉也不影響句型。主幹是 Our teacher is a four-time winner：老師 = 得主，所以是句型二。",
+   "correction": null
+  },
+  {
+   "type": "tip",
+   "errorCode": null,
+   "span": "a four-time winner",
+   "message": "four-time 是用連字號連起來的複合形容詞，意思是「四次的」，放在名詞前面時 time 不加 s（× four-times winner）。",
+   "correction": null
+  }
+ ],
+ "inScope": true,
+ "issue": null,
+ "wordAlignment": {
+  "ok": true,
+  "failures": []
+ }
+}

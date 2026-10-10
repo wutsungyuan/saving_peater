@@ -408,7 +408,7 @@ body:not(.has-speech) .say, body:not(.has-speech) .sayx{display:none}
 .w[data-pos="adj"] .plbl,.w[data-pos="adv"] .plbl{font-size:.92rem}
 .plbl.lower{top:calc(100% + 26px)}
 .plbl.lower::before{content:'';position:absolute;left:50%;top:-13px;width:1px;height:11px;background:currentColor;opacity:.4}
-.line.has-lower{line-height:4.05;padding-bottom:20px}
+.line.has-lower{line-height:4.4;padding-bottom:20px}
 .w[data-pos="adj"] .plbl{color:var(--pos-adj)}
 .w[data-pos="adv"] .plbl{color:var(--pos-adv)}
 .w:hover,.w:focus-visible{background-color:color-mix(in srgb,var(--fg) 13%,transparent)}
@@ -635,7 +635,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
 
   .body{padding:34px 13px 16px}
   .line{font-size:1.26rem;line-height:3.2}
-  .line.has-lower{line-height:3.8}
+  .line.has-lower{line-height:4.2}
   .c .lbl{font-size:.76rem}
   .w .plbl{font-size:.78rem}
   .w[data-pos="adj"] .plbl,.w[data-pos="adv"] .plbl{font-size:.82rem}
