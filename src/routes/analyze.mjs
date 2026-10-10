@@ -6,9 +6,10 @@ import { splitSentences, splitDialogue, dialogueUnits } from '../segment.mjs';
 import { hasBlank } from '../exercises.mjs';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { ROOT, MAX_CHARS, MAX_SENTENCES, MAX_ARTICLE_CHARS, MAX_ARTICLE_SENTENCES, COLD_START_USD, CONCURRENCY, AUTH_TOKEN, HISTORY_DAYS } from '../config.mjs';
+import { ROOT, MAX_CHARS, MAX_SENTENCES, MAX_ARTICLE_CHARS, MAX_ARTICLE_SENTENCES, COLD_START_USD, CONCURRENCY, AUTH_ON, HISTORY_DAYS } from '../config.mjs';
 import { cache } from '../context.mjs';
 import { readBody, pool, authed, decodeImage } from '../http.mjs';
+import { loginAvailable } from '../auth.mjs';
 
 async function handleAnalyze(req, res, url){
   if (!authed(req, url)){
@@ -167,7 +168,8 @@ export const routes = [
       res.writeHead(200, { 'content-type':'application/json' });
       return res.end(JSON.stringify({ ok: true, model: MODEL, maxChars: MAX_CHARS,
         maxSentences: MAX_SENTENCES, articleMaxChars: MAX_ARTICLE_CHARS,
-        articleMaxSentences: MAX_ARTICLE_SENTENCES, authRequired: Boolean(AUTH_TOKEN) }));
+        articleMaxSentences: MAX_ARTICLE_SENTENCES, authRequired: AUTH_ON,
+        loginAvailable, loggedIn: authed(req, url) }));
     },
   },
     // 拍照辨識：課本上的英文句子 → 文字，填進分析的輸入框

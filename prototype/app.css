@@ -761,3 +761,5 @@ mark.sw{background:var(--tip-bg);color:inherit;border-bottom:2px solid var(--acc
 .turn-head .turn-en{font-family:var(--font-serif,serif);font-size:1.15rem;margin:8px 0 2px}
 .turn-head .turn-zh{color:var(--muted);margin:0}
 .turn-group>article.sent,.turn-group>.art-sent{margin-left:0}
+.logout{position:absolute;top:10px;right:16px;font-size:.8rem}
+header{position:relative}

@@ -116,6 +116,26 @@ try {
   chk('沒帶存取碼讀歷史 → 401，並跳出輸入框', await p5.until(`window.__h === 401 && !!document.getElementById('tokenBanner') && !document.getElementById('tokenBanner').hidden`));
   p5.close();
 
+  section('帳號密碼登入');
+  const S6 = await start('ui-login', { AUTH_USER: 'yuan', AUTH_PASS: 'pw-123' });
+  const p6 = await openPage(S6.base + '/', { width: 420, height: 900, settle: 2500 });
+  chk('沒登入：最上面出現帳號、密碼欄與登入鈕', await p6.until(`!!document.getElementById('loginUser') && document.getElementById('loginPass').type === 'password' && !!document.getElementById('loginGo')`), await p6.evl(`document.body.innerText.slice(0, 60)`));
+  chk('密碼欄有 autocomplete=current-password（密碼管理員、手機鍵盤可以帶入）', await p6.evl(`document.getElementById('loginPass').autocomplete === 'current-password' && document.getElementById('loginUser').autocomplete === 'username'`));
+  await p6.type('#loginUser', 'yuan'); await p6.type('#loginPass', 'wrong');
+  await p6.click('#loginGo');
+  chk('密碼錯：顯示「帳號或密碼不對」，仍停在登入框', await p6.until(`/帳號或密碼不對/.test(document.querySelector('#tokenBanner .tb-msg').textContent)`));
+  await p6.type('#loginPass', 'pw-123');
+  await p6.click('#loginGo');
+  await p6.wait(2500);
+  chk('登入成功：登入框消失、出現「登出」', await p6.evl(`!document.getElementById('tokenBanner') && !document.getElementById('logoutBtn').hidden`));
+  await p6.evl(`fetch('/api/history').then(r => { window.__lh = r.status; })`);
+  chk('登入後讀得到歷史（cookie 自動帶上，不必每個頁面處理）', await p6.until(`window.__lh === 200`));
+  await p6.send('Page.reload'); await p6.wait(2500);
+  chk('重新整理仍是登入狀態', await p6.evl(`!document.getElementById('tokenBanner') && !document.getElementById('logoutBtn').hidden`));
+  await p6.click('#logoutBtn'); await p6.wait(2500);
+  chk('登出後回到登入框', await p6.until(`!!document.getElementById('loginUser')`));
+  p6.close();
+
   section('分析中：明顯提示不要離開；中途離開 → 下次提示接續');
   const S2 = await start('ui-articles-slow', { FAKE_DELAY_MS: '1500' });
   const p2 = await openPage(S2.base + '/', { width: 1000, height: 1100, settle: 2500 });

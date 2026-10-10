@@ -1,7 +1,8 @@
 // 共用的 HTTP 工具：讀請求本文、驗證、併發池、圖片解碼、靜態檔。
 import { readFile } from 'node:fs/promises';
 import { join, extname, normalize as pathNormalize } from 'node:path';
-import { WEB, AUTH_TOKEN } from './config.mjs';
+import { WEB, AUTH_TOKEN, AUTH_ON } from './config.mjs';
+import { sessionOk } from './auth.mjs';
 
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css',
   '.json':'application/json', '.svg':'image/svg+xml', '.ico':'image/x-icon' };
@@ -31,10 +32,12 @@ export async function pool(items, n, fn){
   }));
 }
 
+/** 通過驗證的方式（任一）：登入後的 cookie、舊的存取碼（x-auth-token 標頭或 ?token=，給腳本與測試）。沒設任何驗證就一律放行。 */
 export function authed(req, url){
-  if (!AUTH_TOKEN) return true;
+  if (!AUTH_ON) return true;
+  if (sessionOk(req)) return true;
+  if (!AUTH_TOKEN) return false;
   const sent = req.headers['x-auth-token'] || url.searchParams.get('token') || '';
-  // 長度相同才比對，避免洩漏長度；這裡是本機小工具，常數時間比對非必要
   return sent === AUTH_TOKEN;
 }
 

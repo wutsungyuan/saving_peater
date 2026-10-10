@@ -80,6 +80,18 @@ export function openCache(file = 'data/cache.db'){
       if (!(r?.n >= 5)) return null;
       return { perCall: Math.min(0.05, r.c / r.calls * 0.15), perQuestion: r.c / r.n * 0.85, msPerCall: 8000, msPerQuestion: r.ms / r.n, samples: r.n, source: 'history' };
     },
+    // ---------- 登入 session（只存雜湊）----------
+    createSession(idHash, days){
+      const now = Date.now();
+      db.prepare('INSERT OR REPLACE INTO sessions (id, created_at, expires_at) VALUES (?,?,?)').run(idHash, now, now + days * 86400_000);
+    },
+    sessionValid(idHash){
+      const r = db.prepare('SELECT expires_at FROM sessions WHERE id = ?').get(idHash);
+      return Boolean(r) && r.expires_at > Date.now();
+    },
+    deleteSession(idHash){ db.prepare('DELETE FROM sessions WHERE id = ?').run(idHash); },
+    pruneSessions(){ return db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now()).changes; },
+
     /** AI 批改的單價（依最近的紀錄）；紀錄不夠回 null */
     paperGradeUnit(){
       const r = db.prepare(`SELECT SUM(cost_usd) c, SUM(analyzed) n, COUNT(*) calls FROM (

@@ -150,8 +150,20 @@ function papers(db){
   `);
 }
 
+function sessions(db){
+  db.exec(`
+    CREATE TABLE sessions (
+      id         TEXT PRIMARY KEY,           -- session 碼的 SHA-256（資料庫不存原碼）
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX idx_sessions_exp ON sessions(expires_at);
+  `);
+}
+
 export const MIGRATIONS = [
   { version: 1, name: 'baseline', up: baseline },
   { version: 2, name: 'articles', up: articles },
   { version: 3, name: 'papers-and-questions', up: papers },
+  { version: 4, name: 'sessions', up: sessions },
 ];

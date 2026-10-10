@@ -14,21 +14,39 @@ try {
   else TOKEN = localStorage.getItem('analyzer-token') || '';
 } catch { /* 無痕模式等情況，忽略 */ }
 
-/** 沒有（或存取碼不對）時：頁面最上面出現一個輸入框，輸入後記住、重新整理。手機不用再去編網址。 */
+let LOGIN_AVAIL = false;       // 伺服器有沒有設帳號密碼（health 回報）
+
+/** 沒登入（或舊的存取碼不對）時：頁面最上面出現登入框。登入後瀏覽器會記住（cookie），手機不用再編網址。
+ *  伺服器沒設帳號密碼、只設了舊的 AUTH_TOKEN 時，退回「輸入存取碼」。 */
 function showTokenBanner(msg){
-  let b = document.getElementById('tokenBanner');
-  if (!b){
-    b = document.createElement('div'); b.id = 'tokenBanner'; b.className = 'token-banner';
-    b.innerHTML = '<p class="tb-msg"></p><div class="row"><input type="text" id="tokenInput" placeholder="貼上存取碼" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="primary" type="button" id="tokenSave">儲存並重新載入</button></div>';
-    document.body.insertBefore(b, document.body.firstChild);
+  document.getElementById('tokenBanner')?.remove();
+  const b = document.createElement('div'); b.id = 'tokenBanner'; b.className = 'token-banner';
+  b.innerHTML = LOGIN_AVAIL
+    ? '<p class="tb-msg"></p><form class="row" id="loginForm"><input type="text" id="loginUser" name="username" placeholder="帳號" autocomplete="username" autocapitalize="off" spellcheck="false">' +
+      '<input type="password" id="loginPass" name="password" placeholder="密碼" autocomplete="current-password"><button class="primary" type="submit" id="loginGo">登入</button></form>'
+    : '<p class="tb-msg"></p><div class="row"><input type="text" id="tokenInput" placeholder="貼上存取碼" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="primary" type="button" id="tokenSave">儲存並重新載入</button></div>';
+  document.body.insertBefore(b, document.body.firstChild);
+  b.querySelector('.tb-msg').textContent = msg;
+  if (LOGIN_AVAIL){
+    document.getElementById('loginForm').onsubmit = async e => {
+      e.preventDefault();
+      const msgEl = b.querySelector('.tb-msg'), go = document.getElementById('loginGo');
+      go.disabled = true; msgEl.textContent = '登入中…';
+      let r, j = {};
+      try { r = await _fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ user: document.getElementById('loginUser').value.trim(), pass: document.getElementById('loginPass').value }) }); j = await r.json().catch(() => ({})); }
+      catch { msgEl.textContent = '連不上伺服器。'; go.disabled = false; return; }
+      if (r.ok){ location.reload(); return; }
+      msgEl.textContent = j.message || '登入失敗。'; go.disabled = false; document.getElementById('loginPass').select();
+    };
+    document.getElementById('loginUser').focus();
+  } else {
     document.getElementById('tokenSave').onclick = () => {
       const v = document.getElementById('tokenInput').value.trim(); if (!v) return;
       try { localStorage.setItem('analyzer-token', v); } catch {}
       location.href = location.pathname + '?token=' + encodeURIComponent(v);
     };
   }
-  b.querySelector('.tb-msg').textContent = msg;
-  b.hidden = false;
 }
 
 // 同網域的 /api/ 請求一律自動帶存取碼；收到 401 就跳出輸入框。這樣每個頁面（單字、歷史、弱點…）
@@ -42,7 +60,7 @@ window.fetch = (input, init = {}) => {
   return _fetch(input, { ...init, headers }).then(noteUnauthorized(url));
 };
 const noteUnauthorized = url => res => {
-  if (res.status === 401 && url.startsWith('/api/')) showTokenBanner(TOKEN ? '存取碼不對，請重新輸入。' : '這個網站需要存取碼才能使用。請輸入存取碼（只要輸入一次，這個瀏覽器會記住）。');
+  if (res.status === 401 && url.startsWith('/api/')) showTokenBanner(LOGIN_AVAIL ? '登入已過期或還沒登入，請登入。' : TOKEN ? '存取碼不對，請重新輸入。' : '這個網站需要存取碼才能使用。請輸入存取碼（只要輸入一次，這個瀏覽器會記住）。');
   return res;
 };
 
@@ -51,9 +69,12 @@ fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
   updateCount();
   loadSampleCounts();
   if (typeof refreshArticleNames === 'function') refreshArticleNames();     // articles.js 在後面載入，這裡已經是非同步，一定有了
-  if (h.authRequired && !TOKEN) showTokenBanner('這個網站需要存取碼才能使用。請輸入存取碼（只要輸入一次，這個瀏覽器會記住）。');
-  hintEl.textContent = h.authRequired && !TOKEN
-    ? '這個後端需要存取權杖。請用帶有 ?token=… 的網址開啟。'
+  LOGIN_AVAIL = Boolean(h.loginAvailable);
+  const needLogin = h.authRequired && !h.loggedIn && !TOKEN;
+  if (needLogin) showTokenBanner(LOGIN_AVAIL ? '請先登入。' : '這個網站需要存取碼才能使用。請輸入存取碼（只要輸入一次，這個瀏覽器會記住）。');
+  const lo = document.getElementById('logoutBtn'); if (lo) lo.hidden = !(LOGIN_AVAIL && h.loggedIn);
+  hintEl.textContent = needLogin
+    ? '請先登入才能使用。'
     : `已連上分析後端（${h.model}）。可貼上一句話或一段文章，上限 ${h.maxChars} 字 / ${h.maxSentences} 句。`;
 }).catch(() => {
   API = false;
@@ -304,3 +325,9 @@ document.fonts?.ready.then(layoutPosLabels);
 
 render('p1');          // 分析分頁先備好範例，切過去就看得到
 autoGrow(); updateCount();
+
+document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+  await _fetch('/api/logout', { method: 'POST' }).catch(() => {});
+  try { localStorage.removeItem('analyzer-token'); } catch {}
+  location.href = location.pathname;
+});

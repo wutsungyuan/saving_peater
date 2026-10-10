@@ -20,6 +20,12 @@ export const CONCURRENCY = Number(process.env.CONCURRENCY || 6);
 // 因為每個請求都花執行這台機器的 Claude 訂閱額度。
 export const HOST = process.env.HOST || '127.0.0.1';
 export const AUTH_TOKEN = process.env.AUTH_TOKEN || '';
+// 帳號密碼登入（只有一組，沒有帳號管理）。在 start.ps1 之類放在專案外的地方設定，不要寫進程式碼或 git。
+export const AUTH_USER = process.env.AUTH_USER || '';
+export const AUTH_PASS = process.env.AUTH_PASS || '';
+export const SESSION_DAYS = Number(process.env.SESSION_DAYS || 90);
+// 有任何一種驗證設定就代表需要驗證
+export const AUTH_ON = Boolean(AUTH_TOKEN || (AUTH_USER && AUTH_PASS));
 export const HISTORY_DAYS = Number(process.env.HISTORY_DAYS || 30);
 // 測驗卷歷史（快取性質）：保留天數與份數，先到者為準；題庫（模型出的題）設上限
 export const PAPER_DAYS = Number(process.env.PAPER_DAYS || 30);
