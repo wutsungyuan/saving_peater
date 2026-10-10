@@ -126,9 +126,18 @@ function renderPreview(){
     <tfoot><tr><td><b>合計</b></td><td><b>${pl.N}</b></td><td></td><td><b>${fmtPts(pl.total)} 分</b></td><td>${ex.actual ? `${ex.actual} 題` : '—'}</td></tr></tfoot></table></div>
   <p class="hint">素材：單字 ${sc.words}、已分析句子 ${sc.sentences}、文章 ${sc.articles}、免費延伸字 ${sc.extWords}。${P.cfg.difficulty === 'easy' ? '難度簡單：全部題目來自你選的範圍，不增加任何模型呼叫。'
     : `目標延伸 ${ex.target} 題，實際 ${ex.actual} 題（其中免費 ${ex.free} 題）。`}</p>
+  ${quoteHtml(v.quote)}
   ${pl.skipped?.length ? `<p class="hint">這些題型在這個範圍出不了，已略過：${pl.skipped.map(id => (P.availability.find(a => a.id === id)?.name ?? id)).join('、')}。</p>` : ''}
   ${pl.relax ? '<p class="hint">你選的題型數和題數不太搭，已放寬部分題型的題數範圍。</p>' : ''}`;
   start.disabled = P.busy;
+  start.textContent = v.quote.calls ? `請模型出題並開始（約 US$${v.quote.estimate.low.toFixed(2)}–${v.quote.estimate.high.toFixed(2)}）` : '開始出卷';
+}
+
+function quoteHtml(q){
+  if (!q || !q.calls) return '<p class="hint quote ok">💰 報價：<b>這份卷子不需要呼叫模型</b>（程式出題＋題庫現成的題），不花額度。</p>';
+  const e = q.estimate, kind = { read: '閱讀測驗', cloze: '克漏字干擾項', ext: '延伸題' };
+  return `<div class="quote"><p>💰 報價：要請模型出題 <b>${q.calls}</b> 次、約 ${q.questions} 題，預估 <b>US$${e.low.toFixed(2)}–${e.high.toFixed(2)}</b>、約 ${e.seconds} 秒（${e.unit === 'history' ? '依你最近的出題紀錄估算' : '還沒有出題紀錄，用預設單價估算'}；上限已含第一次呼叫的暖機成本）。</p>
+    <p class="hint">${q.tasks.map(t => kind[t.kind] + (t.kind === 'ext' ? '' : '×1')).join('、')}。出過的題會存進題庫，之後的卷子優先重用，不會再收費。想完全不花額度就勾「省錢模式」。按下面的按鈕就代表同意。</p></div>`;
 }
 
 // ---- 設定區的互動 ----
@@ -166,11 +175,14 @@ pBox().addEventListener('change', e => {
 
 async function startPaper(){
   if (!P.preview || P.busy) return;
-  P.busy = true; el('pStart').disabled = true; el('pMsg').textContent = '出卷中…';
-  const c = P.cfg;
-  const r = await artApi('/api/papers', { method: 'POST', body: { ...c, userToken: USER, seed: P.preview.seed } });
+  P.busy = true; el('pStart').disabled = true;
+  const q = P.preview.quote, c = P.cfg;
+  el('pMsg').textContent = q?.calls ? `請模型出題中…約 ${q.estimate.seconds} 秒，請不要關閉頁面` : '出卷中…';
+  const r = await artApi('/api/papers', { method: 'POST', body: { ...c, userToken: USER, seed: P.preview.seed, confirm: Boolean(q?.calls) } });
   P.busy = false;
   if (!r.ok){ el('pStart').disabled = false; el('pMsg').textContent = r.json.message || ('出卷失敗：' + (r.json.error || r.status)); return; }
+  const m = r.json.model;
+  if (m?.error) alert(`模型出題中斷（${m.error.kind === 'rate-limit' ? '額度用盡' : m.error.message}）。卷子已用現有的題目出好，沒有出成功的題型已自動略過。`);
   openPaper(r.json.paper);
 }
 function openPaper(paper){

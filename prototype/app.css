@@ -742,3 +742,5 @@ mark.sw{background:var(--tip-bg);color:inherit;border-bottom:2px solid var(--acc
 .p-brow:last-child{border-bottom:0}
 .p-brow select{flex:1;min-width:0}
 .p-brow .p-pts{white-space:nowrap}
+.quote{background:var(--card,#fff8e6);border:1px solid var(--rule);border-radius:8px;padding:8px 12px;margin:10px 0}
+.quote p{margin:4px 0}

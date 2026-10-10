@@ -22,7 +22,7 @@ export const routes = [
       if (req.method === 'GET') return sendJson(res, 200, { papers: historyList(cache), keepDays: PAPER_DAYS });
       if (req.method === 'DELETE'){ const n = cache.deletePaper(url.searchParams.get('id')); return sendJson(res, 200, { ok: true, deleted: n }); }
       if (req.method === 'POST'){
-        const r = createPaper(cache, await body(req), { ttlDays: PAPER_DAYS });
+        const r = await createPaper(cache, await body(req), { ttlDays: PAPER_DAYS });
         return r.error ? fail(res, r, r.error === 'confirm-required' ? 409 : 400) : sendJson(res, 200, r);
       }
       return sendJson(res, 405, { error: 'method-not-allowed' });

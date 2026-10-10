@@ -62,7 +62,7 @@ export function buildPool(cache, { setIds = [], articleIds = [], userToken = 'an
         ext.set(key, { term, zh: String(x.zh), pos: x.pos ?? null, from: w.term, rel });
       }
   }
-  return { words, records, articles, known, extWords: [...ext.values()] };
+  return { setIds, articleIds, words, records, articles, known, extWords: [...ext.values()] };
 }
 
 /** 兩份選取範圍有沒有素材（給配題用的布林） */

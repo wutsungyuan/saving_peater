@@ -72,6 +72,14 @@ export function openCache(file = 'data/cache.db'){
         ? { perSentence: r.c / r.n, msPerSentence: r.ms / r.n, samples: r.n, source: 'history' }
         : { perSentence: 0.035, msPerSentence: 8000, samples: 0, source: 'default' };
     },
+    /** 依最近的出題紀錄估每題花費與時間（kind='paper-gen'，analyzed 欄位記入庫題數）；紀錄不夠就回 null，由呼叫端用預設值 */
+    paperGenUnit(){
+      const r = db.prepare(`SELECT SUM(cost_usd) c, SUM(analyzed) n, SUM(ms) ms, COUNT(*) calls FROM (
+          SELECT cost_usd, analyzed, ms FROM requests
+          WHERE kind = 'paper-gen' AND analyzed >= 3 AND cost_usd > 0 ORDER BY id DESC LIMIT 20)`).get();
+      if (!(r?.n >= 5)) return null;
+      return { perCall: Math.min(0.05, r.c / r.calls * 0.15), perQuestion: r.c / r.n * 0.85, msPerCall: 8000, msPerQuestion: r.ms / r.n, samples: r.n, source: 'history' };
+    },
     put(sentence, result, model, usage = {}, meta = {}){
       const h = hashOf(sentence);
       const main = result?.clauses?.find(c => c.role === 'main') ?? result?.clauses?.[0];

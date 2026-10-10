@@ -147,21 +147,25 @@ function customPick(pick, N, have, supply, rng){
  * 預設省錢優先：先分給能免費延伸的題目（mc 的單字題約一半、配合題、造句），不夠才分給需要模型的題型。
  * preferModel：延伸題偏好模型（內容更多樣，花費較高），免費與模型不分先後。
  * freeSupply：免費延伸字的數量（字族、易混淆字）；用完就不能再免費。
+ * modelCap：不能呼叫模型時（省錢模式），延伸題的模型部分最多能用題庫現成的幾題，例如 { mc: 3, read: 5 }；null = 不限。
  */
-export function extSplit(rows, N, ratio, { freeSupply = Infinity, preferModel = false } = {}, rng = Math.random){
+export function extSplit(rows, N, ratio, { freeSupply = Infinity, preferModel = false, modelCap = null } = {}, rng = Math.random){
   rows.forEach(r => { r.ext = 0; r.extFree = 0; });
   if (!ratio) return { target: 0, actual: 0, free: 0 };
   const T = Math.round(N * ratio), free = [], paid = [];
   let freeLeft = freeSupply;
+  const paidLeft = id => modelCap == null ? Infinity : (modelCap[id] ?? 0);
   rows.forEach((r, i) => {
     const t = r.t;
     if (!t.ext) return;                                                  // 不能延伸的題型
+    let room = paidLeft(t.id);                                           // 這個題型還能分到幾題「模型」延伸
+    const pushPaid = (u) => { if (room >= u.z){ room -= u.z; paid.push(u); } };
     if (t.free){
       const cap = Math.min(Math.floor(r.n * t.free), Math.max(0, freeLeft));
-      for (let k = 0; k < r.n; k++){ if (k < cap && !preferModel){ free.push({ i, z: 1, f: true }); } else paid.push({ i, z: 1, f: false }); }
+      for (let k = 0; k < r.n; k++){ if (k < cap && !preferModel){ free.push({ i, z: 1, f: true }); } else pushPaid({ i, z: 1, f: false }); }
       freeLeft -= cap;
-    } else if (t.unit){ let left = r.n; while (left > 0){ const z = Math.min(t.unit, left); paid.push({ i, z, f: false }); left -= z; } }
-    else for (let k = 0; k < r.n; k++) paid.push({ i, z: 1, f: false });
+    } else if (t.unit){ let left = r.n; while (left > 0){ const z = Math.min(t.unit, left); pushPaid({ i, z, f: false }); left -= z; } }
+    else for (let k = 0; k < r.n; k++) pushPaid({ i, z: 1, f: false });
   });
   let best = null;
   for (let tries = 0; tries < 300; tries++){
@@ -183,7 +187,7 @@ export function extSplit(rows, N, ratio, { freeSupply = Infinity, preferModel = 
  */
 export function composePaper(opts){
   const { have, supply = null, N, mode = 'auto', types = [], allowOpen = true, difficulty = 'easy',
-          freeSupply = Infinity, preferModel = false } = opts;
+          freeSupply = Infinity, preferModel = false, modelCap = null } = opts;
   const seed = opts.seed ?? Math.floor(Math.random() * 2 ** 31);
   const rng = seededRng(seed);
   if (!Number.isInteger(N) || N < 25 || N > 50) return { error: 'bad-n', message: '題數要在 25 到 50 之間。' };
@@ -200,7 +204,7 @@ export function composePaper(opts){
 
   const rows = res.rows;
   const ratio = DIFFICULTY[difficulty] ?? 0;
-  const ext = extSplit(rows, N, ratio, { freeSupply, preferModel }, rng);
+  const ext = extSplit(rows, N, ratio, { freeSupply, preferModel, modelCap }, rng);
   const total = sum(rows.map(r => ({ v: r.sub })), 'v');
   return {
     seed, N, relax: res.relax, skipped: res.skipped ?? [], total, ext, difficulty,

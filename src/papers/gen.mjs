@@ -32,6 +32,7 @@ function lev(a, b){
 export function sample(cands, n, rng, key = q => q.meta?.key){
   const { shuffle } = mk(rng);
   const out = [], used = new Set(), rest = [];
+  if (n <= 0) return out;
   for (const q of shuffle(cands)){
     const k = key(q);
     if (k != null && used.has(k)) { rest.push(q); continue; }

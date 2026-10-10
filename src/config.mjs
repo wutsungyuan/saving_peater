@@ -25,6 +25,9 @@ export const HISTORY_DAYS = Number(process.env.HISTORY_DAYS || 30);
 export const PAPER_DAYS = Number(process.env.PAPER_DAYS || 30);
 export const PAPER_KEEP = Number(process.env.PAPER_KEEP || 20);
 export const QUESTION_MAX = Number(process.env.QUESTION_MAX || 500);
+// 測驗卷的模型出題（閱讀測驗、克漏字干擾項、延伸題）：預設用 Sonnet 級模型加上程式驗證，比分析用的 opus 便宜
+export const EXAM_MODEL = process.env.EXAM_MODEL || 'sonnet';
+export const EXAM_PROMPT = join(ROOT, 'prompts', 'exam-gen.md');
 export const isLoopback = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1';
 
 // DB_FILE 讓測試與開發分支可以用自己的資料庫，不碰正式資料

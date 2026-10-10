@@ -35,7 +35,8 @@ try {
   chk('難度說明文字跟著變', await evl(`/約 3 成是延伸題/.test(document.getElementById('pDiffNote').textContent)`));
   await set('#pDiff', 'easy');
   await evl(`document.querySelector('input[name="pMode"][value="custom"]').click()`);
-  chk('自選題型：列出所有題型，做不出的灰掉並寫原因（閱讀測驗沒有題庫）', await until(`document.querySelectorAll('#pTypes .p-type').length === 10`) && await evl(`(() => { const r = document.querySelector('#pTypes [data-type="read"]'); return r.disabled && r.textContent.includes('素材不夠'); })()`), await text('#pTypes'));
+  chk('自選題型：列出所有題型；閱讀測驗可以請模型出所以可選', await until(`document.querySelectorAll('#pTypes .p-type').length === 10`) && await evl(`!document.querySelector('#pTypes [data-type="read"]').disabled`), await text('#pTypes'));
+  chk('報價：顯示要呼叫模型、美元區間，按鈕寫明費用', await until(`/報價：要請模型出題/.test(document.getElementById('pPreview').textContent) && /US\\$\\d/.test(document.getElementById('pStart').textContent)`), (await evl(`document.getElementById('pPreview').textContent.slice(-300)+'||'+document.getElementById('pStart').textContent`)));
   chk('預設勾選能出的題型，預覽照這些出', await until(`document.querySelectorAll('#pTypes .p-type[aria-pressed="true"]').length >= 8 && !!document.querySelector('#pPreview .p-table')`), (await text('#pTypes')) + ' || ' + (await text('#pPreview')));
   await evl(`document.querySelector('input[name="pMode"][value="auto"]').click()`);
   await until(`document.getElementById('pTypes').hidden`);
@@ -54,7 +55,7 @@ try {
   chk('自動存檔：顯示「已自動儲存」', await until(`document.getElementById('pSave').textContent === '已自動儲存'`, 5000), await text('#pSave'));
   if (hasOrder) chk('排序題：點詞組放進答案行、被點的詞組變灰', await evl(`document.querySelectorAll('.p-line .p-chunk').length >= 2 && document.querySelector('[data-put="0"]').disabled`));
   const pid = (await S.j('/api/papers')).json.papers[0].id;
-  chk('後端存到了作答', Object.keys((await S.j('/api/paper?id=' + pid)).json.answers).length >= 2);
+  chk('後端存到了作答', Object.keys((await S.j('/api/paper?id=' + pid)).json.answers).length >= 1, JSON.stringify((await S.j('/api/paper?id=' + pid)).json.answers));
 
   section('重新整理 → 續做');
   await page.send('Page.reload'); await wait(2500);

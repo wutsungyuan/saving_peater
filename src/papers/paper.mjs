@@ -1,12 +1,13 @@
 // 測驗卷的生命週期：預覽 → 出卷 → 作答（可存檔續做）→ 交卷批改 → 自評 → 訂正。
 // 卷子存在 papers 表（快取性質，到期自動清除）。統計只認第一次作答；訂正不計入統計，原卷分數不變。
+// 模型出題（閱讀測驗、克漏字干擾項、延伸題）在 model.mjs：先報價、你確認才呼叫、通過檢查才入庫。
 
 import { randomBytes } from 'node:crypto';
 import { composePaper, seededRng, TYPES, TYPE_BY_ID, DIFFICULTY, DIFFICULTY_NAME } from './plan.mjs';
 import { buildPool, haveOf } from './pool.mjs';
 import { supplyOf, generateType, publicQuestion } from './gen.mjs';
 import { gradeQuestion, earned } from './grade.mjs';
-import { bankSupply, EMPTY_QUOTE } from './model.mjs';
+import { planModelWork, runModelWork, readSupply, extBankCaps, extQuestions, readSection, clozeSemantic } from './model.mjs';
 
 const newId = () => 'p' + randomBytes(5).toString('hex');
 
@@ -24,19 +25,22 @@ export function normalizeSettings(b = {}){
     preferModel: b.preferModel === true,        // 延伸題偏好模型
     userToken: String(b.userToken || 'anon').slice(0, 64),
     seed: Number.isFinite(Number(b.seed)) ? Number(b.seed) : undefined,
+    confirm: b.confirm === true,                // 使用者看過報價、同意花額度
   };
 }
 
 const NEED_TEXT = { ws: '需要單字表或已分析的句子', words: '需要單字表', sent: '需要已分析的句子（單字例句或文章）', art: '需要文章表' };
 
 /** 每個題型在這個範圍能不能出、為什麼不能（給畫面勾選用） */
-export function availabilityOf(have, supply){
+export function availabilityOf(have, supply, { saver = false } = {}){
   return TYPES.map(t => {
     const need = t.need === 'ws' ? (have.words || have.sent) : have[t.need];
     const sup = supply?.[t.id];
     const ok = need && (sup == null || sup >= t.floor);
     return { id: t.id, name: t.name, ok: Boolean(ok), supply: sup ?? null, model: Boolean(t.model), open: Boolean(t.open), ext: Boolean(t.ext),
-      reason: ok ? null : !need ? NEED_TEXT[t.need] : `素材不夠：這個範圍只出得了 ${sup} 題，至少要 ${t.floor} 題` };
+      reason: ok ? null : !need ? NEED_TEXT[t.need]
+        : t.id === 'read' && saver ? '省錢模式不呼叫模型，題庫裡還沒有這個範圍的閱讀題。關掉省錢模式就能請模型出'
+        : `素材不夠：這個範圍只出得了 ${sup} 題，至少要 ${t.floor} 題` };
   });
 }
 
@@ -44,52 +48,75 @@ function scopeInfo(cache, settings){
   const pool = buildPool(cache, settings);
   const have = haveOf(pool);
   const rng = seededRng((settings.seed ?? 1) + 7);
-  const supply = supplyOf(pool, rng);
-  const bank = bankSupply(cache, pool);
-  supply.read = bank.read;                                  // 閱讀測驗：題庫現成的題（模型出題在第 3 階段補上）
-  return { pool, have, supply };
+  const sem = clozeSemantic(cache, pool);
+  const supply = supplyOf(pool, rng, { clozeSemantic: sem });
+  supply.read = pool.articles.length ? readSupply(cache, pool, { modelOk: !settings.saver }) : 0;   // 閱讀測驗：能請模型出就算每篇文章 6 題，不能就只算題庫現成的
+  const modelCap = settings.saver ? extBankCaps(cache, pool) : null;                                // 省錢模式：延伸題的模型部分只能用題庫現成的
+  return { pool, have, supply, modelCap };
 }
+
+const composeFor = (settings, info, seed) => composePaper({ have: info.have, supply: info.supply, N: settings.n, mode: settings.mode, types: settings.types,
+  allowOpen: settings.allowOpen, difficulty: settings.difficulty, freeSupply: info.pool.extWords.length, preferModel: settings.preferModel,
+  modelCap: info.modelCap, seed });
 
 /** 預覽：不出題、不呼叫模型。回傳可出的題型、配題結果與每題分數、延伸題分配、報價。 */
 export function previewPaper(cache, rawSettings){
   const settings = normalizeSettings(rawSettings);
   if (!settings.setIds.length && !settings.articleIds.length) return { error: 'no-scope', message: '請至少選一份單字表或文章表。' };
-  const { pool, have, supply } = scopeInfo(cache, settings);
-  const availability = availabilityOf(have, supply);
-  const plan = composePaper({ have, supply, N: settings.n, mode: settings.mode, types: settings.types, allowOpen: settings.allowOpen,
-    difficulty: settings.difficulty, freeSupply: pool.extWords.length, preferModel: settings.preferModel, seed: settings.seed });
+  const info = scopeInfo(cache, settings);
+  const availability = availabilityOf(info.have, info.supply, { saver: settings.saver });
+  const plan = composeFor(settings, info, settings.seed);
   if (plan.error) return { error: plan.error, message: plan.message, availability };
-  return { ok: true, seed: plan.seed, settings: { ...settings, seed: plan.seed }, availability, plan,
-    scope: { words: pool.words.length, sentences: pool.records.length, articles: pool.articles.length, extWords: pool.extWords.length },
-    quote: EMPTY_QUOTE() };
+  const { quote } = planModelWork(cache, info.pool, plan, { saver: settings.saver, seed: plan.seed });
+  return { ok: true, seed: plan.seed, settings: { ...settings, seed: plan.seed }, availability, plan, quote,
+    scope: { words: info.pool.words.length, sentences: info.pool.records.length, articles: info.pool.articles.length, extWords: info.pool.extWords.length } };
 }
 
-/** 出卷。回傳 { paper } 或 { error }。 */
-export function createPaper(cache, rawSettings, { ttlDays = 30 } = {}){
+/** 依配題結果，把每個題型的題目備好。模型題從題庫取（這之前 runModelWork 已經把缺的補進題庫）。 */
+function buildSections(cache, pool, plan, rng){
+  const built = []; let short = null;
+  for (const row of plan.rows){
+    let out;
+    if (row.id === 'read') out = readSection(cache, pool, row.n, row.ext, rng);
+    else if (['mc', 'reorder', 'fix', 'trans'].includes(row.id))
+      out = generateType(row.id, row.n, pool, rng, { ext: row.ext, extFree: row.extFree, modelItems: extQuestions(cache, pool, row.id, row.ext - row.extFree, rng) });
+    else out = generateType(row.id, row.n, pool, rng, { ext: row.ext, extFree: row.extFree, clozeSemantic: clozeSemantic(cache, pool) });
+    built.push({ row, ...out });
+    if (out.questions.length < row.n){ short = { id: row.id, got: out.questions.length }; break; }
+  }
+  return { built, short };
+}
+
+/** 出卷。需要請模型出題而沒有確認時，回 { error:'confirm-required', quote }。回傳 { id, paper, total, model? } 或 { error }。 */
+export async function createPaper(cache, rawSettings, { ttlDays = 30 } = {}){
   const settings = normalizeSettings(rawSettings);
   if (!settings.setIds.length && !settings.articleIds.length) return { error: 'no-scope', message: '請至少選一份單字表或文章表。' };
-  const { pool, have, supply: supply0 } = scopeInfo(cache, settings);
-  const supply = { ...supply0 };
-  let seed = settings.seed ?? Math.floor(Math.random() * 2 ** 31), plan = null, built = null;
+  const info = scopeInfo(cache, settings);
+  let seed = settings.seed ?? Math.floor(Math.random() * 2 ** 31);
 
-  // 實際出題可能比預估少（例如克漏字挑到的文章挖不出那麼多空格）：不夠就把供給量改成實際的，重新配題，最多 4 次
-  for (let attempt = 0; attempt < 4; attempt++){
-    plan = composePaper({ have, supply, N: settings.n, mode: settings.mode, types: settings.types, allowOpen: settings.allowOpen,
-      difficulty: settings.difficulty, freeSupply: pool.extWords.length, preferModel: settings.preferModel, seed });
-    if (plan.error) return { error: plan.error, message: plan.message };
-    const rng = seededRng(seed + 1000 + attempt);
-    built = []; let short = null;
-    for (const row of plan.rows){
-      const out = generateType(row.id, row.n, pool, rng, { ext: row.ext, extFree: row.extFree });
-      built.push({ row, ...out });
-      if (out.questions.length < row.n){ short = { id: row.id, got: out.questions.length }; break; }
-    }
-    if (!short) break;
-    supply[short.id] = short.got; built = null; seed += 1;
+  // 1) 配題與報價；要呼叫模型就要使用者先確認
+  let plan = composeFor(settings, info, seed);
+  if (plan.error) return { error: plan.error, message: plan.message };
+  const { tasks, quote } = planModelWork(cache, info.pool, plan, { saver: settings.saver, seed });
+  let model = null;
+  if (tasks.length){
+    if (!settings.confirm) return { error: 'confirm-required', message: '這份卷子需要請模型出題，要先確認。', quote };
+    model = await runModelWork(cache, info.pool, tasks, { capUsd: Math.max(0.3, Math.round(quote.estimate.high * 150) / 100) });
   }
-  if (!built) return { error: 'not-enough', message: '這個範圍的素材湊不到這麼多題，請多選一些單字表或文章表，或減少題數。' };
 
-  // 組卷：題目編號、分區、每題分數（尾差由前面幾題各加減 0.5 分）
+  // 2) 實際出題可能比預估少（模型題被擋掉、額度用盡、克漏字挖不出那麼多空格）：不夠就把供給量改成實際的，重新配題，最多 5 次
+  const supply = { ...info.supply }; let built = null;
+  for (let attempt = 0; attempt < 5; attempt++){
+    plan = composePaper({ have: info.have, supply, N: settings.n, mode: settings.mode, types: settings.types, allowOpen: settings.allowOpen,
+      difficulty: settings.difficulty, freeSupply: info.pool.extWords.length, preferModel: settings.preferModel, modelCap: info.modelCap, seed });
+    if (plan.error) return { error: plan.error, message: plan.message, model };
+    const r = buildSections(cache, info.pool, plan, seededRng(seed + 1000 + attempt));
+    if (!r.short){ built = r.built; break; }
+    supply[r.short.id] = r.short.got; seed += 1;
+  }
+  if (!built) return { error: 'not-enough', message: '這個範圍的素材湊不到這麼多題，請多選一些單字表或文章表，或減少題數。', model };
+
+  // 3) 組卷：題目編號、分區、每題分數（尾差由前面幾題各加減 0.5 分）
   const sections = []; const questions = []; let pSeq = 0;
   for (const { row, questions: qs, passages, ext, extFree } of built){
     const pids = (passages ?? []).map(p => ({ ...p, id: `p${++pSeq}` }));
@@ -97,17 +124,19 @@ export function createPaper(cache, rawSettings, { ttlDays = 30 } = {}){
     qs.forEach((q, i) => {
       const id = `q${questions.length + 1}`;
       const adj = row.extra > 0 ? (i < row.extra ? 0.5 : 0) : row.extra < 0 ? (i < -row.extra ? -0.5 : 0) : 0;
-      questions.push({ ...q, id, section: row.id, pts: row.pts + adj, ...(pids[0] && (q.type === 'cloze' || q.type === 'wbank') ? { passageId: pids[0].id } : {}) });
+      const { passageIdx, ...rest } = q;
+      const passageId = passageIdx != null ? pids[passageIdx]?.id : (pids[0] && (q.type === 'cloze' || q.type === 'wbank') ? pids[0].id : undefined);
+      questions.push({ ...rest, id, section: row.id, pts: row.pts + adj, ...(passageId ? { passageId } : {}) });
       ids.push(id);
     });
-    sections.push({ id: row.id, name: row.name, n: qs.length, pts: row.pts, passages: pids, questionIds: ids,
-      ext, extFree });
+    sections.push({ id: row.id, name: row.name, n: qs.length, pts: row.pts, passages: pids, questionIds: ids, ext, extFree });
   }
   const total = questions.reduce((s, q) => s + q.pts, 0);
   const id = newId();
-  const data = { sections, questions, answers: {}, self: {}, plan: { seed, total, ext: { target: plan.ext.target, actual: built.reduce((a, b) => a + b.ext, 0), free: built.reduce((a, b) => a + b.extFree, 0) }, relax: plan.relax } };
-  cache.putPaper({ id, n: questions.length, settings: { ...settings, seed }, data, ttlDays });
-  return { id, paper: paperView(cache.getPaper(id)), total };
+  const data = { sections, questions, answers: {}, self: {}, plan: { seed, total, rows: plan.rows.map(r => [r.id, r.n, r.ext]), ext: { target: plan.ext.target, actual: built.reduce((a, b) => a + b.ext, 0), free: built.reduce((a, b) => a + b.extFree, 0) }, relax: plan.relax } };
+  cache.putPaper({ id, n: questions.length, settings: { ...settings, confirm: undefined, seed }, data, ttlDays });
+  cache.bumpQuestions(questions.map(q => q.meta?.bankId).filter(Boolean));          // 用過次數：下一份卷子優先用沒用過的題
+  return { id, paper: paperView(cache.getPaper(id)), total, model, quote: tasks.length ? quote : null };
 }
 
 /** 給前端看的卷子：題目拿掉答案。交卷後附上批改結果。 */
@@ -177,7 +206,7 @@ export function submitPaper(cache, id, { answers, userToken = 'anon' } = {}){
   if (p.settings.kind !== 'fix') recordStats(cache, p, grades, userToken);
   p.data.result = summarize(p.data, grades);
   cache.submitPaper(id, p.data, p.data.result.score);
-  if (p.settings.kind !== 'fix') cache.bumpQuestions(p.data.questions.filter(q => q.bankId).map(q => q.bankId));
+  if (p.settings.kind !== 'fix') cache.bumpQuestions(p.data.questions.filter(q => q.meta?.bankId && grades.get(q.id).correct === false).map(q => q.meta.bankId), { wrong: true });
   return { ok: true, paper: paperView(cache.getPaper(id)) };
 }
 

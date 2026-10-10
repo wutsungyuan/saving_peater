@@ -40,7 +40,8 @@ const perfect = data => Object.fromEntries(data.questions.map(q => [q.id,
 try {
   const S = await start('papers', { AUTH_TOKEN: TOKEN }, { dbFile });
   const j = S.j;
-  const SC = { setIds: [setId], articleIds: [artId] };
+  // 這份測試驗證「程式出題」的流程，所以固定用省錢模式（不呼叫模型）；模型題的流程在 papers-model.mjs
+const SC = { setIds: [setId], articleIds: [artId], saver: true };
   const sumN = rows => rows.reduce((a, r) => a + r.n, 0);
 
   section('驗證');
