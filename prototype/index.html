@@ -111,6 +111,14 @@
     </div>
 
     <div id="view-practice" hidden>
+      <div class="subrow">
+        <div class="subtabs" id="prTabs" role="group" aria-label="切換句子練習與測驗卷">
+          <button data-pp="sentence" aria-pressed="true">句子練習</button>
+          <button data-pp="paper" aria-pressed="false">測驗卷</button>
+        </div>
+      </div>
+      <div id="pr-paper" hidden></div>
+      <div id="pr-sentence">
       <div class="box">
         <label>練習設定</label>
         <div class="row" id="qtypes"></div>
@@ -130,6 +138,7 @@
         <button class="primary" id="quizFix" hidden>訂正錯題</button>
         <button id="quizAgain" hidden>再來一份</button>
         <button class="wklink" type="button" id="toWeak">看弱點統計</button>
+      </div>
       </div>
     </div>
 
@@ -259,4 +268,5 @@
 <script src="js/wordset-form.js"></script>
 <script src="js/weakness.js"></script>
 <script src="js/articles.js"></script>
+<script src="js/papers.js"></script>
 <script src="js/init.js"></script>
