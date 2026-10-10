@@ -240,6 +240,7 @@ async function handleImageFile(files){
           method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
           body: JSON.stringify({ image }),
         }).then(r => r.json());
+        if (d.error === 'unauthorized') showTokenBanner('存取碼不對或還沒輸入，所以照片沒辦法辨識。請輸入存取碼。');
         if (d.error){ failed.push(`第 ${i + 1} 張：${d.message || d.error}`); continue; }
         if (!d.words.length){ failed.push(`第 ${i + 1} 張沒抄到單字`); continue; }
         // 填進文字框讓使用者核對再建立 —— 辨識可能有誤，不直接拿去花額度充實

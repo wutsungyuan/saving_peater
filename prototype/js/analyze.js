@@ -14,11 +14,29 @@ try {
   else TOKEN = localStorage.getItem('analyzer-token') || '';
 } catch { /* 無痕模式等情況，忽略 */ }
 
+/** 沒有（或存取碼不對）時：頁面最上面出現一個輸入框，輸入後記住、重新整理。手機不用再去編網址。 */
+function showTokenBanner(msg){
+  let b = document.getElementById('tokenBanner');
+  if (!b){
+    b = document.createElement('div'); b.id = 'tokenBanner'; b.className = 'token-banner';
+    b.innerHTML = '<p class="tb-msg"></p><div class="row"><input type="text" id="tokenInput" placeholder="貼上存取碼" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="primary" type="button" id="tokenSave">儲存並重新載入</button></div>';
+    document.body.insertBefore(b, document.body.firstChild);
+    document.getElementById('tokenSave').onclick = () => {
+      const v = document.getElementById('tokenInput').value.trim(); if (!v) return;
+      try { localStorage.setItem('analyzer-token', v); } catch {}
+      location.href = location.pathname + '?token=' + encodeURIComponent(v);
+    };
+  }
+  b.querySelector('.tb-msg').textContent = msg;
+  b.hidden = false;
+}
+
 fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
   API = h;
   updateCount();
   loadSampleCounts();
   if (typeof refreshArticleNames === 'function') refreshArticleNames();     // articles.js 在後面載入，這裡已經是非同步，一定有了
+  if (h.authRequired && !TOKEN) showTokenBanner('這個網站需要存取碼才能使用。請輸入存取碼（只要輸入一次，這個瀏覽器會記住）。');
   hintEl.textContent = h.authRequired && !TOKEN
     ? '這個後端需要存取權杖。請用帶有 ?token=… 的網址開啟。'
     : `已連上分析後端（${h.model}）。可貼上一句話或一段文章，上限 ${h.maxChars} 字 / ${h.maxSentences} 句。`;

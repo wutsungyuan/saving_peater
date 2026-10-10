@@ -24,6 +24,7 @@ async function handleAnalyzeImage(files){
           method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
           body: JSON.stringify({ image }),
         }).then(r => r.json());
+        if (d.error === 'unauthorized') showTokenBanner('存取碼不對或還沒輸入，所以照片沒辦法辨識。請輸入存取碼。');
         if (d.error){ failed.push(`第 ${i + 1} 張：${d.message || d.error}`); continue; }
         if (!d.text){ failed.push(`第 ${i + 1} 張沒抄到完整的英文句子（單字表請改用「單字」分頁的拍照）`); continue; }
         // 輸入框裡如果是範例句（curKind 不為 null），那不是使用者打的內容，直接覆蓋。

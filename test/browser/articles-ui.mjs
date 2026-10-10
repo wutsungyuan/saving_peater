@@ -87,6 +87,17 @@ try {
   chk('沒有 JS 錯誤', page.errors.length === 0, page.errors.join(' | '));
   await page.shot('articles-ui.png');
 
+  section('沒帶存取碼：出現輸入框，輸入後可用');
+  const S3 = await start('ui-token', { AUTH_TOKEN: 'secret123' });
+  const p3 = await openPage(S3.base + '/', { width: 420, height: 900, settle: 2500 });
+  chk('沒有存取碼：頁面最上面出現輸入框', await p3.until(`!!document.getElementById('tokenBanner') && !document.getElementById('tokenBanner').hidden`), await p3.evl(`document.body.innerText.slice(0, 80)`));
+  await p3.type('#tokenInput', 'secret123');
+  await p3.click('#tokenSave');
+  await p3.wait(2500);
+  chk('輸入後重新載入：輸入框消失、存取碼被記住', await p3.evl(`!document.getElementById('tokenBanner') && localStorage.getItem('analyzer-token') === 'secret123'`));
+  chk('之後的請求有帶存取碼（提示變成已連上）', await p3.until(`/已連上分析後端/.test(document.getElementById('inp-hint').textContent)`));
+  p3.close();
+
   section('分析中：明顯提示不要離開；中途離開 → 下次提示接續');
   const S2 = await start('ui-articles-slow', { FAKE_DELAY_MS: '1500' });
   const p2 = await openPage(S2.base + '/', { width: 1000, height: 1100, settle: 2500 });
