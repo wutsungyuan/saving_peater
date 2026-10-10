@@ -20,15 +20,6 @@ const pOpenKey = 'analyzer-paper-open';
 const rememberOpen = id => { try { id ? localStorage.setItem(pOpenKey, id) : localStorage.removeItem(pOpenKey); } catch {} };
 const rememberedOpen = () => { try { return localStorage.getItem(pOpenKey); } catch { return null; } };
 
-// ---- 句子練習／測驗卷 兩個子分頁 ----
-function showPracticePane(which){
-  for (const b of document.querySelectorAll('#prTabs button')) b.setAttribute('aria-pressed', String(b.dataset.pp === which));
-  el('pr-sentence').hidden = which !== 'sentence';
-  el('pr-paper').hidden = which !== 'paper';
-  if (which === 'paper') loadPaperHome();
-}
-el('prTabs').addEventListener('click', e => { const b = e.target.closest('button[data-pp]'); if (b) showPracticePane(b.dataset.pp); });
-
 // ---- 導覽列：出卷／歷史 ----
 const pNav = () => `<div class="subrow"><div class="subtabs" role="group" aria-label="測驗卷">
   <button data-pt="setup" aria-pressed="${P.tab === 'setup' || P.tab === 'run' || P.tab === 'result'}">出卷</button>

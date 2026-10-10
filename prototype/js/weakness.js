@@ -124,13 +124,14 @@ for (const b of document.querySelectorAll('.tabs button')){
     Spk.stop();
     const v = b.dataset.view;
     document.body.dataset.view = v;      // 給 CSS 用：邊緣把手只在分析分頁出現
-    for (const name of ['analyze', 'words', 'practice', 'weak', 'history'])
+    for (const name of ['analyze', 'words', 'practice', 'exam', 'weak', 'history'])
       document.getElementById(`view-${name}`).hidden = name !== v;
     if (v === 'words'){
       if (API === false) el('wsList').innerHTML =
         '<span class="hint">單字表需要後端。請在本機執行 npm start 後開啟 http://127.0.0.1:8787</span>';
       else { loadWordsets(); refreshExamples(); }
     }
+    if (v === 'exam') loadPaperHome();
     if (v === 'practice'){
       if (API === false) quizOut.innerHTML = '<p class="msg">句子練習需要後端。請在本機執行 npm start 後開啟 http://127.0.0.1:8787</p>';
       else if (!currentQuiz && API) startQuiz();

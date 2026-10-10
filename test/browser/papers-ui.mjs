@@ -17,8 +17,8 @@ try {
 
   section('進入測驗卷');
   await click('.tabs button[data-view="practice"]');
-  await click('#prTabs button[data-pp="paper"]');
-  chk('練習頁有「句子練習／測驗卷」子分頁，切到測驗卷', await until(`!document.getElementById('pr-paper').hidden && document.getElementById('pr-sentence').hidden`));
+  await click('.tabs button[data-view="exam"]');
+  chk('測驗卷是和單字、分析、句子練習同一層的分頁', await until(`!document.getElementById('view-exam').hidden && document.getElementById('view-practice').hidden && !!document.querySelector('.tabs > button[data-view=exam]')`));
   chk('列出單字表與文章表讓你勾選', await until(`document.querySelectorAll('#pr-paper [data-scope]').length === 2`));
   // 頁面會預選單字頁目前選的字表（刻意的設計）；先把已選的取消，才是「沒選範圍」
   await evl(`document.querySelectorAll('#pr-paper [data-scope][aria-pressed="true"]').forEach(b => b.click())`);
@@ -59,7 +59,7 @@ try {
 
   section('重新整理 → 續做');
   await page.send('Page.reload'); await wait(2500);
-  await click('.tabs button[data-view="practice"]'); await click('#prTabs button[data-pp="paper"]');
+  await click('.tabs button[data-view="practice"]'); await click('.tabs button[data-view="exam"]');
   chk('出現「繼續作答」', await until(`!!document.querySelector('[data-act="resume"]')`));
   await click('[data-act="resume"]');
   chk('回到作答畫面、之前的作答都還在', await until(`document.querySelectorAll('#pr-paper [data-qcard]').length === 30`) && await evl(`/已作答 [123] \\/ 30/.test(document.getElementById('pProgress').textContent)`), await text('#pProgress'));
