@@ -33,6 +33,7 @@ const W = (term, pos, zh, example, exampleZh, syllables) => ({
     W('quickly', 'adv', '快速地', 'He ran quickly to school.', '他很快跑到學校。', 'quick-ly'),
     W('ROC', 'n', '中華民國', 'The ROC flag is red, white, and blue.', '中華民國國旗是紅白藍三色。', 'R-O-C'),
   ]);
+  c.createWordset('待刪除', [W('delete-me', 'n', '待刪除', 'Delete me.', '刪掉我。')]);
   c.log({ chars: 800, sentences: 20, cached: 0, analyzed: 20, ms: 160000, costUsd: 0.5, kind: 'analyze', text: 'x' });       // 每句 $0.025
   c.log({ chars: 20, sentences: 1, cached: 0, analyzed: 1, ms: 9000, costUsd: 0.207, kind: 'analyze', text: 'y' });         // 冷快取單句：不計入
 }
@@ -185,6 +186,39 @@ try {
   chk('同樣的長度在文章模式可以通過', r.status === 200, `status ${r.status}`);
   r = await J(B, '/api/analyze', { method: 'POST', body: { text: 'word '.repeat(Math.ceil((articleMaxChars + 100) / 5)), article: true, dryRun: true } });
   chk('文章模式超過字數上限 → 413', r.status === 413 && r.json.maxChars === articleMaxChars, r.text.slice(0, 120));
+
+  console.log('路由總表：每一條路由都有被分派到（拆檔重構的保險）');
+  const ALL = [
+    ['POST', '/api/analyze', { text: 'Hi.' }], ['POST', '/api/analyze-ocr', { image: 'x' }],
+    ['POST', '/api/exercises', { count: 3 }], ['POST', '/api/attempts', { quizId: 'x', answers: {} }],
+    ['POST', '/api/wordsets', { text: 'apple' }], ['DELETE', '/api/wordsets?ids=1', undefined],
+    ['POST', '/api/wordset-ocr', { image: 'x' }], ['POST', '/api/wordset-analyze', { setIds: [999999] }],
+    ['POST', '/api/wordquiz', { setIds: [1] }], ['POST', '/api/wordattempts', { quizId: 'x', answers: {} }],
+  ];
+  const A = authed ?? (authed = await start({ AUTH_TOKEN: 'sekret' }));
+  for (const [method, path, body] of ALL) {
+    const x = await J(A.base, path, { method, body });
+    chk(`${method} ${path.split('?')[0]} 沒帶 token → 401`, x.status === 401, `status ${x.status}`);
+  }
+  const H = { 'x-auth-token': 'sekret' };
+  let x = await J(A.base, '/api/analyze-ocr', { method: 'POST', body: { image: 'x' }, headers: H });
+  chk('analyze-ocr 圖片不合 → 400（不碰模型）', x.status === 400 && x.json.error === 'bad-image', x.text.slice(0, 100));
+  x = await J(A.base, '/api/wordset-ocr', { method: 'POST', body: { image: 'x' }, headers: H });
+  chk('wordset-ocr 圖片不合 → 400（不碰模型）', x.status === 400 && x.json.error === 'bad-image', x.text.slice(0, 100));
+  x = await J(A.base, '/api/wordsets', { method: 'POST', body: { text: '' }, headers: H });
+  chk('建立字表沒有單字 → 400', x.status === 400 && x.json.error === 'empty', x.text.slice(0, 100));
+  x = await J(A.base, '/api/wordset-analyze', { method: 'POST', body: { setIds: [999999] }, headers: H });
+  chk('分析字表例句：沒有例句可分析 → 200、total 0', x.status === 200 && x.json.total === 0, x.text.slice(0, 100));
+  const del = (await J(B, '/api/wordsets')).json.sets.find(z => z.name === '待刪除');
+  x = await J(A.base, `/api/wordsets?ids=${del.id}`, { method: 'DELETE', headers: H });
+  chk('刪除字表 → ok 與刪除筆數', x.status === 200 && x.json.ok === true && x.json.deleted === 1, x.text.slice(0, 100));
+  chk('刪除後字表不見了', !(await J(B, '/api/wordsets')).json.sets.some(z => z.name === '待刪除'));
+  x = await J(B, '/api/unknown-route');
+  chk('不存在的 API 路徑 → 404', x.status === 404);
+  x = await J(B, '/', { method: 'PATCH' });
+  chk('不支援的方法 → 405', x.status === 405);
+  x = await J(B, '/api/exercises', { method: 'POST', body: '{壞掉' });
+  chk('練習出題收到壞 JSON 仍能處理（不當掉）', x.status < 500, `status ${x.status}`);
 
   console.log('驗證（AUTH_TOKEN）');
   authed = await start({ AUTH_TOKEN: 'sekret' });
