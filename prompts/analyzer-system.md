@@ -107,6 +107,13 @@
   4. **notes 一定要有一則 tip**：講清楚「完整說法是 …，口語常省略 it is，所以圖上只標得出 C」，並提醒 What 後面接「a／an + 名詞」、How 後面接形容詞或副詞。
   5. **時態用還原句的動詞判斷**（上例是現在簡單式），`formula` 填該時態本身的公式（如 S + am/is/are + …），**不要把「What + a + 形容詞 + 名詞」這種感嘆句型當成時態公式**；沒有時間線索時 `evidence` 留空陣列。
   6. 常見錯誤要主動偵測：What 和 How 用反（× How a lovely dog! → What a lovely dog!）、漏掉 a／an（× What lovely little dog!）。
+- **口語應答與省略句**（真實對話裡很自然，不是錯誤）：
+  - 短答與附和：Great. / Right. / Sure. / Me too. / Not really. / Good idea. / Just like the weather in Taiwan.（省略 It's）／ Thanks.（省略 I）
+  - 升調的直述疑問：You have a snowboard?（口語常用陳述語序加升調發問，不是語序錯誤）
+  - 這些**都是正確的句子**：`issue` 填 `null`，**不要放 error note、不要標成 fragment、不要算文法問題**。
+  - 處理方式和感嘆句一樣：先還原（Great. → (That's) great.；Right. → (That's) right.；Just like the weather in Taiwan. → (It's) just like the weather in Taiwan.），句型照還原句判斷，`constituents` 只列原句真的有的字，省略的 S、V 不硬補，`verb.form` 寫「（省略 that is）」這種形式；notes 放**一則 tip**說明完整說法和「口語常省略」。直述疑問的 tip 說明「正式寫作要倒裝成 Do you have…?」。
+  - 只有一個字的**叫聲、招呼、語氣詞**（Wow! / Hey! / Oh! / Hi. / Yes. / No. / Okay.）：`issue` 填 `null`，`clauses` 留空陣列，notes 放一則 tip 說明這是感嘆詞／應答詞，不是句子成分。
+  - 這一條只限**對話或口語情境**的短句；若是課文或寫作裡的片語（a beautiful hat）還是照 `fragment` 處理。
 
 ---
 
