@@ -65,6 +65,9 @@ export function classifyError(message){
   return 'other';
 }
 
+const sumUsage = (a = {}, b = {}) => Object.fromEntries(
+  ['input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'].map(k => [k, (a[k] ?? 0) + (b[k] ?? 0)]));
+
 /** 容錯解析：去掉可能的 markdown fence、抓第一個 JSON 物件 */
 export function parseModelJson(text) {
   let s = text.trim();
@@ -173,8 +176,19 @@ export function fixPronounCase(words){
 
 /** 主入口：分析一段英文，回傳 { data, meta } */
 export async function analyze(text, opts = {}) {
-  const res = await callModel(text, opts);
-  const data = parseModelJson(res.text);
+  let res = await callModel(text, opts);
+  let data;
+  try { data = parseModelJson(res.text); }
+  catch (e) {
+    // 模型偶爾不照格式回（回了一般文字、或回到別句的內容）。同一句再問一次，比讓使用者自己重試省事；
+    // 兩次的花費都計入。仍然解析不了才當失敗。
+    const first = res;
+    res = await callModel(text, opts);
+    res = { ...res, costUsd: (res.costUsd ?? 0) + (first.costUsd ?? 0),
+      usage: sumUsage(first.usage, res.usage) };
+    try { data = parseModelJson(res.text); }
+    catch { throw Object.assign(new Error(e.message), { kind: 'parse' }); }
+  }
 
   // 對齊每個句子的詞性，以及每個子句的成分
   for (const s of data.sentences ?? []) {

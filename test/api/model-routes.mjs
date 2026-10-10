@@ -123,6 +123,13 @@ try {
   const gd = evs(r, 'done')[0], gf = evs(r, 'failed');
   chk('單句失敗：其他句照常完成', gd.analyzed === 2 && gd.failed === 1 && gf.length === 1 && /Explode/.test(gf[0].original), JSON.stringify(gd));
   chk('失敗的那句沒有被存進快取', (await J(G.base, '/api/analyze', { method: 'POST', body: { text: 'Explode this sentence now.', dryRun: true } })).json.cached === 0);
+
+  // 模型偶爾回一般文字（不是 JSON）：同一句自動再問一次，使用者不會看到失敗
+  const H = await start('badjson', { FAKE_BAD_TEXT_FIRST: '1' }); servers.push(H);
+  r = await sse(H.base, '/api/analyze', { text: 'People here speak Australian English.' });
+  const hd = evs(r, 'done')[0];
+  chk('第一次回非 JSON → 自動重試一次，最後成功、沒有失敗', hd.analyzed === 1 && hd.failed === 0 && evs(r, 'sentence').length === 1, JSON.stringify(hd));
+  chk('兩次呼叫的花費都計入', hd.usage.costUsd >= 0.02, JSON.stringify(hd.usage));
 } catch (e) {
   console.log('ERR', e.stack || e.message); results.push(false);
 } finally {

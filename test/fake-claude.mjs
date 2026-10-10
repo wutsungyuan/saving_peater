@@ -9,6 +9,7 @@
 //   FAKE_FAIL_AFTER=<n>       第 n 次呼叫之後都回「額度用盡」（要靠 FAKE_COUNTER 檔記次數）
 //   FAKE_FAIL_MATCH=<字串>    提示裡含這段文字就回一般錯誤（單句失敗）
 //   FAKE_COUNTER=<檔>         呼叫次數計數用
+//   FAKE_BAD_TEXT_FIRST=1     分析的第一次呼叫回一般文字（不是 JSON），測自動重試
 //   FAKE_EXAM_BAD_FIRST=1     出題任務的第一次呼叫回一半不合格的題（測驗證與「只補缺的」）
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
@@ -78,6 +79,7 @@ await new Promise(r => setTimeout(r, Number(env.FAKE_DELAY_MS || 0)));
 if (env.FAKE_FAIL_AFTER && count > Number(env.FAKE_FAIL_AFTER)) fail('Claude usage limit reached. Your limit will reset at 5pm.');
 if (env.FAKE_FAIL_MATCH && prompt.includes(env.FAKE_FAIL_MATCH)) fail('boom: 模型當掉了', 1);
 
+if (kind === 'analyze' && env.FAKE_BAD_TEXT_FIRST === '1' && count === 1) finish("I'd like to try the Cozy Corner next time.");
 if (kind === 'analyze') finish({ sentences: sentences.map(analysis) }, { n: sentences.length });
 
 if (kind === 'prose-ocr') finish({ text: env.FAKE_OCR_TEXT ?? 'I like cats.\nShe runs fast.', filled: 0 });
