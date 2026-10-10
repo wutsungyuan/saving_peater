@@ -101,55 +101,99 @@ async function handleAnalyze(req, res, url){
   });
   send('progress', { done: cached, total: segs.length });
 
-  await pool(misses, CONCURRENCY, async ({ seg, i }) => {
+  // ---- 一句分析完成後的收尾：核對原句、存快取、推給前端 ----
+  const toUsage = (u = {}, costUsd = 0) => ({
+    inputTokens: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+    outputTokens: u.output_tokens ?? 0,
+    cacheReadTokens: u.cache_read_input_tokens ?? 0,
+    costUsd,
+  });
+  const addUsage = one => { for (const k of Object.keys(usage)) usage[k] += one[k]; };
+  const share = (one, n) => Object.fromEntries(Object.entries(one).map(([k, v]) => [k, v / n]));   // 一批的花費平均分給每一句
+
+  const finishOne = ({ seg, i }, sentence, one) => {
+    sentence.index = i;
+    // 對話的話，把對方說的話一起存起來
+    const dlgMeta = dlg ? {
+      speaker: dlg[i]?.speaker ?? null,
+      context: dlg.filter(u => u.turn !== dlg[i]?.turn).map(t => `${t.speaker}: ${t.text}`).join('\n') || null,
+    } : {};
+    // 模型回傳的原句必須和我們送出去的一致，否則快取的鍵會對不上內容，
+    // 之後查這一句永遠查不到，還會污染範例與題庫。
+    if (sentence.original && sentence.original.trim() !== seg.text.trim()){
+      console.error('[analyze] 模型回傳的原句與輸入不符，不寫入快取：',
+        JSON.stringify(seg.text.slice(0, 60)), '→', JSON.stringify(String(sentence.original).slice(0, 60)));
+    } else if (hasBlank(seg.text)){
+      // 考卷的空格沒被還原成答案。這種句子拿來分析沒有意義，
+      // 出題時也只會變成「兩個空格一個格子」那種看不懂的題目，所以不入庫。
+      console.error('[analyze] 句子仍有未還原的空格，不寫入快取：', JSON.stringify(seg.text.slice(0, 60)));
+    } else {
+      cache.put(seg.text, sentence, MODEL, one, dlgMeta);
+    }
+    analyzed++;
+    if (!closed) send('sentence', { index: i, cached: false, sentence, usage: one });
+  };
+  const failOne = ({ seg, i }, e) => {
+    failed++;
+    const kind = e.kind || 'other';
+    if (kind === 'rate-limit' || kind === 'auth'){
+      halted = kind;   // 這類錯誤重試也沒用，立刻停掉其餘工作
+      if (!closed) send('halted', { kind, index: i, message: String(e.message).slice(0, 400) });
+    } else if (!closed) {
+      send('failed', { index: i, original: seg.text, kind, message: String(e.message).slice(0, 300) });
+    }
+  };
+  const progress = () => { if (!closed) send('progress', { done: cached + analyzed + failed, total: segs.length }); };
+
+  // 單句分析（一批裡對不上的句子、或只剩一句時）
+  const single = async (member, extra = null) => {
     if (closed || halted) return;
     try {
-      const { data, meta } = await analyze(seg.text);
+      const { data, meta } = await analyze(member.seg.text);
       const sentence = data?.sentences?.[0];
       if (!sentence) throw new Error('模型沒有回傳句子');
-      sentence.index = i;
-      const u = meta?.usage ?? {};
-      const one = {
-        inputTokens: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
-        outputTokens: u.output_tokens ?? 0,
-        cacheReadTokens: u.cache_read_input_tokens ?? 0,
-        costUsd: meta?.costUsd ?? 0,
-      };
-      for (const k of Object.keys(usage)) usage[k] += one[k];
-      // 對話的話，把對方說的話一起存起來（meta 這個名字上面已經用掉了）
-      const dlgMeta = dlg ? {
-        speaker: dlg[i]?.speaker ?? null,
-        context: dlg.filter(u => u.turn !== dlg[i]?.turn).map(t => `${t.speaker}: ${t.text}`).join('\n') || null,
-      } : {};
-      // 模型回傳的原句必須和我們送出去的一致，否則快取的鍵會對不上內容，
-      // 之後查這一句永遠查不到，還會污染範例與題庫。
+      const one = toUsage(meta?.usage, meta?.costUsd ?? 0);
+      addUsage(one);
       // 模型把我們送的一句拆成好幾句：只取第一句會悄悄丟掉後面的內容，所以當作失敗讓使用者看見
-      if ((data?.sentences?.length ?? 0) > 1 && sentence.original && sentence.original.trim() !== seg.text.trim()){
+      if ((data?.sentences?.length ?? 0) > 1 && sentence.original && sentence.original.trim() !== member.seg.text.trim())
         throw Object.assign(new Error('模型把這一句拆成了多句，沒有存。請把這一句拆開再分析。'), { kind: 'split' });
-      }
-      if (sentence.original && sentence.original.trim() !== seg.text.trim()){
-        console.error('[analyze] 模型回傳的原句與輸入不符，不寫入快取：',
-          JSON.stringify(seg.text.slice(0, 60)), '→', JSON.stringify(String(sentence.original).slice(0, 60)));
-      } else if (hasBlank(seg.text)){
-        // 考卷的空格沒被還原成答案。這種句子拿來分析沒有意義，
-        // 出題時也只會變成「兩個空格一個格子」那種看不懂的題目，所以不入庫。
-        console.error('[analyze] 句子仍有未還原的空格，不寫入快取：', JSON.stringify(seg.text.slice(0, 60)));
-      } else {
-        cache.put(seg.text, sentence, MODEL, one, dlgMeta);
-      }
-      analyzed++;
-      if (!closed) send('sentence', { index: i, cached: false, sentence, usage: one });
+      if (extra) for (const k of Object.keys(one)) one[k] += extra[k];
+      finishOne(member, sentence, one);
+    } catch (e){ failOne(member, e); }
+    progress();
+  };
+
+  // 多句併成一次呼叫：每次呼叫都要重讀約 34K tokens 的系統提示，逐句送就是付 N 次
+  // （實測六句整批比逐句省 40% 費用、49% 時間）。模型可能漏句或併句，所以用原句對回去，
+  // 對不上的單獨再送一次 —— 寧可多花也不給錯的結果。
+  const GROUP = Math.max(1, Number(process.env.ANALYZE_GROUP || 6));
+  const groups = [];
+  for (let g = 0; g < misses.length; g += GROUP) groups.push(misses.slice(g, g + GROUP));
+
+  await pool(groups, CONCURRENCY, async group => {
+    if (closed || halted) return;
+    if (group.length === 1) return single(group[0]);
+    let got = [], batch = null;
+    try {
+      const { data, meta } = await analyze(group.map(m => m.seg.text).join(' '));
+      got = data?.sentences ?? [];
+      batch = toUsage(meta?.usage, meta?.costUsd ?? 0);
+      addUsage(batch);
     } catch (e){
-      failed++;
       const kind = e.kind || 'other';
-      if (kind === 'rate-limit' || kind === 'auth'){
-        halted = kind;   // 這類錯誤重試也沒用，立刻停掉其餘工作
-        if (!closed) send('halted', { kind, index: i, message: String(e.message).slice(0, 400) });
-      } else if (!closed) {
-        send('failed', { index: i, original: seg.text, kind, message: String(e.message).slice(0, 300) });
-      }
+      if (kind === 'rate-limit' || kind === 'auth'){ for (const m of group) failOne(m, e); progress(); return; }
+      // 整批失敗（格式跑掉、逾時…）：每一句退回單句分析
     }
-    if (!closed) send('progress', { done: cached + analyzed + failed, total: segs.length });
+    const part = batch ? share(batch, group.length) : null;
+    const byText = new Map();
+    for (const s of got) if (s?.original) byText.set(String(s.original).trim(), s);
+    const missed = [];
+    for (const m of group){
+      const hit = byText.get(m.seg.text.trim());
+      if (hit && part){ finishOne(m, hit, { ...part }); progress(); }
+      else missed.push(m);
+    }
+    for (const m of missed) await single(m, part);
   });
 
   stopBeat();

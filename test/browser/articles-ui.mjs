@@ -7,7 +7,7 @@ import { openPage, checker } from './_cdp.mjs';
 const { chk, section, done } = checker();
 let page, code = 1;
 try {
-  const S = await start('ui-articles');                               // 沒設 AUTH_TOKEN：頁面不需要 token
+  const S = await start('ui-articles', { ANALYZE_GROUP: '1' });                               // 沒設 AUTH_TOKEN：頁面不需要 token
   // 先建一份字表，之後檢視文章表時標單字用
   await S.j('/api/wordsets', { method: 'POST', body: { name: '字表一', text: 'breakfast, 早餐\nschool, 學校' } });
   const base = S.calls().length;                                      // 建字表那次也算一次呼叫，之後的計數都相對於它

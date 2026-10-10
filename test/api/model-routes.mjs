@@ -55,7 +55,7 @@ const fresh = (tag, n) => Array.from({ length: n }, (_, i) => `${tag} number ${i
 
 const servers = [];
 try {
-  const S = await start('main'); servers.push(S); const B = S.base;
+  const S = await start('main', { ANALYZE_GROUP: '1' }); servers.push(S); const B = S.base;
 
   console.log('分析串流（逐句呼叫、快取、報價）');
   const text5 = fresh('Alpha', 5).join(' ');
@@ -110,7 +110,7 @@ try {
   chk('歷史紀錄有分析、字表、辨識的紀錄', kinds.has('analyze') && kinds.has('wordset') && r.json.usage.all.cost_usd > 0, JSON.stringify([...kinds]) + ' ' + r.json.usage?.all?.cost_usd);
 
   console.log('失敗情況');
-  const F = await start('ratelimit', { FAKE_FAIL_AFTER: '2' }); servers.push(F);
+  const F = await start('ratelimit', { FAKE_FAIL_AFTER: '2', ANALYZE_GROUP: '1' }); servers.push(F);
   r = await sse(F.base, '/api/analyze', { text: fresh('Echo', 8).join(' ') });
   const halted = evs(r, 'halted')[0], fd = evs(r, 'done')[0];
   chk('額度用盡 → 送出 halted(rate-limit)，不再硬試', halted?.kind === 'rate-limit' && fd?.halted === 'rate-limit', JSON.stringify(r.events.map(e => e.event)));
@@ -144,6 +144,31 @@ try {
   const sp = evs(r, 'failed');
   chk('一句被模型拆成多句 → 標成失敗並說明，不是只顯示第一句', sp.length === 1 && sp[0].kind === 'split' && /拆成了多句/.test(sp[0].message) && evs(r, 'sentence').length === 0, JSON.stringify(sp));
   chk('這種句子沒有被存進快取', (await J(I.base, '/api/analyze', { method: 'POST', body: { text: 'Dr. Lee is here.', dryRun: true } })).json.cached === 0);
+
+  // ---- 批次分析：多句併成一次呼叫（預設每批 6 句）----
+  const K = await start('batch', {}); servers.push(K);
+  const text14 = fresh('Batch', 14).join(' ');
+  r = await sse(K.base, '/api/analyze', { text: text14 });
+  const kd = evs(r, 'done')[0];
+  chk('14 句：分 3 批（6+6+2）→ 只呼叫 3 次，不是 14 次', K.calls().length === 3 && K.calls().map(c => c.sentences).sort((a, b) => b - a).join(',') === '6,6,2', JSON.stringify(K.calls().map(c => c.sentences)));
+  chk('14 句全部分析完成、沒有失敗、每句都送了 sentence 事件', kd.analyzed === 14 && kd.failed === 0 && evs(r, 'sentence').length === 14 && new Set(evs(r, 'sentence').map(s => s.index)).size === 14, JSON.stringify(kd));
+  chk('每句都存進快取（重送全部命中、不再呼叫）', await (async () => { const n = K.calls().length; const r2 = await sse(K.base, '/api/analyze', { text: text14 }); return evs(r2, 'done')[0].cached === 14 && K.calls().length === n; })());
+  chk('一批的花費平均分給每句，加總等於實際花費', Math.abs(evs(r, 'sentence').reduce((a, s) => a + s.usage.costUsd, 0) - kd.usage.costUsd) < 1e-9, JSON.stringify([kd.usage.costUsd]));
+  // 一批裡有一句模型和我們意見不同（Dr. 被拆開）：對不上的那句單獨再送，其餘照常
+  r = await sse(K.base, '/api/analyze', { text: 'Fine one walks. Dr. Lee is here. Fine two walks.' });
+  const kd2 = evs(r, 'done')[0], kf = evs(r, 'failed');
+  chk('一批裡對不上的句子退回單句：另外兩句成功、這句標失敗', kd2.analyzed === 2 && kd2.failed === 1 && kf.length === 1 && kf[0].kind === 'split', JSON.stringify([kd2, kf]));
+  // 整批失敗（含會讓假模型當掉的字）：每句退回單句，只有那一句失敗
+  const K2 = await start('batch-fail', { FAKE_FAIL_MATCH: 'Explode' }); servers.push(K2);
+  r = await sse(K2.base, '/api/analyze', { text: 'Fine one walks. Explode this sentence now. Fine two walks.' });
+  const kd3 = evs(r, 'done')[0];
+  chk('整批失敗 → 退回單句：其餘 2 句成功、只有 Explode 失敗', kd3.analyzed === 2 && kd3.failed === 1 && /Explode/.test(evs(r, 'failed')[0].original), JSON.stringify(kd3));
+  // 額度用盡：停止、不再送下一批
+  const K3 = await start('batch-limit', { FAKE_FAIL_AFTER: '1' }); servers.push(K3);
+  r = await sse(K3.base, '/api/analyze', { text: fresh('Limit', 20).join(' ') });
+  chk('批次遇到額度用盡 → halted，不再硬試後面的批', evs(r, 'halted').length >= 1 && K3.calls().length <= 4, JSON.stringify([evs(r, 'halted').length, K3.calls().length]));
+  // ANALYZE_GROUP=1 等於逐句（回到原本的行為）
+  chk('ANALYZE_GROUP=1 仍是逐句呼叫（上面主伺服器的測試）', S.calls().length >= 5);
 } catch (e) {
   console.log('ERR', e.stack || e.message); results.push(false);
 } finally {
