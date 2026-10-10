@@ -1,8 +1,7 @@
 // 單字表：充實（呼叫一次模型）＋ 出題（純程式）。
 // 和句子分析同樣的策略 —— 建表時花一次額度把資料備齊，之後循環測驗都是零成本。
 
-import { spawn } from 'node:child_process';
-import { CLAUDE_BIN, claudeNotFound } from './claude-bin.mjs';
+import { spawnClaude, claudeNotFound } from './claude-bin.mjs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseModelJson, classifyError, MODEL } from './analyzer.mjs';
@@ -40,7 +39,7 @@ export function enrich(items, { model = MODEL, timeoutMs = 180_000 } = {}){
       '--model', model,
       '--output-format', 'json',
     ];
-    const child = spawn(CLAUDE_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnClaude(args);
     let out = '', err = '';
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')); }, timeoutMs);
     child.stdout.on('data', d => { out += d; });
@@ -100,7 +99,7 @@ const norm = s => String(s ?? '').trim().toLowerCase().replace(/\s+/g,' ').repla
 const cmp = s => norm(String(s ?? '').replace(/\./g, ''));
 
 /** 在例句裡找出這個字實際出現的形式（可能是變化形：teach → teaches） */
-function findForm(example, term){
+export function findForm(example, term){
   if (!example) return null;
   const t = term.trim();
   // 片語：把 ... 當萬用，整串寬鬆比對
@@ -137,7 +136,7 @@ function selectWords(words, count){
   return out;
 }
 
-const senseLabel = (s) => `${s.pos}　${s.zh}`;
+export const senseLabel = (s) => `${s.pos}　${s.zh}`;
 
 /** 縮寫：全大寫（ROC、PE）、短字加點（Rd.、Ms.）、或逐字母加點（R.O.C.）。
  *  這類字沒有音節可言，音節提示反而讓人看不懂（R-O-C）。 */
@@ -255,7 +254,7 @@ function qSense(w){
   };
 }
 
-const WORD_BUILDERS = { zh2en:qZh2En, en2zh:qEn2Zh, listen:qListen, cloze:qCloze, sense:qSense, forms:qForms };
+export const WORD_BUILDERS = { zh2en:qZh2En, en2zh:qEn2Zh, listen:qListen, cloze:qCloze, sense:qSense, forms:qForms };
 
 /** 從一份字表生成測驗。words 要帶進度欄位（box / dueAt / total）
  *  題型用輪流取的方式，確保五種平均分佈，不是每個字各自隨機挑 */
@@ -367,7 +366,7 @@ export function extractFromImage(imagePath, { model = MODEL, timeoutMs = 180_000
       '--model', model,
       '--output-format', 'json',
     ];
-    const child = spawn(CLAUDE_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnClaude(args);
     let out = '', err = '';
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')); }, timeoutMs);
     child.stdout.on('data', d => { out += d; });

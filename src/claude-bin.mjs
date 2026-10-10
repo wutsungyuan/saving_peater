@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process';
+
 // Claude CLI 的執行檔名稱。
 //
 // Windows 上 npm 安裝的是 claude.cmd（批次檔），而 child_process.spawn
@@ -9,6 +11,16 @@
 //   CLAUDE_BIN=C:\Users\you\AppData\Roaming\npm\claude.cmd npm start
 export const CLAUDE_BIN =
   process.env.CLAUDE_BIN || (process.platform === 'win32' ? 'claude.cmd' : 'claude');
+
+// 只給測試用的接縫：CLAUDE_ARGS_PREFIX 是 JSON 陣列，放在所有參數前面。
+// 測試時設 CLAUDE_BIN=node 加上 CLAUDE_ARGS_PREFIX='["test/fake-claude.mjs"]'，
+// 就能用假的 CLI 走完整條路由，不花任何額度。正式環境不設，行為不變。
+export const CLAUDE_ARGS_PREFIX = process.env.CLAUDE_ARGS_PREFIX ? JSON.parse(process.env.CLAUDE_ARGS_PREFIX) : [];
+
+/** 啟動 Claude CLI（四個呼叫點共用，才只有一個地方決定怎麼叫它） */
+export function spawnClaude(args){
+  return spawn(CLAUDE_BIN, [...CLAUDE_ARGS_PREFIX, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+}
 
 /** 找不到 CLI 時給看得懂的訊息，而不是裸的 ENOENT */
 export function claudeNotFound(err){

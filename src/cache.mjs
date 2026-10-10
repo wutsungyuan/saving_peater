@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { normalize } from './segment.mjs';
+import { migrate } from './migrate.mjs';
 
 const hashOf = (sentence) =>
   createHash('sha256').update(normalize(sentence), 'utf8').digest('hex');
@@ -22,97 +23,8 @@ let _verbFormsCache = null, _verbFormsCount = -1;
 export function openCache(file = 'data/cache.db'){
   mkdirSync(dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    CREATE TABLE IF NOT EXISTS sentences (
-      hash       TEXT PRIMARY KEY,
-      original   TEXT NOT NULL,
-      result     TEXT NOT NULL,      -- 單句分析結果 JSON
-      model      TEXT NOT NULL,
-      pattern_id INTEGER,            -- 攤平，之後做弱點統計用
-      tense_time TEXT,
-      tense_aspect TEXT,
-      in_scope   INTEGER,
-      issue      TEXT,
-      created_at INTEGER NOT NULL,
-      hits       INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS attempts (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_token TEXT NOT NULL,
-      qtype      TEXT NOT NULL,          -- pattern | tense | pos | verb-forms | error-fix
-      sentence_hash TEXT,
-      pattern_id INTEGER,                -- 作答當下該題涉及的句型（弱點統計用）
-      tense_time TEXT, tense_aspect TEXT,
-      pos        TEXT,
-      pron_case  TEXT,
-      correct    INTEGER NOT NULL,
-      answer     TEXT, expected TEXT,
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_attempts_user ON attempts(user_token, created_at);
-    CREATE TABLE IF NOT EXISTS wordsets (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL, note TEXT, created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS words (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      set_id INTEGER NOT NULL, idx INTEGER NOT NULL,
-      term TEXT NOT NULL, syllables TEXT, spell_tip TEXT,
-      data TEXT NOT NULL,                 -- senses / confusable / family 的完整 JSON
-      UNIQUE(set_id, term)
-    );
-    CREATE INDEX IF NOT EXISTS idx_words_set ON words(set_id, idx);
-    CREATE TABLE IF NOT EXISTS word_attempts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_token TEXT NOT NULL, word_id INTEGER NOT NULL, sense_idx INTEGER,
-      mode TEXT NOT NULL, correct INTEGER NOT NULL,
-      answer TEXT, expected TEXT, created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_wattempts ON word_attempts(user_token, created_at);
-    -- Leitner 間隔複習：答對往上一盒、答錯打回第一盒，到期的優先出
-    CREATE TABLE IF NOT EXISTS word_progress (
-      user_token TEXT NOT NULL, word_id INTEGER NOT NULL,
-      box INTEGER NOT NULL DEFAULT 0, due_at INTEGER NOT NULL DEFAULT 0,
-      correct INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (user_token, word_id)
-    );
-    CREATE TABLE IF NOT EXISTS requests (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      chars      INTEGER, sentences INTEGER, cached INTEGER, analyzed INTEGER,
-      ms         INTEGER, created_at INTEGER NOT NULL,
-      kind       TEXT DEFAULT 'analyze',  -- analyze（分析句子）| wordset（建立字表）
-      ref_id     INTEGER,              -- kind=wordset 時是該字表的 id
-      text       TEXT,                 -- 原文，供歷史紀錄重新顯示（由 TTL 自動清理）
-      input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,
-      cache_read_tokens INTEGER DEFAULT 0, cost_usd REAL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_requests_time ON requests(created_at DESC);
-  
-    CREATE TABLE IF NOT EXISTS quizzes (
-      id         TEXT PRIMARY KEY,
-      kind       TEXT,              -- sentence（句型練習）| word（單字測驗）
-      data       TEXT NOT NULL,     -- 題目含答案的 JSON
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_quizzes_at ON quizzes(created_at);
-`);
-
-  // 既有資料庫補欄位（node:sqlite 沒有 IF NOT EXISTS，用 PRAGMA 檢查）
-  const cols = t => new Set(db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name));
-  const addCol = (t, name, decl) => { if (!cols(t).has(name)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${name} ${decl}`); };
-  for (const [n, d] of [['text','TEXT'], ['kind',"TEXT DEFAULT 'analyze'"], ['ref_id','INTEGER'], ['input_tokens','INTEGER DEFAULT 0'],
-                        ['output_tokens','INTEGER DEFAULT 0'], ['cache_read_tokens','INTEGER DEFAULT 0'],
-                        ['cost_usd','REAL DEFAULT 0']]) addCol('requests', n, d);
-  for (const [n, d] of [['input_tokens','INTEGER DEFAULT 0'], ['output_tokens','INTEGER DEFAULT 0'],
-                        ['cost_usd','REAL DEFAULT 0'],
-                        // 對話題：這句是誰說的、對方說了什麼。出題時要一起呈現，
-                        // 否則「make...for」和「made...some cards」的對照就斷了。
-                        ['speaker','TEXT'], ['context','TEXT']]) addCol('sentences', n, d);
-  addCol('attempts', 'pron_case', 'TEXT');
-  // 訂正的作答要留紀錄但不計入統計與排程
-  addCol('attempts', 'is_fix', 'INTEGER DEFAULT 0');
-  addCol('word_attempts', 'is_fix', 'INTEGER DEFAULT 0');
+  db.exec('PRAGMA journal_mode = WAL;');
+  migrate(db, { file });
 
   const qGet  = db.prepare('SELECT result FROM sentences WHERE hash = ?');
   const qHit  = db.prepare('UPDATE sentences SET hits = hits + 1 WHERE hash = ?');
@@ -141,6 +53,32 @@ export function openCache(file = 'data/cache.db'){
       if (!row) return null;
       qHit.run(h);
       try { return JSON.parse(row.result); } catch { return null; }
+    },
+    /** 只問「有沒有」，不算命中。報價用，不能污染 hits。 */
+    has(sentence){ return Boolean(qGet.get(hashOf(sentence))); },
+    /** 取分析結果但不算命中（出題、報價用，不能污染 hits） */
+    peek(sentence){
+      const row = qGet.get(hashOf(sentence));
+      if (!row) return null;
+      try { return JSON.parse(row.result); } catch { return null; }
+    },
+    /** 依最近的分析紀錄估每句的花費與時間；沒有足夠紀錄就用預設值。
+     *  只取一次分析 5 句以上的紀錄：單句那種常是冷快取，會把平均拉高。 */
+    analysisUnitCost(){
+      const r = db.prepare(`SELECT SUM(cost_usd) c, SUM(analyzed) n, SUM(ms) ms FROM (
+          SELECT cost_usd, analyzed, ms FROM requests
+          WHERE kind = 'analyze' AND analyzed >= 5 AND cost_usd > 0 ORDER BY id DESC LIMIT 20)`).get();
+      return r?.n >= 5
+        ? { perSentence: r.c / r.n, msPerSentence: r.ms / r.n, samples: r.n, source: 'history' }
+        : { perSentence: 0.035, msPerSentence: 8000, samples: 0, source: 'default' };
+    },
+    /** 依最近的出題紀錄估每題花費與時間（kind='paper-gen'，analyzed 欄位記入庫題數）；紀錄不夠就回 null，由呼叫端用預設值 */
+    paperGenUnit(){
+      const r = db.prepare(`SELECT SUM(cost_usd) c, SUM(analyzed) n, SUM(ms) ms, COUNT(*) calls FROM (
+          SELECT cost_usd, analyzed, ms FROM requests
+          WHERE kind = 'paper-gen' AND analyzed >= 3 AND cost_usd > 0 ORDER BY id DESC LIMIT 20)`).get();
+      if (!(r?.n >= 5)) return null;
+      return { perCall: Math.min(0.05, r.c / r.calls * 0.15), perQuestion: r.c / r.n * 0.85, msPerCall: 8000, msPerQuestion: r.ms / r.n, samples: r.n, source: 'history' };
     },
     put(sentence, result, model, usage = {}, meta = {}){
       const h = hashOf(sentence);
@@ -547,11 +485,129 @@ export function openCache(file = 'data/cache.db'){
       db.prepare('DELETE FROM quizzes WHERE created_at < ?')
         .run(Date.now() - days * 86400_000);
     },
+    // 文章表引用的句子不能被清掉，否則文章表會缺句
     prune(days){
       const cutoff = Date.now() - days * 86400_000;
-      const n = db.prepare('SELECT COUNT(*) n FROM sentences WHERE created_at < ?').get(cutoff).n;
-      db.prepare('DELETE FROM sentences WHERE created_at < ?').run(cutoff);
+      const keep = 'hash NOT IN (SELECT hash FROM article_items)';
+      const n = db.prepare(`SELECT COUNT(*) n FROM sentences WHERE created_at < ? AND ${keep}`).get(cutoff).n;
+      db.prepare(`DELETE FROM sentences WHERE created_at < ? AND ${keep}`).run(cutoff);
       return n;
+    },
+
+    // ---------- 文章表 ----------
+    hashOf(sentence){ return hashOf(sentence); },
+    articles(){
+      return db.prepare(`SELECT a.id, a.name, a.created_at,
+          (SELECT COUNT(*) FROM article_items i WHERE i.article_id = a.id) AS sentences,
+          (SELECT COUNT(DISTINCT para) FROM article_items i WHERE i.article_id = a.id) AS paragraphs
+        FROM articles a ORDER BY a.created_at DESC, a.id DESC`).all();
+    },
+    getArticle(id){ return db.prepare('SELECT id, name, created_at FROM articles WHERE id = ?').get(Number(id)) ?? null; },
+    articleByName(name){
+      return db.prepare('SELECT id, name FROM articles WHERE lower(name) = lower(?)').get(String(name).trim()) ?? null;
+    },
+    /** 把句子（依序、帶段落）存進文章表。appendTo 有值就接在後面，已經在這份裡的句子略過。 */
+    saveArticle({ name, appendTo, items }){
+      db.exec('BEGIN');
+      try {
+        let id = appendTo ? Number(appendTo) : null;
+        if (id == null) id = Number(db.prepare('INSERT INTO articles (name, created_at) VALUES (?,?)').run(name, Date.now()).lastInsertRowid);
+        else if (!db.prepare('SELECT 1 FROM articles WHERE id = ?').get(id)) throw Object.assign(new Error('這份文章表不存在'), { code: 'not-found' });
+        const have = new Set(db.prepare('SELECT hash FROM article_items WHERE article_id = ?').all(id).map(r => r.hash));
+        let idx = db.prepare('SELECT COALESCE(MAX(idx), -1) m FROM article_items WHERE article_id = ?').get(id).m + 1;
+        const paraBase = db.prepare('SELECT COALESCE(MAX(para), -1) m FROM article_items WHERE article_id = ?').get(id).m + 1;
+        const ins = db.prepare('INSERT INTO article_items (article_id, idx, para, hash) VALUES (?,?,?,?)');
+        let added = 0, skipped = 0;
+        for (const it of items){
+          if (have.has(it.hash)){ skipped++; continue; }
+          have.add(it.hash); ins.run(id, idx++, paraBase + it.para, it.hash); added++;
+        }
+        db.exec('COMMIT');
+        return { id, added, skipped, total: have.size };
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
+    },
+    renameArticle(id, name){ return Number(db.prepare('UPDATE articles SET name = ? WHERE id = ?').run(name, Number(id)).changes); },
+    deleteArticles(ids){
+      const list = (Array.isArray(ids) ? ids : [ids]).map(Number).filter(Number.isFinite);
+      if (!list.length) return 0;
+      const qs = list.map(() => '?').join(',');
+      db.exec('BEGIN');
+      try {
+        db.prepare(`DELETE FROM article_items WHERE article_id IN (${qs})`).run(...list);
+        const n = db.prepare(`DELETE FROM articles WHERE id IN (${qs})`).run(...list).changes;
+        db.exec('COMMIT'); return Number(n);
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
+    },
+    /** 文章表的句子（依序），附上分析結果；分析結果不在快取裡的句子 sentence 是 null */
+    articleItems(ids){
+      const list = (Array.isArray(ids) ? ids : [ids]).map(Number).filter(Number.isFinite);
+      if (!list.length) return [];
+      const qs = list.map(() => '?').join(',');
+      return db.prepare(`SELECT i.article_id, i.idx, i.para, i.hash, s.result FROM article_items i
+          LEFT JOIN sentences s ON s.hash = i.hash WHERE i.article_id IN (${qs}) ORDER BY i.article_id, i.idx`).all(...list)
+        .map(r => ({ articleId: r.article_id, idx: r.idx, para: r.para, hash: r.hash,
+                     sentence: r.result ? JSON.parse(r.result) : null }));
+    },
+
+    // ---------- 測驗卷（快取性質，到期自動清除）----------
+    putPaper({ id, n, settings, data, ttlDays = 30 }){
+      const now = Date.now();
+      db.prepare(`INSERT OR REPLACE INTO papers (id, created_at, expires_at, n, settings, data, status)
+        VALUES (?,?,?,?,?,?, 'open')`).run(id, now, now + ttlDays * 86400_000, n, JSON.stringify(settings), JSON.stringify(data));
+    },
+    getPaper(id){
+      const r = db.prepare('SELECT * FROM papers WHERE id = ? AND expires_at > ?').get(String(id), Date.now());
+      return r ? { id: r.id, createdAt: r.created_at, expiresAt: r.expires_at, n: r.n, status: r.status,
+                   score: r.score, submittedAt: r.submitted_at, settings: JSON.parse(r.settings), data: JSON.parse(r.data) } : null;
+    },
+    savePaperData(id, data){ db.prepare('UPDATE papers SET data = ? WHERE id = ?').run(JSON.stringify(data), String(id)); },
+    submitPaper(id, data, score){
+      db.prepare("UPDATE papers SET data = ?, status = 'submitted', score = ?, submitted_at = ? WHERE id = ?")
+        .run(JSON.stringify(data), score, Date.now(), String(id));
+    },
+    papers(limit = 20){
+      return db.prepare(`SELECT id, created_at, expires_at, n, status, score, submitted_at, settings FROM papers
+          WHERE expires_at > ? ORDER BY created_at DESC LIMIT ?`).all(Date.now(), limit)
+        .map(r => ({ ...r, settings: JSON.parse(r.settings) }));
+    },
+    deletePaper(id){ return Number(db.prepare('DELETE FROM papers WHERE id = ?').run(String(id)).changes); },
+    /** 清掉過期的，以及超過最近 keep 份的 */
+    prunePapers({ keep = 20 } = {}){
+      const a = db.prepare('DELETE FROM papers WHERE expires_at <= ?').run(Date.now()).changes;
+      const b = db.prepare('DELETE FROM papers WHERE id NOT IN (SELECT id FROM papers ORDER BY created_at DESC LIMIT ?)').run(keep).changes;
+      return Number(a) + Number(b);
+    },
+
+    // ---------- 題庫（模型出的題，存起來重複用）----------
+    putQuestions(rows){
+      const ins = db.prepare(`INSERT OR IGNORE INTO questions (id, type, src, ref, anchors, payload, created_at)
+        VALUES (?,?,?,?,?,?,?)`);
+      db.exec('BEGIN');
+      try {
+        for (const q of rows) ins.run(q.id, q.type, q.src, q.ref ?? null, q.anchors ? JSON.stringify(q.anchors) : null,
+          JSON.stringify(q.payload), Date.now());
+        db.exec('COMMIT');
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
+      return rows.length;
+    },
+    /** 取題庫的題：用過次數少的、答錯多的優先 */
+    questionsOf({ type, ref, src, limit = 200 }){
+      const where = ['type = ?']; const args = [type];
+      if (ref != null){ where.push('ref = ?'); args.push(String(ref)); }
+      if (src){ where.push('src = ?'); args.push(src); }
+      return db.prepare(`SELECT id, type, src, ref, anchors, payload, used, wrong FROM questions
+          WHERE ${where.join(' AND ')} ORDER BY used ASC, wrong DESC, created_at DESC LIMIT ?`).all(...args, limit)
+        .map(r => ({ id: r.id, type: r.type, src: r.src, ref: r.ref, used: r.used, wrong: r.wrong,
+                     anchors: r.anchors ? JSON.parse(r.anchors) : null, payload: JSON.parse(r.payload) }));
+    },
+    bumpQuestions(ids, { wrong = false } = {}){
+      const st = db.prepare(`UPDATE questions SET ${wrong ? 'wrong = wrong + 1' : 'used = used + 1'} WHERE id = ?`);
+      for (const id of ids) st.run(String(id));
+    },
+    /** 題庫設上限，淘汰用得最多、最舊的（用得少的新題優先保留） */
+    pruneQuestions(max = 500){
+      return Number(db.prepare(`DELETE FROM questions WHERE id IN (
+          SELECT id FROM questions ORDER BY used ASC, created_at DESC LIMIT -1 OFFSET ?)`).run(max).changes);
     },
     stats(){
       return { ...qStats.get(), patterns: qPatterns.all(), tenses: qTenses.all() };

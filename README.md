@@ -361,12 +361,56 @@ prompts/analyzer-system.md   知識庫 A–J：句型判別流程、時態矩陣
 src/analyzer.mjs             呼叫模型 + 成分/詞性座標對齊（模型只回文字，座標由程式算）
 src/segment.mjs              英文斷句（處理 Mr. / U.S. / 3.14 / 引號）
 src/cache.mjs                逐句 SQLite 快取（key = 正規化後 SHA-256）
+src/migrate.mjs              資料庫遷移引擎：依 PRAGMA user_version 套用、每版一個交易、升級前自動備份
+src/migrations.mjs           遷移清單（第 1 版 = 到目前為止的全部結構；之後新增表就加新的一版）
 src/exercises.mjs            句子出題引擎與弱點加權（純程式）
 src/wordset.mjs              單字表：充實（呼叫模型一次）與測驗出題（純程式）
-src/server.mjs               HTTP + SSE 串流 API
-prototype/index.html         前端（單檔，無後端時自動降級為範例展示模式）
+src/claude-bin.mjs           Claude CLI 的執行檔與 spawnClaude()（四個呼叫點共用）
+src/server.mjs               啟動與路由分派（HTTP + SSE）
+src/config.mjs               環境變數與常數
+src/context.mjs              資料庫與快取（整個伺服器共用一份連線）
+src/http.mjs                 讀請求本文、驗證（AUTH_TOKEN）、併發池、圖片解碼、靜態檔
+src/routes/analyze.mjs       分析、拍照辨識、範例、歷史、統計、健康檢查
+src/routes/practice.mjs      句子練習的出題、交卷、弱點
+src/routes/words.mjs         字表、辨識、字表例句分析、單字測驗與交卷
+prototype/index.html         前端標記與內嵌的範例資料（無後端時自動降級為範例展示模式）
+prototype/app.css            樣式
+prototype/js/*.js            前端腳本。經典腳本，共用全域，由 index.html 依固定順序載入（順序不能換）
+prototype/speech.js          發聲層（可抽換）
 eval/                        60 案例黃金測試集 ＋ 評測腳本
+test/                        測試：test/api（不呼叫模型）、test/browser（真的瀏覽器）、test/*.mjs
 ```
+
+線上展示版（以 Artifact 發布）原本是單一 `index.html`；現在樣式與腳本是獨立檔案，
+發布時要用 `files` 一併帶上 `app.css`、`js/*.js`、`speech.js`。
+
+## 開發與測試
+
+**開發用分支，不要在跑著正式服務的資料夾切分支** —— 那個服務就是從這個資料夾讀程式的，
+檔案一換，正在用的人立刻跟著變。用 `git worktree` 把開發分支放在另一個資料夾：
+
+```bash
+git worktree add -b dev ../saving_peater-dev main      # 只需要做一次
+cd ../saving_peater-dev
+# 資料庫複本（用 VACUUM INTO 取得一致的複本；data/ 不進版控）
+node --no-warnings -e "const {DatabaseSync}=require('node:sqlite');require('fs').mkdirSync('data',{recursive:true});new DatabaseSync('../saving_peater/data/cache.db',{readOnly:true}).exec(\"VACUUM INTO 'data/cache.db'\")"
+PORT=8788 node --no-warnings src/server.mjs             # 開發版用 8788，正式服務用 8787
+```
+
+| 指令 | 內容 |
+| --- | --- |
+| `npm test` | 遷移（11）、提示與批改（53）、API 基準（79，不呼叫模型）、假 CLI 路由（27，不花額度） |
+| `BASE=http://127.0.0.1:8788/ node --no-warnings test/browser/run-all.mjs` | 瀏覽器測試（真的 Chrome，連本機資料庫，所以只測開發版） |
+
+- **假的 Claude CLI**：`test/fake-claude.mjs`。測試時設 `CLAUDE_BIN=<node>` 與
+  `CLAUDE_ARGS_PREFIX='["test/fake-claude.mjs"]'`，分析、拍照辨識、建字表都能完整跑過，不花任何額度；
+  可注入額度用盡、單句失敗。`test/api/model-routes.mjs` 就是這樣用的。
+- **資料庫遷移**：新增表或欄位時，在 `src/migrations.mjs` 加新的一版（版本號連續遞增），
+  不要改已經發布的版本。啟動時自動套用，升級前自動備份到 `data/backups/`（只留最近 5 份）；
+  資料庫版本比程式新時會拒絕啟動，避免舊程式弄壞新結構。
+- **`DB_FILE`** 環境變數可指定資料庫位置（測試與開發用）。
+- 目前已知失敗的瀏覽器測試：`mobile-audit`（按鈕高度與縮排稽核，3 項）；
+  `reorder2` 需要資料庫裡有答錯紀錄才能驗證排序。
 
 ## API
 
@@ -374,6 +418,8 @@ eval/                        60 案例黃金測試集 ＋ 評測腳本
 | --- | --- |
 | `GET /api/health` | 回報模型與上限 |
 | `POST /api/analyze` | `{"text":"..."}` → SSE 串流，每分析完一句推一句 |
+| `POST /api/analyze` 的 `article:true` | 文章模式：上限 20000 字／120 句（一般貼上 4000 字／25 句） |
+| `POST /api/analyze` 的 `dryRun:true` | 報價：不呼叫模型、不動快取，回傳句數、已快取、待分析、花費區間與預估秒數 |
 | `POST /api/exercises` | `{"count":10,"types":[...]}` → 題目（不含答案） |
 | `POST /api/attempts` | `{"quizId","userToken","answers"}` → 批改結果並記錄 |
 | `GET /api/weakness?user=` | 弱點統計：依題型／句型／時態／詞性的正確率 |
@@ -395,7 +441,7 @@ SSE 事件：`meta`（總句數）→ `sentence`（單句結果，附 `cached`�
 中斷時未完成的句子會標示出來並提供「重新分析」—— 已完成的句子都在快取裡，不會重跑。
 
 環境變數：`PORT`(8787)、`HOST`(127.0.0.1)、`AUTH_TOKEN`(無)、`MAX_CHARS`(4000)、
-`MAX_SENTENCES`(25)、`CONCURRENCY`(6)、`ANALYZER_MODEL`(opus)、`HISTORY_DAYS`(30)。
+`MAX_SENTENCES`(25)、`MAX_ARTICLE_CHARS`(20000)、`MAX_ARTICLE_SENTENCES`(120)、`CONCURRENCY`(6)、`ANALYZER_MODEL`(opus)、`HISTORY_DAYS`(30)、`DB_FILE`(data/cache.db)。
 
 ### 額度與對外開放
 

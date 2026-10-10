@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-const CHROME='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+import { CHROME, BASE } from './_env.mjs';
 const PORT=9339, W=Number(process.argv[2]||1280), H=900;
 const chrome=spawn(CHROME,['--headless','--disable-gpu','--no-sandbox','--hide-scrollbars',
   `--remote-debugging-port=${PORT}`,`--window-size=${W},${H}`,'about:blank'],{stdio:'ignore'});
@@ -9,7 +9,7 @@ const send=(m,p={})=>new Promise((res,rej)=>{const i=++id;pend.set(i,{res,rej});
 const evl=async e=>(await send('Runtime.evaluate',{expression:e,returnByValue:true,awaitPromise:true})).result.value;
 try{
   for(let i=0;i<40;i++){try{await fetch(`http://127.0.0.1:${PORT}/json/version`);break;}catch{await wait(250);}}
-  let t;try{t=await (await fetch(`http://127.0.0.1:${PORT}/json/new?http://127.0.0.1:8787/`,{method:'PUT'})).json();}catch{}
+  let t;try{t=await (await fetch(`http://127.0.0.1:${PORT}/json/new?${BASE}`,{method:'PUT'})).json();}catch{}
   if(!t?.webSocketDebuggerUrl)t=(await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(x=>x.type==='page');
   ws=new WebSocket(t.webSocketDebuggerUrl); await new Promise(r=>ws.onopen=r);
   ws.onmessage=e=>{const m=JSON.parse(e.data);
@@ -17,7 +17,7 @@ try{
     if(m.id&&pend.has(m.id)){const p=pend.get(m.id);pend.delete(m.id);m.error?p.rej(new Error(m.error.message)):p.res(m.result);}};
   await send('Runtime.enable'); await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride',{width:W,height:H,deviceScaleFactor:2,mobile:W<=560});
-  await send('Page.navigate',{url:'http://127.0.0.1:8787/'}); await wait(2600);
+  await send('Page.navigate',{url:BASE}); await wait(2600);
   await evl(`document.querySelector('.tabs button[data-view="words"]').click()`); await wait(1800);
 
   const pass=[]; const chk=(n,c)=>{pass.push(c);console.log(`  ${c?'✓':'✗'} ${n}`);};

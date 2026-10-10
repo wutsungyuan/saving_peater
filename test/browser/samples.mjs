@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 // 截圖放專案裡的 test/browser/out（已 gitignore）
-const OUT = new URL('./out/', import.meta.url).pathname;
+import { OUT } from './_env.mjs';
 mkdirSync(OUT, { recursive: true });
 
 import { writeFileSync } from 'node:fs';
-const CHROME='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+import { CHROME, BASE } from './_env.mjs';
 const PORT=9355, DIR=OUT;
 const chrome=spawn(CHROME,['--headless','--disable-gpu','--no-sandbox','--hide-scrollbars',
   `--remote-debugging-port=${PORT}`,'--window-size=1000,900','about:blank'],{stdio:'ignore'});
@@ -16,14 +16,14 @@ const evl=async e=>(await send('Runtime.evaluate',{expression:e,returnByValue:tr
 const pass=[]; const chk=(n,c)=>{pass.push(c);console.log(`  ${c?'✓':'✗'} ${n}`);};
 try{
   for(let i=0;i<40;i++){try{await fetch(`http://127.0.0.1:${PORT}/json/version`);break;}catch{await wait(250);}}
-  let t;try{t=await (await fetch(`http://127.0.0.1:${PORT}/json/new?http://127.0.0.1:8787/`,{method:'PUT'})).json();}catch{}
+  let t;try{t=await (await fetch(`http://127.0.0.1:${PORT}/json/new?${BASE}`,{method:'PUT'})).json();}catch{}
   if(!t?.webSocketDebuggerUrl)t=(await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(x=>x.type==='page');
   ws=new WebSocket(t.webSocketDebuggerUrl); await new Promise(r=>ws.onopen=r);
   ws.onmessage=e=>{const m=JSON.parse(e.data);
     if(m.method==='Runtime.exceptionThrown')errs.push(m.params.exceptionDetails.exception?.description||m.params.exceptionDetails.text);
     if(m.id&&pend.has(m.id)){const p=pend.get(m.id);pend.delete(m.id);m.error?p.rej(new Error(m.error.message)):p.res(m.result);}};
   await send('Runtime.enable'); await send('Page.enable');
-  await send('Page.navigate',{url:'http://127.0.0.1:8787/'}); await wait(3000);
+  await send('Page.navigate',{url:BASE}); await wait(3000);
 
   // 「換下一句」那一列已經移除 —— 現在再點一次同一個標籤就是換下一句。
   const line = async () => await evl(`document.getElementById('inp').value`);
