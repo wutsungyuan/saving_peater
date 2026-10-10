@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-const CHROME='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+import { CHROME, BASE } from './_env.mjs';
 const PORT=9356;
 const chrome=spawn(CHROME,['--headless','--disable-gpu','--no-sandbox','--hide-scrollbars',
   `--remote-debugging-port=${PORT}`,'--window-size=1000,900','about:blank'],{stdio:'ignore'});
@@ -12,14 +12,14 @@ const pass=[]; const chk=(n,c)=>{pass.push(c);console.log(`  ${c?'✓':'✗'} ${
 const cur=async()=>await evl(`({s:document.getElementById('inp').value, hint:''})`);
 try{
   for(let i=0;i<40;i++){try{await fetch(`http://127.0.0.1:${PORT}/json/version`);break;}catch{await wait(250);}}
-  let t;try{t=await (await fetch(`http://127.0.0.1:${PORT}/json/new?http://127.0.0.1:8787/`,{method:'PUT'})).json();}catch{}
+  let t;try{t=await (await fetch(`http://127.0.0.1:${PORT}/json/new?${BASE}`,{method:'PUT'})).json();}catch{}
   if(!t?.webSocketDebuggerUrl)t=(await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(x=>x.type==='page');
   ws=new WebSocket(t.webSocketDebuggerUrl); await new Promise(r=>ws.onopen=r);
   ws.onmessage=e=>{const m=JSON.parse(e.data);
     if(m.method==='Runtime.exceptionThrown')errs.push(m.params.exceptionDetails.exception?.description||m.params.exceptionDetails.text);
     if(m.id&&pend.has(m.id)){const p=pend.get(m.id);pend.delete(m.id);m.error?p.rej(new Error(m.error.message)):p.res(m.result);}};
   await send('Runtime.enable'); await send('Page.enable');
-  await send('Page.navigate',{url:'http://127.0.0.1:8787/'}); await wait(3000);
+  await send('Page.navigate',{url:BASE}); await wait(3000);
 
   // 連點同一個標籤 5 次
   const seen = [];

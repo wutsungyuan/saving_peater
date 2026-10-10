@@ -2,12 +2,12 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 // 截圖放專案裡的 test/browser/out（已 gitignore）
-const OUT = new URL('./out/', import.meta.url).pathname;
+import { OUT } from './_env.mjs';
 mkdirSync(OUT, { recursive: true });
 
 import { writeFileSync } from 'node:fs';
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+import { CHROME, BASE } from './_env.mjs';
 const PORT = 9333, W = Number(process.argv[2] || 390), H = Number(process.argv[3] || 900);
 const TABS = (process.argv[4] || 'analyze,words,practice,weak,history').split(',');
 
@@ -30,7 +30,7 @@ try {
   // 連到 browser target 會回「Target does not support metrics override」
   let t;
   try {
-    t = await (await fetch(`http://127.0.0.1:${PORT}/json/new?http://127.0.0.1:8787/`,
+    t = await (await fetch(`http://127.0.0.1:${PORT}/json/new?${BASE}`,
       { method: 'PUT' })).json();
   } catch {}
   if (!t?.webSocketDebuggerUrl){
@@ -46,7 +46,7 @@ try {
   };
   await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 2, mobile: true });
-  await send('Page.navigate', { url: 'http://127.0.0.1:8787/' });
+  await send('Page.navigate', { url: BASE });
   await wait(2500);
 
   for (const tab of TABS){
