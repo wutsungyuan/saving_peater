@@ -2,7 +2,7 @@
 import { cache } from '../context.mjs';
 import { PAPER_DAYS } from '../config.mjs';
 import { readBody, authed, sendJson } from '../http.mjs';
-import { previewPaper, createPaper, paperView, saveAnswers, submitPaper, markSelf, createFixPaper, historyList } from '../papers/paper.mjs';
+import { aiGradePaper, previewPaper, createPaper, paperView, saveAnswers, submitPaper, markSelf, createFixPaper, historyList } from '../papers/paper.mjs';
 
 const body = async req => { try { return JSON.parse(await readBody(req, 2e6)) || {}; } catch { return {}; } };
 const guard = (handler, method) => async (req, res, url) => {
@@ -46,6 +46,11 @@ export const routes = [
   { match: (req, url) => url.pathname === '/api/paper-self', handler: guard(async (req, res) => {
       const b = await body(req); const r = markSelf(cache, b.id, b.marks);
       return r.error ? fail(res, r, 409) : sendJson(res, 200, r);
+    }, 'POST') },
+
+  { match: (req, url) => url.pathname === '/api/paper-ai-grade', handler: guard(async (req, res) => {
+      const b = await body(req); const r = await aiGradePaper(cache, b.id, { confirm: b.confirm === true });
+      return r.error ? fail(res, r, r.error === 'confirm-required' ? 409 : r.error === 'grade-failed' ? 502 : 400) : sendJson(res, 200, r);
     }, 'POST') },
 
   { match: (req, url) => url.pathname === '/api/paper-redo', handler: guard(async (req, res) => {

@@ -306,6 +306,24 @@ pBox().addEventListener('click', async e => {
     if (!r.ok){ b.disabled = false; el('pSubMsg').textContent = r.json.message || '交卷失敗'; return; }
     rememberOpen(null); P.paper = r.json.paper; P.tab = 'result'; renderResult(); window.scrollTo({ top: 0 });
   }
+  if (e.target.id === 'pAi'){
+    e.target.disabled = true; el('pAiMsg').textContent = '算報價中…';
+    const q = await artApi('/api/paper-ai-grade', { method: 'POST', body: { id: P.paper.id } });
+    if (q.status !== 409){ e.target.disabled = false; el('pAiMsg').textContent = q.json.message || '無法批改'; return; }
+    const est = q.json.quote.estimate;
+    el('pAiBox').insertAdjacentHTML('beforeend', `<div class="quote" id="pAiQuote"><p>💰 報價：一次呼叫批改 <b>${q.json.quote.count}</b> 題，預估 <b>US$${est.low.toFixed(2)}–${est.high.toFixed(2)}</b>、約 ${est.seconds} 秒（${est.unit === 'history' ? '依你最近的批改紀錄估算' : '還沒有批改紀錄，用預設單價估算'}；上限已含第一次呼叫的暖機成本）。</p>
+      <div class="row"><button class="primary" type="button" id="pAiGo">確定，請 AI 批改</button><button class="linky" type="button" id="pAiNo">取消</button></div></div>`);
+    el('pAiMsg').textContent = '';
+    el('pAiNo').onclick = () => { el('pAiQuote').remove(); el('pAi').disabled = false; };
+    el('pAiGo').onclick = async () => {
+      el('pAiGo').disabled = true; el('pAiNo').disabled = true; el('pAiMsg').textContent = `批改中…約 ${est.seconds} 秒，請不要離開`;
+      const r = await artApi('/api/paper-ai-grade', { method: 'POST', body: { id: P.paper.id, confirm: true } });
+      if (!r.ok){ el('pAiQuote')?.remove(); el('pAi').disabled = false; el('pAiMsg').textContent = r.json.message || '批改失敗'; return; }
+      P.paper = r.json.paper; renderResult();
+      el('pFixMsg').textContent = `AI 批改完成：${r.json.graded} 題${r.json.missing?.length ? `（${r.json.missing.length} 題沒批改到，請自評）` : ''}，花費約 US$${(r.json.costUsd || 0).toFixed(3)}。`;
+    };
+    return;
+  }
   const mk = e.target.closest('[data-mark]');
   if (mk){
     const r = await artApi('/api/paper-self', { method: 'POST', body: { id: P.paper.id, marks: { [mk.dataset.qid]: mk.dataset.mark === '1' } } });
@@ -329,6 +347,16 @@ function fmtExpected(q, it){
   return (it.expected ?? []).join(' / ');
 }
 
+/** 請 AI 批改造句與翻譯：選用。先報價、你確認才呼叫（一次呼叫批改全部）。 */
+function aiCount(r){ return r.items.filter(it => (it.type === 'make' || it.type === 'trans') && !it.ai && (it.given || []).some(x => String(x).trim())).length; }
+function aiBox(r){
+  if (P.paper.kind === 'fix') return '';
+  const n = aiCount(r), done = r.items.filter(it => it.ai).length;
+  if (!n) return done ? `<p class="hint">造句與翻譯已由 AI 批改（${done} 題）。你仍然可以在每題改自評。</p>` : '';
+  return `<div class="box" id="pAiBox"><p style="margin:0">造句和翻譯有 <b>${n}</b> 題，程式只能做基本檢查。想要更準確的批改，可以請 AI 看一次（選用）。</p>
+    <div class="row"><button type="button" id="pAi">請 AI 批改（${n} 題）</button><span class="hint" id="pAiMsg">先顯示報價，你確認才會呼叫模型；不按就維持自評，不花額度。</span></div></div>`;
+}
+
 function renderResult(){
   const paper = P.paper, r = paper.result, fix = paper.kind === 'fix';
   const qs = Object.fromEntries(flatQs(paper).map((q, i) => [q.id, { ...q, no: i + 1 }]));
@@ -344,6 +372,7 @@ function renderResult(){
       ${q.question != null || q.display || q.sentence ? `<div class="${q.type === 'trans' ? 'q-zh' : 'q-sent'}">${q.display || q.sentence ? qDisplay(q) : esc(q.question)}</div>` : ''}
       <p class="p-line2"><b>你的答案</b>　${esc(fmtGiven(q, it.given))}</p>
       ${good && !it.pending ? '' : `<p class="p-line2"><b>參考答案</b>　${esc(fmtExpected(q, it))}</p>`}
+      ${it.ai ? `<p class="p-ai"><span class="tag t-model">AI 批改</span>　${esc(it.ai.comment || '')}${it.ai.fix ? `<br><b>建議寫法</b>　${esc(it.ai.fix)}` : ''}</p>` : ''}
       ${it.checks ? `<p class="hint">${it.checks.map(c => `${c.ok ? '✓' : '✗'} ${esc(c.label)}`).join('　')}${it.suggest === 'likely' ? '　（看起來不錯，仍請自己確認）' : ''}</p>` : ''}
       ${it.explain && !good ? `<p class="p-expl">${esc(it.explain)}</p>` : ''}
       ${q.inputMode === 'open' ? `<div class="row"><span class="hint">自評：</span><button type="button" class="${it.marked === true ? 'primary' : ''}" data-mark="1" data-qid="${id}">我答對了</button>
@@ -354,6 +383,7 @@ function renderResult(){
     <div>${fix ? '<b>訂正結果</b>　改對的題數。訂正不影響統計，也不改變原卷分數。' : `<b>${esc(paper.settings.difficultyName || '')}・${paper.n} 題</b>　答對 ${r.right}　答錯 ${r.wrong}${r.pending ? `　待自評 ${r.pending}` : ''}`}</div></div>
   ${fix ? '' : `<div class="scroll"><table class="p-table"><thead><tr><th>題型</th><th>得分</th><th>答對</th><th>答錯</th></tr></thead><tbody>${r.bySection.map(s => `<tr><td>${esc(s.name)}</td><td>${fmtPts(s.score)} / ${fmtPts(s.total)}</td><td>${s.right}</td><td>${s.wrong}${s.pending ? `（待自評 ${s.pending}）` : ''}</td></tr>`).join('')}</tbody></table></div>`}
   ${pending.length ? `<div class="box p-note">有 ${pending.length} 題（造句、翻譯）要由你自評：看過參考答案後，標「我答對了」或「沒答對」，分數會更新。自評不計入弱點統計。</div>` : ''}
+  ${aiBox(r)}
   <div class="row"><button class="primary" data-act2="fix" ${wrong.length + pending.filter(id => r.items.find(x => x.id === id).marked === false).length || wrong.length ? '' : 'disabled'}>訂正錯題</button>
     <button data-act2="print-ans">列印答案卷</button><button data-act2="again">再出一份</button><button data-act2="to-setup">回到出卷</button></div>
   <p class="hint" id="pFixMsg"></p>

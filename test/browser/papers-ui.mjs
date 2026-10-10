@@ -98,6 +98,26 @@ try {
   chk('標「我答對了」後分數更新、待自評清空', await evl(`parseFloat(document.querySelector('.p-big').textContent) > ${before}`) && await evl(`document.querySelectorAll('.p-res.pend').length === 0`));
   chk('自評後滿分 100', await evl(`parseFloat(document.querySelector('.p-big').textContent) === 100`));
 
+  section('請 AI 批改（選用、先報價）');
+  const r3 = await S.j('/api/papers', { method: 'POST', body: { setIds: [fx.setId], articleIds: [fx.artId], n: 25, mode: 'custom', types: ['mc', 'make', 'trans'], saver: true } });
+  const pid3 = r3.json.id;
+  const ans3 = {}; r3.json.paper.sections.flatMap(s => s.questions).filter(x => x.inputMode === 'open').forEach((x, i) => { ans3[x.id] = [i === 0 ? 'He wrong borrow book.' : 'I borrowed a book from my aunt.']; });
+  await S.j('/api/paper-submit', { method: 'POST', body: { id: pid3, answers: ans3, userToken: 'x' } });
+  await click('#pr-paper [data-pt="history"]');
+  await until(`!!document.querySelector('[data-open="${pid3}"]')`);
+  await evl(`document.querySelector('[data-open="${pid3}"]').click()`);
+  chk('結果頁有「請 AI 批改」按鈕，寫明題數與不按不花額度', await until(`!!document.getElementById('pAi') && /不按就維持自評/.test(document.getElementById('pAiBox').textContent)`));
+  const calls3 = S.calls().length;
+  await click('#pAi');
+  chk('按下去先出報價與確認按鈕，還沒呼叫模型', await until(`!!document.getElementById('pAiGo') && /報價：一次呼叫批改/.test(document.getElementById('pAiQuote').textContent)`) && S.calls().length === calls3);
+  await click('#pAiNo');
+  chk('取消 → 報價消失、沒有呼叫模型', await until(`!document.getElementById('pAiQuote')`) && S.calls().length === calls3);
+  await click('#pAi'); await until(`!!document.getElementById('pAiGo')`);
+  await click('#pAiGo');
+  chk('確認後：卡片出現「AI 批改」評語，錯的有建議寫法，待自評清空', await until(`document.querySelectorAll('.p-ai').length >= 2 && /建議寫法/.test(document.getElementById('pr-paper').textContent) && document.querySelectorAll('.p-res.pend').length === 0`, 20000), await text('#pFixMsg'));
+  chk('只呼叫了一次，並顯示完成與花費', S.calls().length === calls3 + 1 && await evl(`/AI 批改完成/.test(document.getElementById('pFixMsg').textContent)`));
+  chk('批改完不再顯示批改按鈕', await evl(`!document.getElementById('pAi')`));
+
   section('列印');
   await evl(`window.print = () => { window.__printed = true; }`);
   await click('[data-act2="print-ans"]');

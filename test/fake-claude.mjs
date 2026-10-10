@@ -25,7 +25,8 @@ const kind = sys === 'analyzer-system.md' ? 'analyze'
   : sys === 'analyze-ocr.md' ? 'prose-ocr'
   : sys === 'wordset-system.md' ? 'enrich'
   : sys === 'wordset-ocr.md' ? 'wordset-ocr'
-  : sys === 'exam-gen.md' ? 'exam' : 'unknown';
+  : sys === 'exam-gen.md' ? 'exam'
+  : sys === 'exam-grade.md' ? 'grade' : 'unknown';
 
 const sentencesOf = text => text.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
 const finish = (result, extra = {}) => {
@@ -95,6 +96,15 @@ if (kind === 'enrich') {
     senses: [{ pos: 'n', zh: it.zh || '測試', example: `I use the word ${it.term} every day.`, exampleZh: '我每天用這個字。' }],
     confusable: [], family: [],
   })) }, { n: items.length });
+}
+
+// ---- 測驗卷的 AI 批改：回答「含 wrong 的就錯，其餘對」，方便測 ----
+if (kind === 'grade') {
+  const req = JSON.parse(prompt);
+  finish({ results: req.items.map(it => {
+    const bad = /wrong|bad/i.test(it.answer) && !env.FAKE_GRADE_ALL_OK;
+    return { id: it.id, correct: !bad, comment: bad ? '這句有文法問題。' : '寫得不錯。', fix: bad ? 'I borrowed a book from him.' : null };
+  }).filter(r => !(env.FAKE_GRADE_DROP && r.id === env.FAKE_GRADE_DROP)) }, { n: req.items.length });
 }
 
 // ---- 測驗卷的出題任務（read / cloze / ext）：回傳結構合法、內容是機器湊的題目 ----

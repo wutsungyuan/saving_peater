@@ -7,6 +7,7 @@ import { composePaper, seededRng, TYPES, TYPE_BY_ID, DIFFICULTY, DIFFICULTY_NAME
 import { buildPool, haveOf } from './pool.mjs';
 import { supplyOf, generateType, publicQuestion } from './gen.mjs';
 import { gradeQuestion, earned } from './grade.mjs';
+import { gradeQuote, runAiGrade, applyGrades } from './aigrade.mjs';
 import { planModelWork, runModelWork, readSupply, extBankCaps, extQuestions, readSection, clozeSemantic } from './model.mjs';
 
 const newId = () => 'p' + randomBytes(5).toString('hex');
@@ -169,7 +170,7 @@ function summarize(data, grades){
     const g = grades.get(q.id);
     const e = earned(q, g, data.self);
     return { id: q.id, section: q.section, type: q.type, correct: g.correct, pending: g.pending && data.self[q.id] == null, marked: g.pending ? (data.self[q.id] ?? null) : null,
-      given: g.given, expected: g.expected, explain: q.explain, reference: q.sample ?? q.answer?.[0] ?? null, suggest: g.suggest, checks: g.checks, pts: q.pts, earned: e, src: q.src };
+      given: g.given, expected: g.expected, ai: data.ai?.[q.id] ?? null, explain: q.explain, reference: q.sample ?? q.answer?.[0] ?? null, suggest: g.suggest, checks: g.checks, pts: q.pts, earned: e, src: q.src };
   });
   const ok = it => it.correct === true || it.marked === true;
   const bySection = data.sections.map(s => {
@@ -221,6 +222,27 @@ export function markSelf(cache, id, marks){
   p.data.result = summarize(p.data, grades);
   cache.submitPaper(id, p.data, p.data.result.score);
   return { ok: true, paper: paperView(cache.getPaper(id)) };
+}
+
+/**
+ * 請 AI 批改造句與翻譯（選用）。沒確認時回 409 + 報價；確認後一次呼叫批改全部，結果寫進自評。
+ * 回傳 { ok, paper, graded, missing, costUsd } 或 { error }。
+ */
+export async function aiGradePaper(cache, id, { confirm = false } = {}){
+  const p = cache.getPaper(id);
+  if (!p) return { error: 'expired', message: '這份卷子已經過期或不存在。' };
+  if (p.status !== 'submitted') return { error: 'not-submitted', message: '要先交卷才能請 AI 批改。' };
+  if (p.settings.kind === 'fix') return { error: 'fix-paper', message: '訂正卷不需要批改。' };
+  const quote = gradeQuote(cache, p.data);
+  if (!quote.count) return { error: 'nothing-to-grade', message: '沒有需要批改的造句或翻譯題（沒作答的題不會批改）。', quote };
+  if (!confirm) return { error: 'confirm-required', message: '要先確認費用才會呼叫模型。', quote };
+  const run = await runAiGrade(cache, p.data, { capUsd: Math.max(0.3, Math.round(quote.estimate.high * 150) / 100) });
+  if (run.error) return { error: run.error, message: run.message, kind: run.kind, quote };
+  applyGrades(p.data, run.results);
+  const grades = new Map(p.data.questions.map(q => [q.id, gradeQuestion(q, p.data.answers[q.id])]));
+  p.data.result = summarize(p.data, grades);
+  cache.submitPaper(id, p.data, p.data.result.score);
+  return { ok: true, paper: paperView(cache.getPaper(id)), graded: run.graded, missing: run.missing, costUsd: run.costUsd, partialError: run.error };
 }
 
 /** 訂正：把答錯的題重出（題型不換、選項順序重排），錯的排前面。不計入統計，原卷分數不變。 */

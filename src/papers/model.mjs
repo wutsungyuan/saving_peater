@@ -120,9 +120,9 @@ export function planModelWork(cache, pool, plan, { saver = false, seed = 1 } = {
 }
 
 // ---------- 呼叫模型 ----------
-function callExam(userObj, { timeoutMs = 240_000, maxBudgetUsd } = {}){
+export function callExam(userObj, { timeoutMs = 240_000, maxBudgetUsd, promptFile = EXAM_PROMPT } = {}){
   return new Promise((resolve, reject) => {
-    const args = ['-p', JSON.stringify(userObj), '--system-prompt-file', EXAM_PROMPT, '--allowedTools', '',
+    const args = ['-p', JSON.stringify(userObj), '--system-prompt-file', promptFile, '--allowedTools', '',
       '--exclude-dynamic-system-prompt-sections', '--model', EXAM_MODEL, '--output-format', 'json'];
     if (maxBudgetUsd) args.push('--max-budget-usd', String(maxBudgetUsd));
     const child = spawnClaude(args);

@@ -80,6 +80,13 @@ export function openCache(file = 'data/cache.db'){
       if (!(r?.n >= 5)) return null;
       return { perCall: Math.min(0.05, r.c / r.calls * 0.15), perQuestion: r.c / r.n * 0.85, msPerCall: 8000, msPerQuestion: r.ms / r.n, samples: r.n, source: 'history' };
     },
+    /** AI 批改的單價（依最近的紀錄）；紀錄不夠回 null */
+    paperGradeUnit(){
+      const r = db.prepare(`SELECT SUM(cost_usd) c, SUM(analyzed) n, COUNT(*) calls FROM (
+          SELECT cost_usd, analyzed FROM requests WHERE kind = 'paper-grade' AND analyzed >= 1 AND cost_usd > 0 ORDER BY id DESC LIMIT 20)`).get();
+      if (!(r?.n >= 5)) return null;
+      return { perCall: Math.min(0.05, r.c / r.calls * 0.4), perItem: Math.max(0.002, (r.c / r.calls * 0.6) / (r.n / r.calls)) };
+    },
     put(sentence, result, model, usage = {}, meta = {}){
       const h = hashOf(sentence);
       const main = result?.clauses?.find(c => c.role === 'main') ?? result?.clauses?.[0];

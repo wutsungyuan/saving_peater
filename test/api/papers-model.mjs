@@ -84,6 +84,35 @@ try {
   chk('空白交卷：批改完成', r.status === 200 && r.json.paper.result.wrong > 0);
   chk('答錯的題庫題記一次答錯', (q('SELECT SUM(wrong) w FROM questions')[0].w ?? 0) > wrongBefore);
 
+  // ============ AI 批改造句與翻譯 ============
+  section('請 AI 批改造句與翻譯（選用、先報價、一次呼叫）');
+  r = await j('/api/papers', { method: 'POST', body: { ...SC, n: 30, saver: true, seed: 11, mode: 'custom', types: ['mc', 'trans', 'make'] } });
+  const gp = r.json.paper, gid = r.json.id;
+  const openQs = gp.sections.flatMap(s => s.questions).filter(x => x.inputMode === 'open');
+  chk('這份卷子有造句或翻譯題', openQs.length >= 2, JSON.stringify(openQs.map(x => x.type)));
+  const ans = {}; openQs.forEach((x, i) => { ans[x.id] = [i === 0 ? 'He wrong borrow book.' : 'I borrowed a book from my aunt yesterday.']; });
+  const unanswered = openQs.length > 2 ? openQs[2].id : null; if (unanswered) delete ans[unanswered];
+  const calls1 = S.calls().length;
+  r = await j('/api/paper-ai-grade', { method: 'POST', body: { id: gid } });
+  chk('還沒交卷 → 不能批改', r.status === 400 && r.json.error === 'not-submitted');
+  r = await j('/api/paper-submit', { method: 'POST', body: { id: gid, answers: ans, userToken: 'tg' } });
+  const scoreBefore = r.json.paper.result.score;
+  chk('交卷後造句與翻譯待自評', r.json.paper.result.pending >= 2);
+  r = await j('/api/paper-ai-grade', { method: 'POST', body: { id: gid } });
+  chk('沒確認 → 409 + 報價（只算有作答的題），沒呼叫模型', r.status === 409 && r.json.error === 'confirm-required' && r.json.quote.count === Object.keys(ans).length && r.json.quote.calls === 1 && r.json.quote.estimate.high > 0 && S.calls().length === calls1, r.text.slice(0, 200));
+  r = await j('/api/paper-ai-grade', { method: 'POST', body: { id: gid, confirm: true } });
+  chk('確認後批改成功：只呼叫一次、批改全部有作答的題', r.status === 200 && r.json.graded === Object.keys(ans).length && S.calls().length === calls1 + 1 && S.calls().at(-1).kind === 'grade', r.text.slice(0, 200));
+  const gres = r.json.paper.result;
+  const aiItems = gres.items.filter(i => i.ai);
+  chk('結果寫進卷子：有 AI 評語、錯的有建議寫法', aiItems.length === Object.keys(ans).length && aiItems.some(i => i.ai.correct === false && i.ai.fix && i.ai.comment) && aiItems.some(i => i.ai.correct === true && i.ai.fix === null));
+  chk('錯的標成沒答對、對的標成答對（走自評欄位），分數更新', gres.items.find(i => i.id === openQs[0].id).marked === false && gres.items.find(i => i.id === openQs[1].id).marked === true && gres.score !== scoreBefore, JSON.stringify([scoreBefore, gres.score]));
+  chk('沒作答的題不批改、維持原樣（判錯）', !unanswered || (gres.items.find(i => i.id === unanswered).ai === null && gres.items.find(i => i.id === unanswered).correct === false));
+  chk('AI 批改的花費記進用量（kind=paper-grade）', (await j('/api/history')).json.items.some(i => i.kind === 'paper-grade'));
+  r = await j('/api/paper-ai-grade', { method: 'POST', body: { id: gid, confirm: true } });
+  chk('已批改過的不會重複批改（沒有可批改的題）', r.status === 400 && r.json.error === 'nothing-to-grade' && S.calls().length === calls1 + 1);
+  r = await j('/api/paper-self', { method: 'POST', body: { id: gid, marks: { [openQs[0].id]: true } } });
+  chk('學生仍可覆蓋 AI 的判定', r.json.paper.result.items.find(i => i.id === openQs[0].id).marked === true && r.json.paper.result.items.find(i => i.id === openQs[0].id).ai.correct === false);
+
   // ============ 省錢模式 ============
   section('省錢模式（不呼叫模型）');
   const S2 = await start('pm-saver', {}, { dbFile: fx.dbFile });
@@ -117,6 +146,14 @@ try {
   chk('回報 rate-limit，已出的卷子照樣能用', r.status === 200 && r.json.model.error?.kind === 'rate-limit' && r.json.paper.n === 30 && r.json.total === 100, r.text.slice(0, 200));
   chk('沒有閱讀題，所以沒有閱讀測驗區（不亂湊）', r.json.paper.sections.every(s => s.id !== 'read'));
   chk('額度用盡後不再硬試（只呼叫一次就停）', S4.calls().filter(c => c.kind === 'exam').length === 1, JSON.stringify(S4.calls().map(c => c.task)));
+  // AI 批改遇到額度用盡：回 502、分數不動、自評仍可用
+  const rp = await S4.j('/api/papers', { method: 'POST', body: { setIds: [fx3.setId], articleIds: [fx3.artId], n: 30, saver: true, seed: 11, mode: 'custom', types: ['mc', 'trans', 'make'] } });
+  const rOpen = rp.json.paper.sections.flatMap(s => s.questions).filter(x => x.inputMode === 'open');
+  const rAns = {}; rOpen.forEach(x => { rAns[x.id] = ['I borrowed a book.']; });
+  const rs = await S4.j('/api/paper-submit', { method: 'POST', body: { id: rp.json.id, answers: rAns, userToken: 'tg' } });
+  const rg = await S4.j('/api/paper-ai-grade', { method: 'POST', body: { id: rp.json.id, confirm: true } });
+  chk('AI 批改遇到額度用盡 → 502 並說明，仍可自評', rg.status === 502 && /額度/.test(rg.json.message), rg.text.slice(0, 200));
+  chk('失敗後分數沒變、題目仍待自評', (await S4.j('/api/paper?id=' + rp.json.id)).json.result.score === rs.json.paper.result.score && (await S4.j('/api/paper?id=' + rp.json.id)).json.result.pending >= 2);
   try { rmSync(fx3.dir, { recursive: true, force: true }); } catch {}
 
   // ============ 出題模型可以設定 ============
