@@ -110,7 +110,7 @@ try {
   chk('歷史紀錄有分析、字表、辨識的紀錄', kinds.has('analyze') && kinds.has('wordset') && r.json.usage.all.cost_usd > 0, JSON.stringify([...kinds]) + ' ' + r.json.usage?.all?.cost_usd);
 
   console.log('失敗情況');
-  const F = await start('ratelimit', { FAKE_FAIL_AFTER: '2', ANALYZE_GROUP: '1' }); servers.push(F);
+  const F = await start('ratelimit', { FAKE_FAIL_AFTER: '2', ANALYZE_GROUP: '1', CONCURRENCY: '1' }); servers.push(F);
   r = await sse(F.base, '/api/analyze', { text: fresh('Echo', 8).join(' ') });
   const halted = evs(r, 'halted')[0], fd = evs(r, 'done')[0];
   chk('額度用盡 → 送出 halted(rate-limit)，不再硬試', halted?.kind === 'rate-limit' && fd?.halted === 'rate-limit', JSON.stringify(r.events.map(e => e.event)));
