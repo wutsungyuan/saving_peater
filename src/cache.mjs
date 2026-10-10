@@ -56,6 +56,12 @@ export function openCache(file = 'data/cache.db'){
     },
     /** 只問「有沒有」，不算命中。報價用，不能污染 hits。 */
     has(sentence){ return Boolean(qGet.get(hashOf(sentence))); },
+    /** 取分析結果但不算命中（出題、報價用，不能污染 hits） */
+    peek(sentence){
+      const row = qGet.get(hashOf(sentence));
+      if (!row) return null;
+      try { return JSON.parse(row.result); } catch { return null; }
+    },
     /** 依最近的分析紀錄估每句的花費與時間；沒有足夠紀錄就用預設值。
      *  只取一次分析 5 句以上的紀錄：單句那種常是冷快取，會把平均拉高。 */
     analysisUnitCost(){

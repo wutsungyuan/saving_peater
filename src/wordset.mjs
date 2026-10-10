@@ -136,7 +136,7 @@ function selectWords(words, count){
   return out;
 }
 
-const senseLabel = (s) => `${s.pos}　${s.zh}`;
+export const senseLabel = (s) => `${s.pos}　${s.zh}`;
 
 /** 縮寫：全大寫（ROC、PE）、短字加點（Rd.、Ms.）、或逐字母加點（R.O.C.）。
  *  這類字沒有音節可言，音節提示反而讓人看不懂（R-O-C）。 */
@@ -254,7 +254,7 @@ function qSense(w){
   };
 }
 
-const WORD_BUILDERS = { zh2en:qZh2En, en2zh:qEn2Zh, listen:qListen, cloze:qCloze, sense:qSense, forms:qForms };
+export const WORD_BUILDERS = { zh2en:qZh2En, en2zh:qEn2Zh, listen:qListen, cloze:qCloze, sense:qSense, forms:qForms };
 
 /** 從一份字表生成測驗。words 要帶進度欄位（box / dueAt / total）
  *  題型用輪流取的方式，確保五種平均分佈，不是每個字各自隨機挑 */
