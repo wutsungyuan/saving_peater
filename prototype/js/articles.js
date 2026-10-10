@@ -161,7 +161,7 @@ async function openArticle(id){
     ? `這份單字表有 ${a.coverage.words} 個字，這份文章用到 ${a.coverage.hit} 個：${a.coverage.hitTerms.join('、') || '（沒有）'}` : `共 ${a.sentences} 句`;
   artSentences.clear();
   el('artBody').innerHTML = a.paragraphs.map(p => `
-    <section class="art-para"><h4>第 ${p.para + 1} 段</h4>${p.sentences.map(s => {
+    <section class="art-para"><h4>${p.speaker ? `<span class="who">${esc(p.speaker)}</span>` : `第 ${p.para + 1} 段`}</h4>${p.sentences.map(s => {
       artSentences.set(s.index, s.sentence);
       return `<div class="art-sent" data-index="${s.index}">
         <p class="art-en">${s.missing ? esc('（這句的分析已不在快取裡）') : highlightTerms(s.original, s.words)}</p>
@@ -221,3 +221,17 @@ function showPendingNotice(){
   el('artDrop').onclick = () => { setPending(null); box.hidden = true; };
 }
 showPendingNotice();
+
+// ---- 展開後的完整分析卡：「詳解」「朗讀」按鈕（即時分析頁的處理只掛在那一頁，這裡要自己接）----
+el('artBody').addEventListener('click', e => {
+  const more = e.target.closest('.more');
+  if (more){
+    const open = more.getAttribute('aria-expanded') !== 'true';
+    more.setAttribute('aria-expanded', String(open));
+    more.textContent = open ? '收起 －' : '詳解 ＋';
+    more.nextElementSibling.hidden = !open;
+    return;
+  }
+  const say = e.target.closest('.say');
+  if (say && typeof toggleSay === 'function') toggleSay(say.closest('.sent'));
+});

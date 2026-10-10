@@ -749,3 +749,6 @@ mark.sw{background:var(--tip-bg);color:inherit;border-bottom:2px solid var(--acc
 .art-confirm .ac-title{font-size:1rem}
 .art-confirm .ac-cost{font-size:1.05rem}
 .art-confirm .ac-cost b{color:var(--accent);font-family:var(--font-mono)}
+.turn-tag{margin:14px 0 4px}
+.turn-tag .who,.art-para h4 .who{font-family:var(--font-mono);font-size:.8rem;font-weight:700;color:var(--accent);
+  background:var(--card,#fff);border:1px solid var(--rule);border-radius:999px;padding:2px 12px}

@@ -67,6 +67,11 @@ try {
   chk('標出單字表的字（breakfast、school 有標記）', await until(`document.querySelectorAll('#artBody mark.sw').length >= 2`) && await evl(`/用到 2 個/.test(document.getElementById('artCover').textContent)`), await evl(`document.getElementById('artCover').textContent`));
   await click('#artBody .art-more');
   chk('展開分析：顯示句子卡片', await until(`!!document.querySelector('#artBody .art-detail:not([hidden]) article.sent')`));
+  await click('#artBody .art-detail .more');
+  chk('展開後的「詳解」按鈕有反應（點了會展開詳細說明）', await until(`document.querySelector('#artBody .art-detail .more').getAttribute('aria-expanded') === 'true' && !document.querySelector('#artBody .art-detail .more').nextElementSibling.hidden`));
+  await click('#artBody .art-detail .more');
+  chk('再點一次收起', await until(`document.querySelector('#artBody .art-detail .more').getAttribute('aria-expanded') === 'false'`));
+  chk('「朗讀」按鈕有接上（點了不會出錯）', await evl(`(() => { const b = document.querySelector('#artBody .art-detail .say'); if (!b) return true; b.click(); return true; })()`) && page.errors.length === 0, page.errors.join(' | '));
 
   section('改名與刪除');
   await click('#artRename');

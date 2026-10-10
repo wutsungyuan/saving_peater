@@ -81,7 +81,9 @@ async function handleAnalyze(req, res, url){
   let closed = false;
   req.on('close', () => { closed = true; });
 
-  send('meta', { total: segs.length, truncated, maxSentences, article, model: MODEL });
+  // 對話：告訴前端每一句是誰說的、屬於第幾次發言，讓同一個人說的幾句排在一起、只標一次名字
+  send('meta', { total: segs.length, truncated, maxSentences, article, model: MODEL,
+    ...(dlg ? { dialogue: dlg.slice(0, segs.length).map(u => ({ speaker: u.speaker, turn: u.turn })) } : {}) });
   let halted = null;
 
   // 先把快取命中的推出去（幾乎瞬間），剩下的才去呼叫模型

@@ -10,7 +10,8 @@ import { findForm } from './wordset.mjs';
 export function splitArticle(text){
   // 對話（A: … / B: …）：分析時會拆掉說話者標記，每個人說的話各自一句，這裡要一致
   const turns = splitDialogue(String(text ?? '').trim());
-  if (turns) return dialogueUnits(turns).map(u => ({ para: 0, text: u.text.trim() })).filter(s => s.text);
+  // 同一個人說的幾句放在同一段（para = 第幾次發言），文章表就會把一個人說的話排在一起
+  if (turns) return dialogueUnits(turns).map(u => ({ para: u.turn, text: u.text.trim(), speaker: u.speaker })).filter(s => s.text);
   const paras = String(text ?? '').replace(/\r\n?/g, '\n').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
   const out = [];
   paras.forEach((p, para) => { for (const s of splitSentences(p)) out.push({ para, text: s.text.trim() }); });
@@ -49,10 +50,10 @@ export function articleView(cache, id, words = []){
       translation: it.sentence?.translation ?? null,
       missing: !it.sentence,
       words: words.length ? wordsIn(original, words) : [],
-      sentence: it.sentence,
+      sentence: it.sentence, speaker: it.speaker,
     });
   }
-  const list = [...paras.entries()].sort((x, y) => x[0] - y[0]).map(([para, sentences]) => ({ para, sentences }));
+  const list = [...paras.entries()].sort((x, y) => x[0] - y[0]).map(([para, sentences]) => ({ para, sentences, speaker: sentences[0]?.speaker ?? null }));
   const covered = new Set(list.flatMap(p => p.sentences.flatMap(s => s.words)));
   return { id: a.id, name: a.name, createdAt: a.created_at, sentences: items.length, paragraphs: list,
            coverage: words.length ? { words: words.length, hit: covered.size, hitTerms: [...covered] } : null };

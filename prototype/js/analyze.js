@@ -49,6 +49,13 @@ function placeholder(index, original, state){
 
 /** opts.article：文章模式（上限較高，存文章表用）。回傳 { total, done, failed, halted, truncated, interrupted, error }，
  *  呼叫端（例如存成文章表）靠它判斷是不是全部都分析成功。 */
+let dlgInfo = null;       // 對話：每一句是誰說的、第幾次發言
+/** 同一個人連續說的幾句，只在第一句前面標名字 */
+function speakerTag(i){
+  const d = dlgInfo?.[i]; if (!d) return '';
+  if (i > 0 && dlgInfo[i - 1]?.turn === d.turn) return '';
+  return `<div class="turn-tag"><span class="who">${esc(d.speaker)}</span></div>`;
+}
 async function analyzeLive(text, opts = {}){
   curKind = null;                   // 分析自己的句子時不是在看範例
   goBtn.disabled = true;
@@ -115,15 +122,15 @@ async function analyzeLive(text, opts = {}){
         const d = JSON.parse(dataLine);
 
         if (ev === 'meta'){
-          total = d.total;
+          total = d.total; dlgInfo = d.dialogue || null;
           summary.total = d.total; summary.truncated = Boolean(d.truncated);
-          for (let i = 0; i < total; i++) slots.set(i, placeholder(i, '', '分析中'));
+          for (let i = 0; i < total; i++) slots.set(i, speakerTag(i) + placeholder(i, '', '分析中'));
           paint();
           hintEl.textContent = d.truncated
             ? `這段文章超過 ${d.maxSentences} 句，只分析前 ${d.maxSentences} 句。`
             : `共 ${total} 句，分析中…`;
         } else if (ev === 'sentence'){
-          slots.set(d.index, renderSentence(d.sentence, total > 1));
+          slots.set(d.index, speakerTag(d.index) + renderSentence(d.sentence, total > 1));
           settled.add(d.index);
           paint();
         } else if (ev === 'failed'){

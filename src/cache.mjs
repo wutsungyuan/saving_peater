@@ -543,10 +543,10 @@ export function openCache(file = 'data/cache.db'){
       const list = (Array.isArray(ids) ? ids : [ids]).map(Number).filter(Number.isFinite);
       if (!list.length) return [];
       const qs = list.map(() => '?').join(',');
-      return db.prepare(`SELECT i.article_id, i.idx, i.para, i.hash, s.result FROM article_items i
+      return db.prepare(`SELECT i.article_id, i.idx, i.para, i.hash, s.result, s.speaker FROM article_items i
           LEFT JOIN sentences s ON s.hash = i.hash WHERE i.article_id IN (${qs}) ORDER BY i.article_id, i.idx`).all(...list)
         .map(r => ({ articleId: r.article_id, idx: r.idx, para: r.para, hash: r.hash,
-                     sentence: r.result ? JSON.parse(r.result) : null }));
+                     sentence: r.result ? JSON.parse(r.result) : null, speaker: r.speaker || null }));
     },
 
     // ---------- 測驗卷（快取性質，到期自動清除）----------

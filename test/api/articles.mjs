@@ -70,6 +70,10 @@ try {
   chk('4 句都分析完成、沒有失敗', evs(d2, 'done')[0].analyzed === 4 && !evs(d2, 'done')[0].failed, JSON.stringify(evs(d2, 'done')[0]));
   r = await j('/api/articles', { method: 'POST', body: { name: '多句對話', text: dlg2 } });
   chk('存成文章表：4 句、不再是空的', r.status === 200 && r.json.added === 4, r.text);
+  const meta2 = evs(d2, 'meta')[0];
+  chk('分析事件告訴前端每句是誰說的、第幾次發言', JSON.stringify(meta2.dialogue.map(x => [x.speaker, x.turn])) === JSON.stringify([['Jamie', 0], ['Jamie', 0], ['Zac', 1], ['Zac', 1]]), JSON.stringify(meta2.dialogue));
+  const av = (await j('/api/article?id=' + r.json.id)).json;
+  chk('文章表：一個人說的話放在同一段、標出是誰說的', av.paragraphs.length === 2 && av.paragraphs[0].sentences.length === 2 && av.paragraphs[0].speaker === 'Jamie' && av.paragraphs[1].speaker === 'Zac', JSON.stringify(av.paragraphs.map(p => [p.speaker, p.sentences.length])));
 
   section('改名與刪除');
   r = await j('/api/article-rename', { method: 'POST', body: { id, name: '第一課' } });
