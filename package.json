@@ -11,7 +11,8 @@
     "stats": "curl -s http://127.0.0.1:8787/api/stats",
     "cache": "node --no-warnings src/cache-cli.mjs",
     "cache:seed": "node --no-warnings src/cache-cli.mjs seed",
-    "cache:info": "node --no-warnings src/cache-cli.mjs info"
+    "cache:info": "node --no-warnings src/cache-cli.mjs info",
+    "test": "node --no-warnings test/migrate.mjs && node --no-warnings test/length-hint.mjs && node --no-warnings test/api/contract.mjs && node --no-warnings test/api/model-routes.mjs"
   },
   "engines": {
     "node": ">=22.14"

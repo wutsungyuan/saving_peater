@@ -1,8 +1,7 @@
 // 單字表：充實（呼叫一次模型）＋ 出題（純程式）。
 // 和句子分析同樣的策略 —— 建表時花一次額度把資料備齊，之後循環測驗都是零成本。
 
-import { spawn } from 'node:child_process';
-import { CLAUDE_BIN, claudeNotFound } from './claude-bin.mjs';
+import { spawnClaude, claudeNotFound } from './claude-bin.mjs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseModelJson, classifyError, MODEL } from './analyzer.mjs';
@@ -40,7 +39,7 @@ export function enrich(items, { model = MODEL, timeoutMs = 180_000 } = {}){
       '--model', model,
       '--output-format', 'json',
     ];
-    const child = spawn(CLAUDE_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnClaude(args);
     let out = '', err = '';
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')); }, timeoutMs);
     child.stdout.on('data', d => { out += d; });
@@ -367,7 +366,7 @@ export function extractFromImage(imagePath, { model = MODEL, timeoutMs = 180_000
       '--model', model,
       '--output-format', 'json',
     ];
-    const child = spawn(CLAUDE_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnClaude(args);
     let out = '', err = '';
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')); }, timeoutMs);
     child.stdout.on('data', d => { out += d; });

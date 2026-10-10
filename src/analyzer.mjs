@@ -1,8 +1,7 @@
 // 文法分析器 — 路線 A：透過 Claude Code headless 呼叫，使用 Max 訂閱認證。
 // 之後若要改走 API key，只需替換 callModel()，其餘邏輯與 schema 完全不動。
 
-import { spawn } from 'node:child_process';
-import { CLAUDE_BIN, claudeNotFound } from './claude-bin.mjs';
+import { spawnClaude, claudeNotFound } from './claude-bin.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -22,7 +21,7 @@ function callModel(userPrompt, { model = MODEL, timeoutMs = 120_000 } = {}) {
       '--model', model,
       '--output-format', 'json',
     ];
-    const child = spawn(CLAUDE_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnClaude(args);
     let out = '', err = '';
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')); }, timeoutMs);
 
@@ -273,7 +272,7 @@ export function extractProse(imagePath, { model = MODEL, timeoutMs = 180_000 } =
       '--model', model,
       '--output-format', 'json',
     ];
-    const child = spawn(CLAUDE_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnClaude(args);
     let out = '', err = '';
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('timeout')); }, timeoutMs);
     child.stdout.on('data', d => { out += d; });
