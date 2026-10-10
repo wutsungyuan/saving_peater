@@ -128,9 +128,9 @@
     stop(){
       if (!OK) return;
       const c = current;
-      current = null;
+      if (c?.finish) c.finish({ cancelled: true });          // 先清掉計時器並通知結束，再 cancel（cancel 觸發的事件就會被忽略）
+      else { current = null; if (c?.onEnd) c.onEnd({ cancelled: true }); }
       try { synth.cancel(); } catch {}
-      if (c?.onEnd) c.onEnd({ cancelled: true });
     },
 
     /** text 說完為止。onWord 收到的是相對於 text 的字元區間 */
@@ -143,26 +143,52 @@
       if (v){ u.voice = v; u.lang = v.lang; } else { u.lang = 'en-US'; }
       u.rate = Math.min(2, Math.max(0.5, Number(settings.rate) || DEFAULTS.rate));
 
-      const state = { onEnd: opts.onEnd, utterance: u };
+      const state = { onEnd: opts.onEnd, utterance: u, timers: [] };
       current = state;
 
-      u.onstart = () => { if (current === state) opts.onStart?.(); };
+      // iPhone（Safari、Chrome、LINE 內建瀏覽器）常常說完了卻不送 end 事件，按鈕就一直停在「停止」。
+      // 所以除了 onend，再用兩個保險一起判斷「說完了」，三者誰先到都算，而且只結束一次：
+      //   1. 輪詢：說話中的旗標 speaking / pending 都變 false，連續兩次（約 0.8 秒）就結束
+      //   2. 逾時：依字數與語速估一個最長時間，到了還沒結束就強制結束
+      let ended = false;
+      const finish = (info) => {
+        if (ended) return;
+        ended = true;
+        for (const t of state.timers) { clearInterval(t); clearTimeout(t); }
+        if (current === state){
+          current = null;
+          if (!info.cancelled){ try { synth.cancel(); } catch {} }      // 確保系統那邊也真的停了
+          opts.onEnd?.(info);
+        }
+      };
+      state.finish = finish;
+      const maxMs = Math.round((String(text).length / 9) * 1000 / u.rate) + 4000;
+      state.timers.push(setTimeout(() => finish({ cancelled: false, forced: true }), maxMs));
+      let quiet = 0, started = false;
+      state.timers.push(setInterval(() => {
+        if (current !== state) return;
+        if (synth.speaking || synth.pending){ started = true; quiet = 0; return; }
+        quiet++;                                                      // 沒在說話：說過之後連續 2 次、或一直沒開始超過 8 次（約 3 秒）就結束
+        if ((started && quiet >= 2) || quiet > 8) finish({ cancelled: false, polled: true });
+      }, 400));
+
+      u.onstart = () => { started = true; if (current === state) opts.onStart?.(); };
       u.onboundary = (e) => {
         if (current !== state || e.name !== 'word') return;
         const start = e.charIndex ?? 0;
         const end = start + (e.charLength || 0);
         opts.onWord?.({ start, end });
       };
-      u.onend = () => { if (current === state){ current = null; opts.onEnd?.({ cancelled: false }); } };
+      u.onend = () => finish({ cancelled: false });
       u.onerror = (e) => {
         if (current !== state) return;          // 自己 cancel 造成的 error 不回報
-        current = null;
+        current = null; ended = true; for (const t of state.timers) { clearInterval(t); clearTimeout(t); }
         if (e.error === 'interrupted' || e.error === 'canceled') return;
         opts.onError?.(new Error(e.error || 'speech error'));
       };
 
       try { synth.speak(u); }
-      catch (err){ current = null; opts.onError?.(err); }
+      catch (err){ current = null; ended = true; for (const t of state.timers) { clearInterval(t); clearTimeout(t); } opts.onError?.(err); }
     },
   };
 
