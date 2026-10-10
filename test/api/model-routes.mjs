@@ -137,6 +137,13 @@ try {
   r = await sse(I.base, '/api/analyze', { text: 'People here speak Australian English.' });
   const id2 = evs(r, 'done')[0];
   chk('第一次回「沒有收到句子」→ 自動重試，最後成功', id2.analyzed === 1 && id2.failed === 0 && evs(r, 'sentence')[0].sentence.original === 'People here speak Australian English.', JSON.stringify(id2));
+
+  // 模型把我們送的一句拆成好幾句（斷句和模型意見不同）：不能悄悄只留第一句，要明講失敗、也不存快取
+  // （假 CLI 看到 "Dr. " 就會拆，正好模擬這種意見不同）
+  r = await sse(I.base, '/api/analyze', { text: 'Dr. Lee is here.' });
+  const sp = evs(r, 'failed');
+  chk('一句被模型拆成多句 → 標成失敗並說明，不是只顯示第一句', sp.length === 1 && sp[0].kind === 'split' && /拆成了多句/.test(sp[0].message) && evs(r, 'sentence').length === 0, JSON.stringify(sp));
+  chk('這種句子沒有被存進快取', (await J(I.base, '/api/analyze', { method: 'POST', body: { text: 'Dr. Lee is here.', dryRun: true } })).json.cached === 0);
 } catch (e) {
   console.log('ERR', e.stack || e.message); results.push(false);
 } finally {

@@ -123,6 +123,10 @@ async function handleAnalyze(req, res, url){
       } : {};
       // 模型回傳的原句必須和我們送出去的一致，否則快取的鍵會對不上內容，
       // 之後查這一句永遠查不到，還會污染範例與題庫。
+      // 模型把我們送的一句拆成好幾句：只取第一句會悄悄丟掉後面的內容，所以當作失敗讓使用者看見
+      if ((data?.sentences?.length ?? 0) > 1 && sentence.original && sentence.original.trim() !== seg.text.trim()){
+        throw Object.assign(new Error('模型把這一句拆成了多句，沒有存。請把這一句拆開再分析。'), { kind: 'split' });
+      }
       if (sentence.original && sentence.original.trim() !== seg.text.trim()){
         console.error('[analyze] 模型回傳的原句與輸入不符，不寫入快取：',
           JSON.stringify(seg.text.slice(0, 60)), '→', JSON.stringify(String(sentence.original).slice(0, 60)));

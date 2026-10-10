@@ -9,6 +9,11 @@ const ABBR = new Set([
   'mon','tue','tues','wed','thu','thur','thurs','fri','sat','sun',
 ]);
 
+// 這幾個縮寫同時也是常見的英文單字或應答（No. / Sat. = sat / Sun. = sun / Mon. / Wed. / Fri.），
+// 只有後面接數字（No. 5、Sat. 3 pm）才當縮寫；後面接大寫字開頭的句子就是句尾。
+// 例：Yuki: No. I can't make up my mind. —— 以前 No. 被當縮寫，兩句黏成一句，後面那句就丟了。
+const AMBIGUOUS = new Set(['no', 'sat', 'sun', 'mon', 'wed', 'fri']);
+
 const isUpper = c => c >= 'A' && c <= 'Z';
 const isDigit = c => c >= '0' && c <= '9';
 const isAlpha = c => /[A-Za-z]/.test(c);
@@ -16,6 +21,7 @@ const CLOSERS = new Set(['"', "'", '”', '’', ')', ']', '}', '」', '』']);
 
 /** 判斷 text[i] 這個句號是否為真正的句尾 */
 function isBoundary(text, i){
+  const after = text.slice(i + 1).replace(/^\s+/, '');
   const ch = text[i];
   if (ch === '!' || ch === '?') return true;       // ! 與 ? 幾乎不會出現在縮寫裡
 
@@ -32,6 +38,7 @@ function isBoundary(text, i){
   // 內含句號的縮略語（U.S. / a.m. / e.g.）
   if (word.includes('.')) return false;
   // 已知縮寫
+  if (AMBIGUOUS.has(word.toLowerCase())) return !isDigit(after[0] ?? '');
   if (ABBR.has(word.toLowerCase())) return false;
 
   return true;
