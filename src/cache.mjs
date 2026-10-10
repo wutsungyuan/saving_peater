@@ -54,6 +54,18 @@ export function openCache(file = 'data/cache.db'){
       qHit.run(h);
       try { return JSON.parse(row.result); } catch { return null; }
     },
+    /** 只問「有沒有」，不算命中。報價用，不能污染 hits。 */
+    has(sentence){ return Boolean(qGet.get(hashOf(sentence))); },
+    /** 依最近的分析紀錄估每句的花費與時間；沒有足夠紀錄就用預設值。
+     *  只取一次分析 5 句以上的紀錄：單句那種常是冷快取，會把平均拉高。 */
+    analysisUnitCost(){
+      const r = db.prepare(`SELECT SUM(cost_usd) c, SUM(analyzed) n, SUM(ms) ms FROM (
+          SELECT cost_usd, analyzed, ms FROM requests
+          WHERE kind = 'analyze' AND analyzed >= 5 AND cost_usd > 0 ORDER BY id DESC LIMIT 20)`).get();
+      return r?.n >= 5
+        ? { perSentence: r.c / r.n, msPerSentence: r.ms / r.n, samples: r.n, source: 'history' }
+        : { perSentence: 0.035, msPerSentence: 8000, samples: 0, source: 'default' };
+    },
     put(sentence, result, model, usage = {}, meta = {}){
       const h = hashOf(sentence);
       const main = result?.clauses?.find(c => c.role === 'main') ?? result?.clauses?.[0];

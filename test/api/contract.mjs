@@ -33,6 +33,8 @@ const W = (term, pos, zh, example, exampleZh, syllables) => ({
     W('quickly', 'adv', '快速地', 'He ran quickly to school.', '他很快跑到學校。', 'quick-ly'),
     W('ROC', 'n', '中華民國', 'The ROC flag is red, white, and blue.', '中華民國國旗是紅白藍三色。', 'R-O-C'),
   ]);
+  c.log({ chars: 800, sentences: 20, cached: 0, analyzed: 20, ms: 160000, costUsd: 0.5, kind: 'analyze', text: 'x' });       // 每句 $0.025
+  c.log({ chars: 20, sentences: 1, cached: 0, analyzed: 1, ms: 9000, costUsd: 0.207, kind: 'analyze', text: 'y' });         // 冷快取單句：不計入
 }
 
 // ---- 啟動伺服器 ----
@@ -146,6 +148,44 @@ try {
   r = await J(B, '/api/analyze', { method: 'POST', body: { text: 'a'.repeat(r.json ? 0 : 0) + 'x'.repeat(100000) } });
   chk('超長 → 413', r.status === 413, `status ${r.status}`);
 
+  console.log('文章模式與報價（不呼叫模型）');
+  r = await J(B, '/api/health');
+  chk('health 回報文章上限', r.json.articleMaxChars > r.json.maxChars && r.json.articleMaxSentences > r.json.maxSentences);
+  const { maxSentences, maxChars, articleMaxSentences, articleMaxChars } = r.json;
+  const cachedOnes = [];
+  for (const k of Object.keys((await J(B, '/api/samples')).json.counts)) {
+    const x = await J(B, `/api/samples?kind=${encodeURIComponent(k)}&n=0`);
+    if (x.json?.sentence?.original && !cachedOnes.includes(x.json.sentence.original)) cachedOnes.push(x.json.sentence.original);
+    if (cachedOnes.length >= 3) break;
+  }
+  chk('找到 3 句已快取的句子做測試', cachedOnes.length === 3);
+  const fresh = n => Array.from({ length: n }, (_, i) => `Zebra number ${i + 1} jumps over a fence.`);
+  const hitsBefore = (await J(B, '/api/stats')).json.cache_hits;
+  r = await J(B, '/api/analyze', { method: 'POST', body: { text: [...cachedOnes, ...fresh(10)].join(' '), dryRun: true } });
+  chk('dryRun 回傳句數、已快取、待分析', r.status === 200 && r.json.total === 13 && r.json.cached === 3 && r.json.toAnalyze === 10, r.text.slice(0, 200));
+  chk('單價取自歷史（排除冷快取單句），來源標示 history', r.json.unitCost.source === 'history' && Math.abs(r.json.unitCost.perSentence - 0.025) < 0.001, JSON.stringify(r.json.unitCost));
+  chk('報價區間：下限 = 單價×0.8×句數', Math.abs(r.json.estimate.low - 0.2) < 0.002, JSON.stringify(r.json.estimate));
+  chk('報價區間：上限含冷快取暖機成本', Math.abs(r.json.estimate.high - (0.025 * 10 * 1.3 + 0.2)) < 0.002, JSON.stringify(r.json.estimate));
+  chk('報價有預估秒數', r.json.estimate.seconds > 0);
+  chk('dryRun 不污染快取命中數', (await J(B, '/api/stats')).json.cache_hits === hitsBefore);
+  r = await J(B, '/api/analyze', { method: 'POST', body: { text: cachedOnes.join(' '), dryRun: true } });
+  chk('全部已快取 → 待分析 0、花費 0、不加暖機成本', r.json.toAnalyze === 0 && r.json.estimate.low === 0 && r.json.estimate.high === 0, r.text.slice(0, 160));
+  // 上限：一般模式與文章模式
+  const many = fresh(articleMaxSentences + 10).join(' ');
+  r = await J(B, '/api/analyze', { method: 'POST', body: { text: fresh(maxSentences + 5).join(' '), dryRun: true } });
+  chk(`一般模式超過 ${maxSentences} 句會截斷`, r.json.total === maxSentences && r.json.truncated === true, r.text.slice(0, 120));
+  r = await J(B, '/api/analyze', { method: 'POST', body: { text: many, dryRun: true, article: true } });
+  chk(`文章模式可到 ${articleMaxSentences} 句，超過才截斷`, r.json.total === articleMaxSentences && r.json.truncated === true && r.json.article === true, r.text.slice(0, 120));
+  r = await J(B, '/api/analyze', { method: 'POST', body: { text: fresh(80).join(' '), dryRun: true, article: true } });
+  chk('文章模式 80 句不截斷', r.json.total === 80 && r.json.truncated === false, r.text.slice(0, 120));
+  const longText = 'word '.repeat(Math.ceil((maxChars + 100) / 5));
+  r = await J(B, '/api/analyze', { method: 'POST', body: { text: longText } });
+  chk('一般模式超過字數上限 → 413', r.status === 413 && r.json.maxChars === maxChars, r.text.slice(0, 120));
+  r = await J(B, '/api/analyze', { method: 'POST', body: { text: longText, dryRun: true, article: true } });
+  chk('同樣的長度在文章模式可以通過', r.status === 200, `status ${r.status}`);
+  r = await J(B, '/api/analyze', { method: 'POST', body: { text: 'word '.repeat(Math.ceil((articleMaxChars + 100) / 5)), article: true, dryRun: true } });
+  chk('文章模式超過字數上限 → 413', r.status === 413 && r.json.maxChars === articleMaxChars, r.text.slice(0, 120));
+
   console.log('驗證（AUTH_TOKEN）');
   authed = await start({ AUTH_TOKEN: 'sekret' });
   r = await J(authed.base, '/api/health');
@@ -160,6 +200,10 @@ try {
   chk('網址帶對 token → 200', r.status === 200);
   r = await J(authed.base, '/api/analyze', { method: 'POST', body: { text: 'Hello.' } });
   chk('分析沒帶 token → 401', r.status === 401);
+  r = await J(authed.base, '/api/analyze', { method: 'POST', body: { text: 'Hello there.', dryRun: true } });
+  chk('報價（dryRun）沒帶 token → 401', r.status === 401);
+  r = await J(authed.base, '/api/analyze', { method: 'POST', body: { text: 'Hello there.', dryRun: true }, headers: { 'x-auth-token': 'sekret' } });
+  chk('報價帶對 token → 200', r.status === 200 && r.json.total === 1);
   r = await J(authed.base, '/api/wordquiz', { method: 'POST', body: { setIds: [set.id] } });
   chk('單字測驗沒帶 token → 401', r.status === 401);
   r = await J(authed.base, '/api/wordattempts', { method: 'POST', body: { quizId: 'x', answers: {} } });

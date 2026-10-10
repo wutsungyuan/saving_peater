@@ -20,6 +20,12 @@ const WEB = join(ROOT, 'prototype');
 const PORT = Number(process.env.PORT || 8787);
 const MAX_CHARS = Number(process.env.MAX_CHARS || 4000);
 const MAX_SENTENCES = Number(process.env.MAX_SENTENCES || 25);
+// 文章（要存成文章表的長文）可以比一般貼上的更長：每句本來就是獨立呼叫、逐句寫進快取，
+// 中途斷線再送一次會從快取接續，所以長不是問題；上限只是避免誤貼整本書。
+const MAX_ARTICLE_CHARS = Number(process.env.MAX_ARTICLE_CHARS || 20000);
+const MAX_ARTICLE_SENTENCES = Number(process.env.MAX_ARTICLE_SENTENCES || 120);
+// 快取是冷的（閒置一陣子、或剛改過提示）時，第一次呼叫會多花約這麼多（這台實測：單句 $0.207 對平均 $0.033）
+const COLD_START_USD = 0.2;
 const CONCURRENCY = Number(process.env.CONCURRENCY || 6);
 // 預設只聽 127.0.0.1。要讓區網其他裝置連，必須明確設 HOST=0.0.0.0，
 // 因為每個請求都花執行這台機器的 Claude 訂閱額度。
@@ -124,15 +130,19 @@ async function handleAnalyze(req, res, url){
     res.writeHead(401, { 'content-type':'application/json' });
     return res.end('{"error":"unauthorized"}');
   }
-  let text = '';
-  try { text = String(JSON.parse(await readBody(req))?.text ?? ''); }
+  let body = {};
+  try { body = JSON.parse(await readBody(req)) || {}; }
   catch { res.writeHead(400, { 'content-type':'application/json' }); return res.end('{"error":"bad json"}'); }
+  const article = body.article === true;          // 文章模式：上限較高（要存成文章表的長文）
+  const dryRun = body.dryRun === true;            // 只報價，不呼叫模型、不動快取
+  const maxChars = article ? MAX_ARTICLE_CHARS : MAX_CHARS;
+  const maxSentences = article ? MAX_ARTICLE_SENTENCES : MAX_SENTENCES;
 
-  text = text.trim();
+  const text = String(body.text ?? '').trim();
   if (!text){ res.writeHead(400, { 'content-type':'application/json' }); return res.end('{"error":"empty"}'); }
-  if (text.length > MAX_CHARS){
+  if (text.length > maxChars){
     res.writeHead(413, { 'content-type':'application/json' });
-    return res.end(JSON.stringify({ error: `too long`, maxChars: MAX_CHARS, got: text.length }));
+    return res.end(JSON.stringify({ error: `too long`, maxChars, got: text.length, article }));
   }
 
   // 對話題（A: … / B: …）：拆掉說話者標記再分析，但記下誰說的、對方說了什麼。
@@ -145,8 +155,26 @@ async function handleAnalyze(req, res, url){
   } else {
     segs = splitSentences(text);
   }
-  const truncated = segs.length > MAX_SENTENCES;
-  if (truncated) segs = segs.slice(0, MAX_SENTENCES);
+  const truncated = segs.length > maxSentences;
+  if (truncated) segs = segs.slice(0, maxSentences);
+
+  // 報價：不呼叫模型，也不算快取命中。用最近的分析紀錄估每句花費；
+  // 要呼叫模型時再加上冷快取的暖機成本（上限才加，下限假設快取是熱的）。
+  if (dryRun){
+    const cachedN = segs.filter(seg => cache.has(seg.text)).length;
+    const toAnalyze = segs.length - cachedN;
+    const unit = cache.analysisUnitCost();
+    const base = unit.perSentence * toAnalyze;
+    const r3 = n => Math.round(n * 1000) / 1000;
+    res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({
+      total: segs.length, cached: cachedN, toAnalyze, truncated, article,
+      limits: { maxChars, maxSentences },
+      unitCost: { perSentence: r3(unit.perSentence), samples: unit.samples, source: unit.source },
+      estimate: { low: r3(base * 0.8), high: r3(base * 1.3 + (toAnalyze ? COLD_START_USD : 0)),
+                  seconds: Math.round(toAnalyze * unit.msPerSentence / 1000) },
+    }));
+  }
 
   res.writeHead(200, {
     'content-type':'text/event-stream; charset=utf-8',
@@ -168,7 +196,7 @@ async function handleAnalyze(req, res, url){
   let closed = false;
   req.on('close', () => { closed = true; });
 
-  send('meta', { total: segs.length, truncated, maxSentences: MAX_SENTENCES, model: MODEL });
+  send('meta', { total: segs.length, truncated, maxSentences, article, model: MODEL });
   let halted = null;
 
   // 先把快取命中的推出去（幾乎瞬間），剩下的才去呼叫模型
@@ -272,7 +300,8 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/api/health'){
       res.writeHead(200, { 'content-type':'application/json' });
       return res.end(JSON.stringify({ ok: true, model: MODEL, maxChars: MAX_CHARS,
-        maxSentences: MAX_SENTENCES, authRequired: Boolean(AUTH_TOKEN) }));
+        maxSentences: MAX_SENTENCES, articleMaxChars: MAX_ARTICLE_CHARS,
+        articleMaxSentences: MAX_ARTICLE_SENTENCES, authRequired: Boolean(AUTH_TOKEN) }));
     }
     // 出題：從已分析的句子反向生成，不呼叫模型
     if (req.method === 'POST' && url.pathname === '/api/exercises'){
