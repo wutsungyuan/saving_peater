@@ -67,9 +67,16 @@ const pronWords = (data) => (data.words ?? []).filter(w =>
 
 // ---------- 各題型 ----------
 
+/** 拿來出文法題的句子要「完整」：不是片語或亂碼、至少 3 個字。
+ *  Right. / Wow! / Thanks. 這類口語短句拿來問「第幾句型」沒有意義（學生看到的只有一個字）。 */
+const wordCount = d => String(d?.original ?? '').split(/\s+/).filter(Boolean).length;
+const wholeSentence = d => !d?.issue && wordCount(d) >= 3;
+/** 句型題另外要求主詞和動詞都在原句裡：祈使句、口語省略句（（That's）great.）的成分不完整，圖上標不出 S 或 V */
+const hasSV = cl => ['S', 'V'].every(r => (cl?.constituents ?? []).some(c => c.role === r && Number.isInteger(c.start)));
+
 function qPattern({ hash, data }){
   const cl = mainOf(data);
-  if (!cl?.pattern?.id) return null;
+  if (!cl?.pattern?.id || !wholeSentence(data) || !hasSV(cl)) return null;
   const tip = (data.notes ?? []).find(n => n.type === 'tip')?.message;
   return {
     type: 'pattern',
@@ -87,7 +94,7 @@ function qPattern({ hash, data }){
 function qTense({ hash, data }){
   const cl = mainOf(data);
   const vs = (cl?.constituents ?? []).filter(c => c.role === 'V' && Number.isInteger(c.start));
-  if (!vs.length || !cl?.verb?.lemma || !cl?.tense) return null;
+  if (!vs.length || !cl?.verb?.lemma || !cl?.tense || !wholeSentence(data)) return null;
   if (hasBlank(data.original)) return null;        // 已經有空格了，不能再挖
   const { display, blanks } = blankOut(data.original, vs);
   const ev = (cl.tense.evidence ?? []).filter(e => !blanks.some(b => b.includes(e)));
@@ -119,7 +126,7 @@ function qTense({ hash, data }){
 
 function qPos({ hash, data }){
   const words = (data.words ?? []).filter(w => POS_ZH[w.pos] && Number.isInteger(w.start));
-  if (!words.length) return null;
+  if (!words.length || !wholeSentence(data)) return null;
   // 優先問形容詞／副詞 —— 這是講義裡最常錯的地方
   const hot = words.filter(w => w.pos === 'adj' || w.pos === 'adv');
   const w = hot.length && Math.random() < 0.6 ? pick(hot) : pick(words);
@@ -257,7 +264,7 @@ export function generate(records, { count = 10, types = TYPES, acc = null } = {}
 
   // 每句 × 每題型，先把所有「做得出來」的候選題列出來，再抽樣
   const candidates = [];
-  for (const rec of shuffle(records))
+  for (const rec of shuffle(records.filter(r => wholeSentence(r.data))))     // 口語短句（Right. / Wow!）不出文法題
     for (const t of wanted){
       const q = BUILDERS[t](rec);
       if (!q) continue;
