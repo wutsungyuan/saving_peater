@@ -87,6 +87,15 @@ try {
   chk('沒有 JS 錯誤', page.errors.length === 0, page.errors.join(' | '));
   await page.shot('articles-ui.png');
 
+  section('對話：同一個人說的話框成一組');
+  const p4 = await openPage(S.base + '/', { width: 420, height: 900, settle: 2500 });
+  await p4.click('.tabs button[data-view="analyze"]'); await p4.wait(300);
+  await p4.type('#inp', 'Jamie: Great. And here is a picture of me.\nZac: Wow! You have a snowboard?');
+  await p4.click('#go');
+  chk('分析後出現 2 組（Jamie、Zac），每組 2 張卡', await p4.until(`document.querySelectorAll('#out .turn-group').length === 2 && [...document.querySelectorAll('#out .turn-group')].every(g => g.querySelectorAll('article.sent').length === 2)`, 20000), await p4.evl(`document.getElementById('out').innerText.slice(0, 200)`));
+  chk('每組上面有說話者與整段原文', await p4.evl(`(() => { const g = document.querySelectorAll('#out .turn-group'); return g[0].querySelector('.who').textContent === 'Jamie' && g[1].querySelector('.turn-en').textContent === 'Wow! You have a snowboard?'; })()`), await p4.evl(`document.querySelector('#out .turn-group').innerText`));
+  p4.close();
+
   section('沒帶存取碼：出現輸入框，輸入後可用');
   const S3 = await start('ui-token', { AUTH_TOKEN: 'secret123' });
   const p3 = await openPage(S3.base + '/', { width: 420, height: 900, settle: 2500 });

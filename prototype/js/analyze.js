@@ -68,11 +68,20 @@ function placeholder(index, original, state){
 /** opts.article：文章模式（上限較高，存文章表用）。回傳 { total, done, failed, halted, truncated, interrupted, error }，
  *  呼叫端（例如存成文章表）靠它判斷是不是全部都分析成功。 */
 let dlgInfo = null;       // 對話：每一句是誰說的、第幾次發言
-/** 同一個人連續說的幾句，只在第一句前面標名字 */
-function speakerTag(i){
-  const d = dlgInfo?.[i]; if (!d) return '';
-  if (i > 0 && dlgInfo[i - 1]?.turn === d.turn) return '';
-  return `<div class="turn-tag"><span class="who">${esc(d.speaker)}</span></div>`;
+/** 對話：同一個人說的幾句框成一組。上面先放說話者、整段原文與整段翻譯，下面再接每一句的分析卡。 */
+function groupDialogue(slots, trans){
+  const turns = new Map();
+  for (const [i, html] of [...slots.entries()].sort((a, b) => a[0] - b[0])){
+    const d = dlgInfo[i]; if (!d) continue;
+    if (!turns.has(d.turn)) turns.set(d.turn, { speaker: d.speaker, idx: [] });
+    turns.get(d.turn).idx.push([i, html]);
+  }
+  return [...turns.values()].map(t => {
+    const en = t.idx.map(([i]) => dlgInfo[i].text).join(' ');
+    const zh = t.idx.map(([i]) => trans.get(i)).filter(Boolean).join('');
+    return `<section class="turn-group"><div class="turn-head"><span class="who">${esc(t.speaker)}</span>
+      <p class="turn-en">${esc(en)}</p>${zh ? `<p class="turn-zh">${esc(zh)}</p>` : ''}</div>${t.idx.map(([, h]) => h).join('')}</section>`;
+  }).join('');
 }
 async function analyzeLive(text, opts = {}){
   curKind = null;                   // 分析自己的句子時不是在看範例
@@ -84,6 +93,7 @@ async function analyzeLive(text, opts = {}){
   let total = 0, done = 0, gotDone = false;
   const summary = { total: 0, done: false, failed: 0, halted: null, truncated: false, interrupted: false, error: null };
   const slots = new Map();
+  const trans = new Map();        // 對話：每一句的翻譯，組成整段翻譯用
   const settled = new Set();      // 已有結果（成功或失敗）的句子
 
   // 伺服器若中途消失，瀏覽器的 fetch 串流不一定會結束（實測砍掉後端後 read() 會一直懸著，
@@ -94,7 +104,7 @@ async function analyzeLive(text, opts = {}){
   const ctrl = new AbortController();
 
   const paint = () => {
-    out.innerHTML = [...slots.entries()].sort((a, b) => a[0] - b[0]).map(([, html]) => html).join('');
+    out.innerHTML = dlgInfo ? groupDialogue(slots, trans) : [...slots.entries()].sort((a, b) => a[0] - b[0]).map(([, html]) => html).join('');
     if (out.dataset.mode === 'full') openAll(true);
     layoutPosLabels();
   };
@@ -142,13 +152,13 @@ async function analyzeLive(text, opts = {}){
         if (ev === 'meta'){
           total = d.total; dlgInfo = d.dialogue || null;
           summary.total = d.total; summary.truncated = Boolean(d.truncated);
-          for (let i = 0; i < total; i++) slots.set(i, speakerTag(i) + placeholder(i, '', '分析中'));
+          for (let i = 0; i < total; i++) slots.set(i, placeholder(i, '', '分析中'));
           paint();
           hintEl.textContent = d.truncated
             ? `這段文章超過 ${d.maxSentences} 句，只分析前 ${d.maxSentences} 句。`
             : `共 ${total} 句，分析中…`;
         } else if (ev === 'sentence'){
-          slots.set(d.index, speakerTag(d.index) + renderSentence(d.sentence, total > 1));
+          slots.set(d.index, renderSentence(d.sentence, total > 1)); trans.set(d.index, d.sentence?.translation || '');
           settled.add(d.index);
           paint();
         } else if (ev === 'failed'){

@@ -161,7 +161,7 @@ async function openArticle(id){
     ? `這份單字表有 ${a.coverage.words} 個字，這份文章用到 ${a.coverage.hit} 個：${a.coverage.hitTerms.join('、') || '（沒有）'}` : `共 ${a.sentences} 句`;
   artSentences.clear();
   el('artBody').innerHTML = a.paragraphs.map(p => `
-    <section class="art-para"><h4>${p.speaker ? `<span class="who">${esc(p.speaker)}</span>` : `第 ${p.para + 1} 段`}</h4>${p.sentences.map(s => {
+    <section class="art-para${p.speaker ? ' turn-group' : ''}"><h4>${p.speaker ? `<span class="who">${esc(p.speaker)}</span>` : `第 ${p.para + 1} 段`}</h4>${p.speaker && p.sentences.length > 1 ? `<div class="turn-head"><p class="turn-en">${esc(p.sentences.map(s => s.original).join(' '))}</p><p class="turn-zh">${esc(p.sentences.map(s => s.translation || '').join(''))}</p></div>` : ''}${p.sentences.map(s => {
       artSentences.set(s.index, s.sentence);
       return `<div class="art-sent" data-index="${s.index}">
         <p class="art-en">${s.missing ? esc('（這句的分析已不在快取裡）') : highlightTerms(s.original, s.words)}</p>

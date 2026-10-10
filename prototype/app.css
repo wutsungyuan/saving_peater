@@ -756,3 +756,8 @@ mark.sw{background:var(--tip-bg);color:inherit;border-bottom:2px solid var(--acc
 .token-banner .tb-msg{margin:0 0 8px;font-weight:600}
 .token-banner .row{display:flex;gap:8px;flex-wrap:wrap}
 .token-banner input{flex:1;min-width:180px;font-size:16px}
+.turn-group{border:1px solid var(--rule);border-left:4px solid var(--accent);border-radius:10px;padding:10px 12px 4px;margin:16px 0;background:rgba(255,255,255,.35)}
+.turn-head{margin:0 0 10px}
+.turn-head .turn-en{font-family:var(--font-serif,serif);font-size:1.15rem;margin:8px 0 2px}
+.turn-head .turn-zh{color:var(--muted);margin:0}
+.turn-group>article.sent,.turn-group>.art-sent{margin-left:0}
