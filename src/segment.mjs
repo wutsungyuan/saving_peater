@@ -59,6 +59,18 @@ export function splitDialogue(input){
   return turns;
 }
 
+/** 對話拆成「一句一個單位」：一個人說的話裡有好幾句（Wow! You have a snowboard?）要各自分析，
+ *  不然模型只回第一句、原句和送出去的對不上，後面的句子就丟了。
+ *  回傳 [{ text, speaker, turn }]；turn 是第幾個人說的（同一個人說的句子 turn 相同）。 */
+export function dialogueUnits(turns){
+  const out = [];
+  turns.forEach((t, turn) => {
+    const parts = splitSentences(t.text).map(s => s.text.trim()).filter(Boolean);
+    for (const text of parts.length ? parts : [t.text]) out.push({ text, speaker: t.speaker, turn });
+  });
+  return out;
+}
+
 /** 換行也是句子邊界。標題、條列、OCR 抄出來的每一行常常沒有句點，
  *  不在換行處斷的話會和下一句黏成一段，快取的鍵就會對不上分析結果。 */
 export function splitSentences(input){

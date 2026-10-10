@@ -2,7 +2,7 @@
 //
 // 文章表只存順序，分析結果在 sentences 快取裡。所以存文章表之前，每一句都要已經分析過（分析本來就是先做的）。
 
-import { splitSentences, splitDialogue } from './segment.mjs';
+import { splitSentences, splitDialogue, dialogueUnits } from './segment.mjs';
 import { findForm } from './wordset.mjs';
 
 /** 段落以空白行分開；沒有空白行就是同一段。回傳 [{ para, text }]，句子依序。
@@ -10,7 +10,7 @@ import { findForm } from './wordset.mjs';
 export function splitArticle(text){
   // 對話（A: … / B: …）：分析時會拆掉說話者標記，每個人說的話各自一句，這裡要一致
   const turns = splitDialogue(String(text ?? '').trim());
-  if (turns) return turns.map(t => ({ para: 0, text: t.text.trim() })).filter(s => s.text);
+  if (turns) return dialogueUnits(turns).map(u => ({ para: 0, text: u.text.trim() })).filter(s => s.text);
   const paras = String(text ?? '').replace(/\r\n?/g, '\n').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
   const out = [];
   paras.forEach((p, para) => { for (const s of splitSentences(p)) out.push({ para, text: s.text.trim() }); });

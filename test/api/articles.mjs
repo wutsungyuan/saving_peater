@@ -62,6 +62,15 @@ try {
   r = await j('/api/articles', { method: 'POST', body: { name: '對話', text: dlg } });
   chk('對話拆掉說話者標記後存成文章表（2 句）', evs(d1, 'done')[0].analyzed === 2 && r.status === 200 && r.json.added === 2, r.text);
 
+  // 一個人說了好幾句：每句各自分析、各自存快取，不能只剩第一句（以前會變成文章表是空的）
+  const dlg2 = 'Jamie: Great. And here is a picture of me.\nZac: Wow! You have a snowboard?';
+  const q2 = await j('/api/analyze', { method: 'POST', body: { text: dlg2, article: true, dryRun: true } });
+  chk('報價：2 個人說的話拆成 4 句', q2.json.total === 4, q2.text);
+  const d2 = await S.sse('/api/analyze', { text: dlg2, article: true });
+  chk('4 句都分析完成、沒有失敗', evs(d2, 'done')[0].analyzed === 4 && !evs(d2, 'done')[0].failed, JSON.stringify(evs(d2, 'done')[0]));
+  r = await j('/api/articles', { method: 'POST', body: { name: '多句對話', text: dlg2 } });
+  chk('存成文章表：4 句、不再是空的', r.status === 200 && r.json.added === 4, r.text);
+
   section('改名與刪除');
   r = await j('/api/article-rename', { method: 'POST', body: { id, name: '第一課' } });
   chk('改名', r.status === 200 && (await j('/api/articles')).json.articles.some(x => x.name === '第一課'));

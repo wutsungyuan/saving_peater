@@ -2,7 +2,7 @@
 // 每條路由是 { match, handler }。handler 沒有送出回應時，server 會繼續比對下一條（和原本的 if 串列一致）。
 import { join } from 'node:path';
 import { analyze, extractProse, fixPronounCase, MODEL } from '../analyzer.mjs';
-import { splitSentences, splitDialogue } from '../segment.mjs';
+import { splitSentences, splitDialogue, dialogueUnits } from '../segment.mjs';
 import { hasBlank } from '../exercises.mjs';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -35,8 +35,8 @@ async function handleAnalyze(req, res, url){
   const turns = splitDialogue(text);
   let segs, dlg = null;
   if (turns){
-    dlg = turns;
-    segs = turns.map(t => ({ text: t.text }));
+    dlg = dialogueUnits(turns);                     // 一個人說了好幾句時，每句各自分析
+    segs = dlg.map(u => ({ text: u.text }));
   } else {
     segs = splitSentences(text);
   }
@@ -116,7 +116,7 @@ async function handleAnalyze(req, res, url){
       // 對話的話，把對方說的話一起存起來（meta 這個名字上面已經用掉了）
       const dlgMeta = dlg ? {
         speaker: dlg[i]?.speaker ?? null,
-        context: dlg.filter((_, k) => k !== i).map(t => `${t.speaker}: ${t.text}`).join('\n') || null,
+        context: dlg.filter(u => u.turn !== dlg[i]?.turn).map(t => `${t.speaker}: ${t.text}`).join('\n') || null,
       } : {};
       // 模型回傳的原句必須和我們送出去的一致，否則快取的鍵會對不上內容，
       // 之後查這一句永遠查不到，還會污染範例與題庫。
