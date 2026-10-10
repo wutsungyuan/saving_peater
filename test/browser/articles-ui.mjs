@@ -67,6 +67,10 @@ try {
   chk('標出單字表的字（breakfast、school 有標記）', await until(`document.querySelectorAll('#artBody mark.sw').length >= 2`) && await evl(`/用到 2 個/.test(document.getElementById('artCover').textContent)`), await evl(`document.getElementById('artCover').textContent`));
   await click('#artBody .art-more');
   chk('展開分析：顯示句子卡片', await until(`!!document.querySelector('#artBody .art-detail:not([hidden]) article.sent')`));
+  await evl(`document.querySelector('#artBody .art-detail .w').dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))`);
+  chk('文章表展開的分析卡：游標移到（手機按住）單字會跳出詞性提示', await until(`document.getElementById('tip').dataset.show === '1' && document.querySelector('#tip .t-word').textContent.length > 0 && document.querySelector('#tip .t-k').textContent.length > 0`), await evl(`document.getElementById('tip').innerText`));
+  await evl(`document.getElementById('artBody').dispatchEvent(new PointerEvent('pointerleave'))`);
+  chk('離開單字後提示收起來', await until(`document.getElementById('tip').dataset.show === '0'`));
   await click('#artBody .art-detail .more');
   chk('展開後的「詳解」按鈕有反應（點了會展開詳細說明）', await until(`document.querySelector('#artBody .art-detail .more').getAttribute('aria-expanded') === 'true' && !document.querySelector('#artBody .art-detail .more').nextElementSibling.hidden`));
   await click('#artBody .art-detail .more');

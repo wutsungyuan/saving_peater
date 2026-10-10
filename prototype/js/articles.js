@@ -235,3 +235,10 @@ el('artBody').addEventListener('click', e => {
   const say = e.target.closest('.say');
   if (say && typeof toggleSay === 'function') toggleSay(say.closest('.sent'));
 });
+
+// ---- 展開後的分析卡：游標移到（手機是按住）單字，跳出詞性與成分的提示便條 ----
+// 即時分析頁的提示只掛在那一頁的結果區，文章表是另一個容器，要自己接。
+el('artBody').addEventListener('pointerover', e => { const w = e.target.closest('.w'); w ? showTip(w) : hideTip(); });
+el('artBody').addEventListener('pointerleave', hideTip);
+el('artBody').addEventListener('focusin', e => { const w = e.target.closest('.w'); if (w) showTip(w); });
+el('artBody').addEventListener('focusout', hideTip);
