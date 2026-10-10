@@ -141,3 +141,36 @@ export function validateExt(raw, { anchors, known, maxNew = 1 }){
 
 /** 題庫用的穩定 id：同樣內容不會重複入庫 */
 export const bankId = (type, payload) => createHash('sha1').update(type + JSON.stringify(payload)).digest('hex').slice(0, 16);
+
+/**
+ * 情境應答的干擾項。pairs：我們送出去的配對（含 a = 正確回應）。
+ * raw = { items:[{ n, distractors:[3 句回應] }] }。回傳 { items: Map(n → [3 句]), dropped:[{n, reason}] }
+ * 干擾項：文法正確、自然，但「在這個問題後面不合適」。程式只檢查形式：3 句、不重複、不等於答案、
+ * 長度接近答案、新字不多；是不是真的不合適，靠提示詞規定（見 prompts/exam-gen.md）。
+ */
+export function validateReply(raw, pairs, { known = new Set() } = {}){
+  const items = new Map(), dropped = [];
+  for (const it of Array.isArray(raw?.items) ? raw.items : []){
+    const n = it?.n, p = pairs.find(x => x.n === n);
+    const drop = reason => dropped.push({ n, reason });
+    if (!p) { drop('編號不存在'); continue; }
+    if (items.has(n)) { drop('重複的編號'); continue; }
+    const ds = (Array.isArray(it.distractors) ? it.distractors : []).map(d => str(d, 200));
+    if (ds.length !== 3 || ds.some(d => !d)) { drop('干擾項不是 3 句'); continue; }
+    const key = new Set([lc(strip(p.a))]);
+    let bad = null;
+    const aw = tokensOf(p.a).length;
+    for (const d of ds){
+      const k = lc(strip(d)), len = tokensOf(d).length;
+      if (key.has(k)) { bad = '干擾項重複或和答案相同'; break; }
+      key.add(k);
+      if (len < 2 || len > Math.max(12, aw * 2 + 3)) { bad = '干擾項長度不合適'; break; }
+      if (!/^[A-Z"'“‘]/.test(d)) { bad = '干擾項不是句子（沒有大寫開頭）'; break; }
+      if (newWords(d, known).length > 2) { bad = '干擾項的新字太多'; break; }
+      if (/^\s*[A-Z][a-z]*:/.test(d)) { bad = '干擾項不能帶說話者標記'; break; }
+    }
+    if (bad) { drop(bad); continue; }
+    items.set(n, ds);
+  }
+  return { items, dropped };
+}

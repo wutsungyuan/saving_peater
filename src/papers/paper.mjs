@@ -8,7 +8,7 @@ import { buildPool, haveOf } from './pool.mjs';
 import { supplyOf, generateType, publicQuestion } from './gen.mjs';
 import { gradeQuestion, earned } from './grade.mjs';
 import { gradeQuote, runAiGrade, applyGrades } from './aigrade.mjs';
-import { planModelWork, runModelWork, readSupply, extBankCaps, extQuestions, readSection, clozeSemantic } from './model.mjs';
+import { planModelWork, runModelWork, readSupply, replySupply, replySection, extBankCaps, extQuestions, readSection, clozeSemantic } from './model.mjs';
 
 const newId = () => 'p' + randomBytes(5).toString('hex');
 
@@ -30,7 +30,7 @@ export function normalizeSettings(b = {}){
   };
 }
 
-const NEED_TEXT = { ws: '需要單字表或已分析的句子', words: '需要單字表', sent: '需要已分析的句子（單字例句或文章）', art: '需要文章表' };
+const NEED_TEXT = { ws: '需要單字表或已分析的句子', words: '需要單字表', sent: '需要已分析的句子（單字例句或文章）', art: '需要文章表', dlg: '需要有對話課文（Jamie: …）的文章表' };
 
 /** 每個題型在這個範圍能不能出、為什麼不能（給畫面勾選用） */
 export function availabilityOf(have, supply, { saver = false } = {}){
@@ -40,7 +40,7 @@ export function availabilityOf(have, supply, { saver = false } = {}){
     const ok = need && (sup == null || sup >= t.floor);
     return { id: t.id, name: t.name, ok: Boolean(ok), supply: sup ?? null, model: Boolean(t.model), open: Boolean(t.open), ext: Boolean(t.ext),
       reason: ok ? null : !need ? NEED_TEXT[t.need]
-        : t.id === 'read' && saver ? '省錢模式不呼叫模型，題庫裡還沒有這個範圍的閱讀題。關掉省錢模式就能請模型出'
+        : (t.id === 'read' || t.id === 'reply') && saver ? '省錢模式不呼叫模型，題庫裡還沒有這個範圍的題。關掉省錢模式就能請模型出'
         : `素材不夠：這個範圍只出得了 ${sup} 題，至少要 ${t.floor} 題` };
   });
 }
@@ -52,6 +52,7 @@ function scopeInfo(cache, settings){
   const sem = clozeSemantic(cache, pool);
   const supply = supplyOf(pool, rng, { clozeSemantic: sem });
   supply.read = pool.articles.length ? readSupply(cache, pool, { modelOk: !settings.saver }) : 0;   // 閱讀測驗：能請模型出就算每篇文章 6 題，不能就只算題庫現成的
+  supply.reply = replySupply(cache, pool, { modelOk: !settings.saver });                           // 情境應答：能請模型寫干擾項就算配對數，不能就只算題庫現成的
   const modelCap = settings.saver ? extBankCaps(cache, pool) : null;                                // 省錢模式：延伸題的模型部分只能用題庫現成的
   return { pool, have, supply, modelCap };
 }
@@ -79,6 +80,7 @@ function buildSections(cache, pool, plan, rng){
   for (const row of plan.rows){
     let out;
     if (row.id === 'read') out = readSection(cache, pool, row.n, row.ext, rng);
+    else if (row.id === 'reply') out = replySection(cache, pool, row.n, rng);
     else if (['mc', 'reorder', 'fix', 'trans'].includes(row.id))
       out = generateType(row.id, row.n, pool, rng, { ext: row.ext, extFree: row.extFree, modelItems: extQuestions(cache, pool, row.id, row.ext - row.extFree, rng) });
     else out = generateType(row.id, row.n, pool, rng, { ext: row.ext, extFree: row.extFree, clozeSemantic: clozeSemantic(cache, pool) });

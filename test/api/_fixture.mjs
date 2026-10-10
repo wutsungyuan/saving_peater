@@ -41,3 +41,20 @@ export const perfectAnswers = data => Object.fromEntries(data.questions.map(q =>
   q.inputMode === 'choice' ? [String(q.answer[0])] : q.inputMode === 'text' ? q.answer.map(String)
   : q.inputMode === 'order' ? q.orders[0]
   : q.type === 'make' ? [`I like ${q.checkTerm} very much.`] : [q.answer[0]]]));
+
+/** 加一份對話課文（Jamie／Zac 輪流說話，問句後面接回答）。分析結果只放最小內容：只用來測對話相關的出題。 */
+export const DIALOGUE = [
+  ['Jamie', 'How was the weather there?'], ['Zac', 'It was hot, and it rained a lot.'],
+  ['Jamie', 'Did you get my postcard from Australia?'], ['Zac', 'Yes, I got it last week.'],
+  ['Jamie', 'What did you eat for breakfast today?'], ['Zac', 'I ate bread and eggs at home.'],
+  ['Jamie', 'Do you like your new school?'], ['Zac', 'Yes, I like it very much.'],
+  ['Jamie', 'Where do you do your homework?'], ['Zac', 'I do my homework in my room.'],
+];
+export function addDialogue(cache, name = '對話'){
+  const items = DIALOGUE.map(([speaker, text], i) => {
+    const result = { index: 0, original: text, translation: '（測試翻譯）', words: [], clauses: [], notes: [], inScope: true, issue: null };
+    cache.put(text, result, 'test', {}, { speaker, context: null });
+    return { para: i, hash: cache.hashOf(text) };
+  });
+  return cache.saveArticle({ name, items }).id;
+}

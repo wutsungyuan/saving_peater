@@ -35,7 +35,7 @@ try {
   chk('難度說明文字跟著變', await evl(`/約 3 成是延伸題/.test(document.getElementById('pDiffNote').textContent)`));
   await set('#pDiff', 'easy');
   await evl(`document.querySelector('input[name="pMode"][value="custom"]').click()`);
-  chk('自選題型：列出所有題型；閱讀測驗可以請模型出所以可選', await until(`document.querySelectorAll('#pTypes .p-type').length === 10`) && await evl(`!document.querySelector('#pTypes [data-type="read"]').disabled`), await text('#pTypes'));
+  chk('自選題型：列出所有題型；閱讀測驗可以請模型出所以可選', await until(`document.querySelectorAll('#pTypes .p-type').length === 11`) && await evl(`!document.querySelector('#pTypes [data-type="read"]').disabled`), await text('#pTypes'));
   chk('報價：顯示要呼叫模型、美元區間，按鈕寫明費用', await until(`/報價：要請模型出題/.test(document.getElementById('pPreview').textContent) && /US\\$\\d/.test(document.getElementById('pStart').textContent)`), (await evl(`document.getElementById('pPreview').textContent.slice(-300)+'||'+document.getElementById('pStart').textContent`)));
   chk('預設勾選能出的題型，預覽照這些出', await until(`document.querySelectorAll('#pTypes .p-type[aria-pressed="true"]').length >= 8 && !!document.querySelector('#pPreview .p-table')`), (await text('#pTypes')) + ' || ' + (await text('#pPreview')));
   await evl(`document.querySelector('input[name="pMode"][value="auto"]').click()`);

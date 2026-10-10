@@ -324,6 +324,10 @@ export function grammarTargets(data, rng){
 }
 
 const textOfParas = paras => paras.map(p => p.map(s => s.text).join(' ')).join('\n\n');
+/** 組出短文：對話課文每次發言一行，前面標說話者（Jamie: …）；一般文章段落之間空一行 */
+const passageText = (art, paras) => art.dialogue
+  ? paras.map(p => `${art.paragraphs.find(x => x.para === p.para)?.speaker ?? ''}: ${p.items.join(' ')}`).join('\n')
+  : paras.map(p => p.items.join(' ')).join('\n\n');
 
 /** 克漏字（文法型）：回傳 { passage, questions }。semantic：模型寫的語意型干擾項（Phase 3），可選。 */
 export function buildCloze(pool, n, rng, semantic = []){
@@ -361,7 +365,7 @@ export function buildCloze(pool, n, rng, semantic = []){
       if (k >= n) break;
     }
     if (questions.length < Math.min(n, 5)) continue;
-    const passage = { title: art.name, text: paras.map(p => p.items.map(i => i.text).join(' ')).join('\n\n') };
+    const passage = { title: art.name, text: passageText(art, paras.map(p => ({ para: p.para, items: p.items.map(i => i.text) }))) };
     return { passage, questions: questions.slice(0, n), articleId: art.id };
   }
   return null;
@@ -401,7 +405,7 @@ export function buildWordBank(pool, n, rng){
     const questions = sorted.map(b => ({ type: 'wbank', skill: 'word-bank', inputMode: 'choice', src: 'scope', blankNo: b.no, prompt: `第 ${b.no} 格`,
       choices: bank, answer: [b.text], explain: `這裡要填 ${b.text}（${b.term}）。`,
       meta: { stat: { kind: 'paper', qtype: 'paper-wbank' } } }));
-    return { passage: { title: art.name, text: paras.map(p => p.items.join(' ')).join('\n\n'), bank: bank.map(x => x.value) }, questions: questions.slice(0, n), articleId: art.id };
+    return { passage: { title: art.name, text: passageText(art, paras), bank: bank.map(x => x.value) }, questions: questions.slice(0, n), articleId: art.id };
   }
   return null;
 }

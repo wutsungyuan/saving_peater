@@ -193,7 +193,7 @@ const labelOf = (q, v) => (q.choices || []).find(c => String(c.value) === String
 const flatQs = paper => paper.sections.flatMap(s => s.questions);
 
 function inlinePassage(text){
-  return esc(text).replace(/\((\d+)\)/g, '<b class="p-blank">($1)</b>').replace(/\n\n/g, '</p><p>');
+  return esc(text).replace(/\((\d+)\)/g, '<b class="p-blank">($1)</b>').replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');   // 對話：每次發言一行
 }
 
 function qBody(q, ans){

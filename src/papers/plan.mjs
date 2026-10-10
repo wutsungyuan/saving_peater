@@ -17,7 +17,7 @@ export const DIFFICULTY = { easy: 0, mid: 0.3, hard: 0.6 };
 export const DIFFICULTY_NAME = { easy: '簡單', mid: '中等', hard: '困難' };
 
 /**
- * need：ws = 單字或句子任一、words 單字表、sent 已分析句子、art 文章表
+ * need：ws = 單字或句子任一、words 單字表、sent 已分析句子、art 文章表、dlg 有對話課文的文章表
  * model：這個題型的「範圍內」題目本身就要模型出（閱讀、克漏字的語意干擾項）
  * ext：可以延伸（中等、困難）。free：能免費延伸的比例（mc 的單字題約一半；match、make 全部）
  */
@@ -26,6 +26,7 @@ export const TYPES = [
   { id: 'read',    name: '閱讀測驗', min: 10, max: 15, floor: 5, w: 1.5,  core: true, need: 'art',   ext: true,  model: true, unit: 5 },
   { id: 'cloze',   name: '克漏字',   min: 8,  max: 10, floor: 5, w: 1.25, core: true, need: 'art',   ext: false, whole: true },
   { id: 'wbank',   name: '文意選填', min: 5,  max: 8,  floor: 4, w: 1.0,                need: 'art',   ext: false, whole: true },
+  { id: 'reply',   name: '情境應答', min: 4,  max: 8,  floor: 3, w: 1.5,                need: 'dlg',   ext: false, model: true },
   { id: 'reorder', name: '句子重組', min: 5,  max: 10, floor: 3, w: 1.5,                need: 'sent',  ext: true },
   { id: 'fix',     name: '改錯',     min: 4,  max: 8,  floor: 3, w: 1.5,                need: 'sent',  ext: true },
   { id: 'fill',    name: '單字填空', min: 5,  max: 8,  floor: 3, w: 1.5,                need: 'words', ext: false },

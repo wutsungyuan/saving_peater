@@ -53,7 +53,7 @@ const SC = { setIds: [setId], articleIds: [artId], saver: true };
 
   section('預覽（不出題、不呼叫模型）');
   let r = await j('/api/paper-preview', { method: 'POST', body: { ...SC, n: 40 } });
-  chk('回傳可出的題型、配題、每題分數、種子', r.status === 200 && r.json.ok && r.json.seed && r.json.availability.length === 10 && r.json.plan.total === 100, r.text.slice(0, 200));
+  chk('回傳可出的題型、配題、每題分數、種子', r.status === 200 && r.json.ok && r.json.seed && r.json.availability.length === 11 && r.json.plan.total === 100, r.text.slice(0, 200));
   chk('配題題數正確、滿分 100', sumN(r.json.plan.rows) === 40 && r.json.plan.total === 100);
   const av = Object.fromEntries(r.json.availability.map(a => [a.id, a]));
   chk('有單字、句子、文章：除了閱讀測驗（還沒有模型題）都能出', ['mc', 'fill', 'match', 'reorder', 'fix', 'make', 'trans', 'wbank', 'cloze'].every(id => av[id].ok), JSON.stringify(Object.values(av).filter(a => !a.ok).map(a => a.id + ':' + a.reason)));

@@ -36,11 +36,12 @@ export function buildPool(cache, { setIds = [], articleIds = [], userToken = 'an
     for (const it of cache.articleItems([id])){
       if (!it.sentence) continue;                            // 分析結果不在快取裡的句子略過
       if (!byPara.has(it.para)) byPara.set(it.para, []);
-      byPara.get(it.para).push({ hash: it.hash, original: it.sentence.original, data: it.sentence });
+      byPara.get(it.para).push({ hash: it.hash, original: it.sentence.original, data: it.sentence, speaker: it.speaker || null });
       addRecord(it.sentence.original, it.sentence);
     }
-    articles.push({ id: a.id, name: a.name,
-      paragraphs: [...byPara.entries()].sort((x, y) => x[0] - y[0]).map(([para, sentences]) => ({ para, sentences })) });
+    // 對話課文：文章表的「段」就是一次發言（para = 第幾次發言），帶說話者。出題時用說話者名字標出誰說的。
+    const paragraphs = [...byPara.entries()].sort((x, y) => x[0] - y[0]).map(([para, sentences]) => ({ para, sentences, speaker: sentences[0]?.speaker ?? null }));
+    articles.push({ id: a.id, name: a.name, dialogue: paragraphs.length >= 2 && paragraphs.every(p => p.speaker), paragraphs });
   }
   // 單字例句（字表建立時存的、分析過的才有）
   for (const w of words) for (const s of w.senses ?? []) if (s.example) addRecord(s.example, cache.peek(s.example));
@@ -66,6 +67,7 @@ export function buildPool(cache, { setIds = [], articleIds = [], userToken = 'an
 }
 
 /** 兩份選取範圍有沒有素材（給配題用的布林） */
-export const haveOf = pool => ({ words: pool.words.length > 0, sent: pool.records.length > 0, art: pool.articles.some(a => a.paragraphs.length) });
+export const haveOf = pool => ({ words: pool.words.length > 0, sent: pool.records.length > 0, art: pool.articles.some(a => a.paragraphs.length),
+  dlg: pool.articles.some(a => a.dialogue) });
 
 export { splitArticle };

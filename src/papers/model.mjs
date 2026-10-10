@@ -10,7 +10,7 @@
 import { spawnClaude, claudeNotFound } from '../claude-bin.mjs';
 import { parseModelJson, classifyError } from '../analyzer.mjs';
 import { EXAM_MODEL, EXAM_PROMPT, COLD_START_USD } from '../config.mjs';
-import { validateRead, validateCloze, validateExt, bankId, tokensOf } from './validate.mjs';
+import { validateRead, validateCloze, validateExt, validateReply, bankId, tokensOf } from './validate.mjs';
 
 export const PASSAGE_WORDS = 300;               // 閱讀測驗的文章長度上限（字）
 export const READ_PER_ARTICLE = 10;             // 每篇文章一次出幾題閱讀題入庫
@@ -26,7 +26,10 @@ export function passageOf(article){
   for (const p of article.paragraphs) for (const s of p.sentences){
     const w = tokensOf(s.original).length;
     if (out.length && words + w > PASSAGE_WORDS) return out;
-    out.push({ n: out.length + 1, para: p.para, hash: s.hash, text: s.original, data: s.data }); words += w;
+    // 對話：每次發言的第一句前面標說話者（Jamie: …），模型才分得出誰說的；shown 是給模型與畫面看的文字
+    const first = article.dialogue && p.sentences[0] === s;
+    out.push({ n: out.length + 1, para: p.para, hash: s.hash, text: s.original, data: s.data, speaker: article.dialogue ? p.speaker : null,
+      shown: first ? `${p.speaker}: ${s.original}` : s.original }); words += w;
   }
   return out;
 }
@@ -42,6 +45,35 @@ export function clozeTargets(passage, words){
     if (out.length >= 12) break;
   }
   return out;
+}
+
+// ---------- 情境應答（對話課文）----------
+export const REPLY_PER_ARTICLE = 8, REPLY_WORDS = 25;
+
+/** 對話裡「一個人問、下一個人回答」的配對：前一次發言以問句結尾、換人說話、回答不太短也不太長。
+ *  程式只負責找配對（正確答案就是課文裡真正的回答，不花錢）；3 個干擾回應才請模型寫。 */
+export function replyPairs(article){
+  if (!article.dialogue) return [];
+  const turns = article.paragraphs.map(p => ({ speaker: p.speaker, text: p.sentences.map(s => s.original).join(' '), first: p.sentences[0]?.original ?? '', last: p.sentences.at(-1)?.original ?? '' }));
+  const out = [];
+  for (let i = 0; i + 1 < turns.length; i++){
+    const a = turns[i], b = turns[i + 1];
+    if (!/[?？]["”']?$/.test(a.last.trim()) || a.speaker === b.speaker) continue;
+    if (/[?？]["”']?$/.test(b.first.trim())) continue;                 // 回答的第一句就是問題（轉換話題）：「正確回應」不唯一，不出；先答再反問（No. … What about you?）可以
+    const bw = tokensOf(b.text).length;
+    if (bw < 3 || bw > REPLY_WORDS) continue;
+    out.push({ n: out.length + 1, key: String(i), qSpeaker: a.speaker, q: a.text, aSpeaker: b.speaker, a: b.text,
+      before: turns.slice(Math.max(0, i - 2), i).map(t => `${t.speaker}: ${t.text}`) });
+  }
+  return out;
+}
+
+/** 這個題型的供給量：能請模型出時算「配對數」（每篇最多 8、全部最多 20）；不能時只算題庫現成的 */
+export function replySupply(cache, pool, { modelOk }){
+  let n = 0;
+  for (const a of pool.articles.filter(x => x.dialogue))
+    n += modelOk ? Math.min(REPLY_PER_ARTICLE, replyPairs(a).length) : bankCount(cache, 'reply', a.id, 'scope');
+  return Math.min(20, n);
 }
 
 // ---------- 題庫現況 ----------
@@ -95,6 +127,19 @@ export function planModelWork(cache, pool, plan, { saver = false, seed = 1 } = {
       have += Math.max(0, 8 - Math.min(p.have, 8));               // 一篇文章最多用 8 題；出完之後這篇補到 8
     }
   }
+  // 1b) 情境應答的干擾回應：對話課文每篇一次，題庫裡沒有的配對才請模型出
+  const reply = row('reply');
+  if (reply){
+    let have = pool.articles.reduce((a, art) => a + bankCount(cache, 'reply', art.id, 'scope'), 0);
+    for (const a of pool.articles.filter(x => x.dialogue)){
+      if (have >= reply.n) break;
+      const known = new Set(cache.questionsOf({ type: 'reply', ref: String(a.id), src: 'scope', limit: 100 }).map(r => r.payload.key));
+      const missing = replyPairs(a).filter(p => !known.has(p.key)).slice(0, REPLY_PER_ARTICLE);
+      if (!missing.length) continue;
+      tasks.push({ kind: 'reply', articleId: a.id, questions: missing.length });
+      have += missing.length;
+    }
+  }
   // 2) 克漏字的語意干擾項：每篇文章最多 2 篇，題庫沒有才出
   if (row('cloze')){
     for (const a of pool.articles.slice(0, 2)){
@@ -144,13 +189,30 @@ export function callExam(userObj, { timeoutMs = 240_000, maxBudgetUsd, promptFil
   });
 }
 
-const passageJson = passage => passage.map(s => ({ n: s.n, text: s.text }));
+const passageJson = passage => passage.map(s => ({ n: s.n, text: s.shown ?? s.text }));
+/** 短文全文：對話每次發言一行，一般文章用空格接起來 */
+export function passageFull(passage){
+  if (!passage[0]?.speaker) return passage.map(s => s.text).join(' ');
+  const lines = [];                                                 // 同一次發言的句子接在同一行
+  for (const s of passage){
+    const last = lines.at(-1);
+    if (last && last.para === s.para) last.text += ' ' + s.text; else lines.push({ para: s.para, text: s.shown });
+  }
+  return lines.map(l => l.text).join('\n');
+}
 
 /** 每個工作的呼叫內容。retryWant：上一輪驗證後還缺的數量（只補缺的）。 */
-function requestOf(task, pool, retry){
+function requestOf(task, pool, retry, cache){
   if (task.kind === 'read'){
     const art = pool.articles.find(a => a.id === task.articleId);
     return { task: 'read', passage: passageJson(passageOf(art)), count: retry ?? task.questions, words: pool.words.slice(0, 30).map(w => w.term), known: [...pool.known].slice(0, 200) };
+  }
+  if (task.kind === 'reply'){
+    const art = pool.articles.find(a => a.id === task.articleId);
+    const known = new Set(cache.questionsOf({ type: 'reply', ref: String(art.id), src: 'scope', limit: 100 }).map(r => r.payload.key));
+    const items = replyPairs(art).filter(p => !known.has(p.key)).slice(0, REPLY_PER_ARTICLE);
+    return { task: 'reply', items: (Array.isArray(retry) ? items.filter(p => retry.includes(p.n)) : items).map(p => ({ n: p.n, before: p.before, speakerA: p.qSpeaker, said: p.q, speakerB: p.aSpeaker, reply: p.a })),
+      words: pool.words.slice(0, 30).map(w => w.term), known: [...pool.known].slice(0, 200) };
   }
   if (task.kind === 'cloze'){
     const art = pool.articles.find(a => a.id === task.articleId), passage = passageOf(art);
@@ -167,10 +229,23 @@ function ingest(cache, task, data, pool){
   const key = scopeKey(pool);
   if (task.kind === 'read'){
     const art = pool.articles.find(a => a.id === task.articleId), passage = passageOf(art);
-    const v = validateRead(data, { nSentences: passage.length, passageText: passage.map(s => s.text).join(' ') });
+    const v = validateRead(data, { nSentences: passage.length, passageText: passageFull(passage) });
     const rows = v.items.map(p => ({ id: bankId('read', { a: art.id, ...p }), type: 'read', src: 'scope', ref: String(art.id), payload: p, anchors: null }));
     cache.putQuestions(rows);
     return { added: rows.length, dropped: v.dropped, short: Math.max(0, task.questions - rows.length) };
+  }
+  if (task.kind === 'reply'){
+    const art = pool.articles.find(a => a.id === task.articleId);
+    const have = new Set(cache.questionsOf({ type: 'reply', ref: String(art.id), src: 'scope', limit: 100 }).map(r => r.payload.key));
+    const pairs = replyPairs(art).filter(p => !have.has(p.key)).slice(0, REPLY_PER_ARTICLE);
+    const v = validateReply(data, pairs, { known: pool.known });
+    const rows = [...v.items].map(([n, ds]) => {
+      const p = pairs.find(x => x.n === n);
+      const payload = { key: p.key, qSpeaker: p.qSpeaker, q: p.q, aSpeaker: p.aSpeaker, a: p.a, distractors: ds };
+      return { id: bankId('reply', { a: art.id, key: p.key, ans: p.a }), type: 'reply', src: 'scope', ref: String(art.id), payload, anchors: null };
+    });
+    cache.putQuestions(rows);
+    return { added: rows.length, dropped: v.dropped, short: pairs.filter(p => !v.items.has(p.n)).map(p => p.n) };
   }
   if (task.kind === 'cloze'){
     const art = pool.articles.find(a => a.id === task.articleId), passage = passageOf(art), targets = clozeTargets(passage, pool.words);
@@ -204,7 +279,7 @@ export async function runModelWork(cache, pool, tasks, { capUsd } = {}){
     for (let round = 0; round < 2; round++){
       const t0 = Date.now();
       let res;
-      try { res = await callExam(requestOf(task, pool, retry), { maxBudgetUsd: capUsd }); }
+      try { res = await callExam(requestOf(task, pool, retry, cache), { maxBudgetUsd: capUsd }); }
       catch (e){
         sum.error = { kind: e.kind || 'other', message: String(e.message).slice(0, 300) };
         if (e.kind === 'rate-limit' || e.kind === 'auth') return sum;
@@ -214,7 +289,7 @@ export async function runModelWork(cache, pool, tasks, { capUsd } = {}){
       const r = ingest(cache, task, res.data, pool);
       sum.calls++; sum.added += r.added; sum.dropped += r.dropped.length; sum.costUsd += res.usage.costUsd;
       cache.log({ kind: 'paper-gen', chars: 0, sentences: r.added, cached: 0, analyzed: r.added, ms: Date.now() - t0, text: `題庫 ${task.kind}（${r.added} 題入庫，${r.dropped.length} 題被擋）`, ...res.usage });
-      if (!r.short || round === 1) break;
+      if (!r.short || (Array.isArray(r.short) && !r.short.length) || round === 1) break;
       retry = r.short;                                         // 只補缺的
     }
   }
@@ -267,7 +342,7 @@ export function readSection(cache, pool, n, ext, rng){
     if (take.length < Math.min(3, need)) continue;
     // 同一篇的題按依據句的順序排
     take.sort((x, y) => Math.min(...x.payload.evidence) - Math.min(...y.payload.evidence));
-    need -= addPassage(a.name, passage.map(s => s.text).join(' '), take.map(r => ({ id: r.id, p: r.payload })), 'scope');
+    need -= addPassage(a.name, passageFull(passage), take.map(r => ({ id: r.id, p: r.payload })), 'scope');
   }
   // 延伸：模型寫的新短文，每篇最多 5 題
   let extGot = 0, extNeed = Math.min(ext, n - questions.length);
@@ -278,6 +353,23 @@ export function readSection(cache, pool, n, ext, rng){
     extNeed -= qs.length; extGot += qs.length;
   }
   return { questions, passages, ext: extGot, extFree: 0 };
+}
+
+/** 情境應答這一區：從題庫取（用過次數少的優先），正確答案和 3 個干擾回應洗牌 */
+export function replySection(cache, pool, n, rng){
+  const rows = [];
+  for (const a of shuffleWith(pool.articles.filter(x => x.dialogue), rng))
+    rows.push(...cache.questionsOf({ type: 'reply', ref: String(a.id), src: 'scope', limit: 30 }));
+  rows.sort((x, y) => x.used - y.used);
+  const cut = rows[Math.min(n, rows.length) - 1]?.used ?? 0;
+  const pick = [...rows.filter(r => r.used < cut), ...shuffleWith(rows.filter(r => r.used === cut), rng)].slice(0, n);
+  const questions = shuffleWith(pick, rng).map(r => {
+    const p = r.payload;
+    return { type: 'reply', skill: 'reply', inputMode: 'choice', src: 'scope', prompt: `${p.aSpeaker} 會怎麼回應？選出最適當的回應`,
+      question: `${p.qSpeaker}: ${p.q}`, choices: shuffleWith([p.a, ...p.distractors], rng).map(v => ({ value: v, label: v })), answer: [p.a],
+      explain: `${p.aSpeaker} 真正的回答是：${p.a}`, meta: { key: `b${r.id}`, bankId: r.id, stat: { kind: 'paper', qtype: 'paper-reply' } } };
+  });
+  return { questions, passages: [], ext: 0, extFree: 0 };
 }
 
 /** 克漏字用的語意干擾項（從題庫取，給 buildCloze 的 semantic 參數） */

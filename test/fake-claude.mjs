@@ -126,6 +126,10 @@ if (kind === 'exam') {
     if (bad) { qs[0].choices = qs[0].choices.slice(0, 3); qs[1].answer = 9; }
     finish({ questions: qs }, { n: cnt });
   }
+  if (req.task === 'reply') {
+    const cap = x => x[0].toUpperCase() + x.slice(1);
+    finish({ items: req.items.map((it, k) => ({ n: it.n, distractors: [0, 1, 2].map(j => cap(w(k * 5 + j * 7)) + ' ' + w(k * 5 + j * 7 + 1) + ' ' + w(k * 5 + j * 7 + 2) + '.').map(d => (env.FAKE_EXAM_BAD_FIRST === '1' && req.items.length > 1 && k === 0 ? d.toLowerCase() : d)) })) }, { n: req.items.length });
+  }
   if (req.task === 'cloze') finish({ items: req.targets.map(t => ({ n: t.n, word: t.word, distractors: ['table', 'river', 'green'].filter(x => x !== t.word.toLowerCase()).slice(0, 3) })) }, { n: req.targets.length });
   if (req.task === 'ext') {
     const want = req.want ?? {}, out = {}; let total = 0;
