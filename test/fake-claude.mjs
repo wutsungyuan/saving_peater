@@ -10,6 +10,7 @@
 //   FAKE_FAIL_MATCH=<字串>    提示裡含這段文字就回一般錯誤（單句失敗）
 //   FAKE_COUNTER=<檔>         呼叫次數計數用
 //   FAKE_BAD_TEXT_FIRST=1     分析的第一次呼叫回一般文字（不是 JSON），測自動重試
+//   FAKE_EMPTY_FIRST=1        分析的第一次呼叫回「沒有收到句子」（original 是空的）
 //   FAKE_EXAM_BAD_FIRST=1     出題任務的第一次呼叫回一半不合格的題（測驗證與「只補缺的」）
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
@@ -70,7 +71,7 @@ const count = (() => {
   writeFileSync(env.FAKE_COUNTER, String(n));
   return n;
 })();
-const sentences = kind === 'analyze' ? sentencesOf(prompt) : [];
+const sentences = kind === 'analyze' ? sentencesOf(prompt.replace(/^Analyze this sentence and reply with JSON only: /, '')) : [];
 const examReq = kind === 'exam' ? (() => { try { return JSON.parse(prompt); } catch { return {}; } })() : null;
 if (env.FAKE_LOG) appendFileSync(env.FAKE_LOG, JSON.stringify({ kind, sentences: sentences.length, n: count, task: examReq?.task, cap: val('--max-budget-usd'), model: val('--model') }) + '\n');
 
@@ -80,6 +81,7 @@ if (env.FAKE_FAIL_AFTER && count > Number(env.FAKE_FAIL_AFTER)) fail('Claude usa
 if (env.FAKE_FAIL_MATCH && prompt.includes(env.FAKE_FAIL_MATCH)) fail('boom: 模型當掉了', 1);
 
 if (kind === 'analyze' && env.FAKE_BAD_TEXT_FIRST === '1' && count === 1) finish("I'd like to try the Cozy Corner next time.");
+if (kind === 'analyze' && env.FAKE_EMPTY_FIRST === '1' && count === 1) finish({ sentences: [{ index: 0, original: '', translation: '', clauses: [], words: [], notes: [] }] });
 if (kind === 'analyze') finish({ sentences: sentences.map(analysis) }, { n: sentences.length });
 
 if (kind === 'prose-ocr') finish({ text: env.FAKE_OCR_TEXT ?? 'I like cats.\nShe runs fast.', filled: 0 });

@@ -130,6 +130,13 @@ try {
   const hd = evs(r, 'done')[0];
   chk('第一次回非 JSON → 自動重試一次，最後成功、沒有失敗', hd.analyzed === 1 && hd.failed === 0 && evs(r, 'sentence').length === 1, JSON.stringify(hd));
   chk('兩次呼叫的花費都計入', hd.usage.costUsd >= 0.02, JSON.stringify(hd.usage));
+  chk('重試後的分析原句正確（不含提示的前綴）、有存進快取', evs(r, 'sentence')[0].sentence.original === 'People here speak Australian English.' && (await J(H.base, '/api/analyze', { method: 'POST', body: { text: 'People here speak Australian English.', dryRun: true } })).json.cached === 1);
+
+  // 模型沒收到句子（回 original 是空的）也一樣自動重試
+  const I = await start('emptyfirst', { FAKE_EMPTY_FIRST: '1' }); servers.push(I);
+  r = await sse(I.base, '/api/analyze', { text: 'People here speak Australian English.' });
+  const id2 = evs(r, 'done')[0];
+  chk('第一次回「沒有收到句子」→ 自動重試，最後成功', id2.analyzed === 1 && id2.failed === 0 && evs(r, 'sentence')[0].sentence.original === 'People here speak Australian English.', JSON.stringify(id2));
 } catch (e) {
   console.log('ERR', e.stack || e.message); results.push(false);
 } finally {

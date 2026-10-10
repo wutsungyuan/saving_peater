@@ -177,17 +177,25 @@ export function fixPronounCase(words){
 /** 主入口：分析一段英文，回傳 { data, meta } */
 export async function analyze(text, opts = {}) {
   let res = await callModel(text, opts);
-  let data;
-  try { data = parseModelJson(res.text); }
-  catch (e) {
-    // 模型偶爾不照格式回（回了一般文字、或回到別句的內容）。同一句再問一次，比讓使用者自己重試省事；
-    // 兩次的花費都計入。仍然解析不了才當失敗。
+  let data, problem = null;
+  const check = r => {
+    try { const d = parseModelJson(r.text);
+      // 模型有時沒收到句子（回「沒有收到任何英文句子」、original 是空的），也算沒分析成功
+      if (!String(d.sentences?.[0]?.original ?? '').trim()) return { error: '模型沒有回傳這一句的分析' };
+      return { data: d }; }
+    catch (e) { return { error: e.message }; }
+  };
+  ({ data, error: problem } = check(res));
+  if (problem) {
+    // 實測：像 "People here speak Australian English." 這種單獨一句，模型偶爾完全沒看到輸入，
+    // 回一句不相干的話（I like eating hamburgers…）或回「沒有收到句子」，而且同一句重送常常還是一樣。
+    // 重試時把句子包進一行明確的指令裡，模型就會認得這是要分析的內容。兩次花費都計入。
     const first = res;
-    res = await callModel(text, opts);
-    res = { ...res, costUsd: (res.costUsd ?? 0) + (first.costUsd ?? 0),
-      usage: sumUsage(first.usage, res.usage) };
-    try { data = parseModelJson(res.text); }
-    catch { throw Object.assign(new Error(e.message), { kind: 'parse' }); }
+    res = await callModel(`Analyze this sentence and reply with JSON only: ${text}`, opts);
+    res = { ...res, costUsd: (res.costUsd ?? 0) + (first.costUsd ?? 0), usage: sumUsage(first.usage, res.usage) };
+    const again = check(res);
+    if (again.error) throw Object.assign(new Error(again.error), { kind: 'parse' });
+    data = again.data;
   }
 
   // 對齊每個句子的詞性，以及每個子句的成分
