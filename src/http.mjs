@@ -68,7 +68,9 @@ export async function serveStatic(req, res, url){
   try {
     const buf = await readFile(file);
     const isPage = extname(file) === '.html' && !buf.subarray(0, 200).toString().toLowerCase().includes('<!doctype');
-    res.writeHead(200, { 'content-type': (MIME[extname(file)] || 'application/octet-stream') + '; charset=utf-8' });
+    // no-cache：每次都向伺服器確認。前端是好幾個獨立的檔案，改了程式後不能讓瀏覽器拿到新舊混搭的版本。
+    res.writeHead(200, { 'content-type': (MIME[extname(file)] || 'application/octet-stream') + '; charset=utf-8',
+      'cache-control': 'no-cache' });
     res.end(isPage ? Buffer.concat([Buffer.from(HEAD), buf]) : buf);
   } catch { res.writeHead(404, { 'content-type':'text/plain; charset=utf-8' }); res.end('not found'); }
 }

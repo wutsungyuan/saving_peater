@@ -72,6 +72,16 @@ try {
   chk('首頁 200、是 HTML、有補上 doctype', r.status === 200 && r.type.includes('text/html') && /^<!doctype html>/i.test(r.text));
   r = await J(B, '/speech.js');
   chk('speech.js 200、是 JavaScript', r.status === 200 && r.type.includes('javascript'));
+  r = await J(B, '/app.css');
+  chk('app.css 200、是 CSS、不快取', r.status === 200 && r.type.includes('text/css') && r.text.includes('{'));
+  const hdr = await fetch(B + '/js/core.js');
+  chk('js/core.js 200、是 JavaScript、cache-control: no-cache', hdr.status === 200 && (hdr.headers.get('content-type') || '').includes('javascript') && hdr.headers.get('cache-control') === 'no-cache');
+  // 首頁引用的每一個 js 與 css 都要真的拿得到（拆檔後最容易漏的就是這個）
+  const page = await J(B, '/');
+  const refs = [...page.text.matchAll(/<(?:script src|link rel="stylesheet" href)="([^"]+)"/g)].map(m => m[1]).filter(u => !/^https?:/.test(u));
+  const missing = [];
+  for (const u of refs) { const x = await fetch(B + '/' + u); if (x.status !== 200) missing.push(u + ' → ' + x.status); }
+  chk(`首頁引用的 ${refs.length} 個本機檔案都拿得到`, refs.length >= 15 && !missing.length, missing.join(', '));
   r = await J(B, '/no-such-file.js');
   chk('不存在的檔案回 404', r.status === 404);
   r = await J(B, '/..%2f..%2fpackage.json');
