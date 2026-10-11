@@ -111,3 +111,67 @@ el('snList').addEventListener('click', async e => {
 // 展開後的分析卡：游標移到單字跳出詞性與成分的便條
 el('snList').addEventListener('pointerover', e => { const w = e.target.closest('.w'); w ? showTip(w) : hideTip(); });
 el('snList').addEventListener('pointerleave', hideTip);
+
+// ===== 整理學生的練習紀錄（後台「學生紀錄」）=====
+const REC_KIND = { all: '全部（句子與單字）', practice: '句子練習', quiz: '單字測驗', exam: '測驗卷裡的作答' };
+let recSets = [];
+let recPreviewKey = null;                     // 預覽時的條件；條件改了，確認鈕就失效，要重新預覽
+
+const recForm = () => ({
+  kind: el('recKind').value, from: el('recFrom').value || undefined, to: el('recTo').value || undefined,
+  setIds: [...document.querySelectorAll('#recSets [aria-pressed="true"]')].map(b => Number(b.dataset.id)),
+  resetProgress: el('recReset').checked,
+});
+const recDescribe = f => [REC_KIND[f.kind] || f.kind,
+  f.from || f.to ? `${f.from || '不限'} ～ ${f.to || '不限'}` : '不限日期',
+  f.setIds?.length ? '字表：' + f.setIds.map(id => recSets.find(s => s.id === id)?.name ?? '#' + id).join('、') : null,
+  f.resetProgress ? '含熟練度' : null].filter(Boolean).join('・');
+const recCounts = c => `句子作答 ${c.attempts} 筆、單字作答 ${c.wordAttempts} 筆${c.progress ? `、單字熟練度 ${c.progress} 個字` : ''}`;
+
+function recAuditPaint(list){
+  el('recAudit').innerHTML = list?.length ? `<div class="scroll"><table class="p-table"><thead><tr><th>時間</th><th>條件</th><th>刪掉</th><th>備份</th></tr></thead><tbody>${list.map(a => {
+    const d = a.detail || {};
+    const f = d.filter ? { kind: d.filter.kind, from: d.filter.from ? new Date(d.filter.from).toLocaleDateString('sv') : '', to: d.filter.to ? new Date(d.filter.to - 86400000).toLocaleDateString('sv') : '', setIds: d.filter.setIds, resetProgress: d.filter.resetProgress } : null;
+    return `<tr><td>${esc(new Date(a.at).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }))}</td>
+      <td>${f ? esc(recDescribe(f)) : ''}</td><td>${d.deleted ? esc(recCounts(d.deleted)) : ''}</td><td><small>${esc(d.backup || '')}</small></td></tr>`;
+  }).join('')}</tbody></table></div>` : '<p class="hint">還沒有。</p>';
+}
+
+async function loadRecSets(){
+  const d = await fetch('/api/wordsets?user=x').then(r => r.ok ? r.json() : null).catch(() => null);
+  recSets = d?.sets ?? [];
+  el('recSets').innerHTML = recSets.length ? recSets.map(s => `<button type="button" class="tchip" data-id="${s.id}" aria-pressed="false">${esc(s.name)}</button>`).join('') : '<span class="hint">還沒有單字表。</span>';
+}
+el('recBox').addEventListener('toggle', () => { if (el('recBox').open){ loadRecSets(); recPreviewFetch(true); } });
+el('recSets').addEventListener('click', e => { const b = e.target.closest('.tchip'); if (b){ b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')); recStale(); } });
+for (const id of ['recKind', 'recFrom', 'recTo', 'recReset']) el(id).addEventListener('change', recStale);
+function recStale(){ if (recPreviewKey && JSON.stringify(recForm()) !== recPreviewKey){ recPreviewKey = null; el('recResult').innerHTML = ''; el('recMsg').textContent = '條件改了，請重新預覽。'; } }
+
+async function recPreviewFetch(auditOnly = false){
+  const f = recForm();
+  const r = await artApi('/api/admin/records-preview', { method: 'POST', body: f });
+  if (!r.ok){ el('recMsg').textContent = r.json.message || '預覽失敗'; return; }
+  recAuditPaint(r.json.audit);
+  if (auditOnly) return;
+  const c = r.json.counts, total = c.attempts + c.wordAttempts + c.progress;
+  recPreviewKey = JSON.stringify(f);
+  el('recMsg').textContent = '';
+  el('recResult').innerHTML = total
+    ? `<div class="rec-warn"><p><b>將刪除：${esc(recCounts(c))}。</b></p><p class="hint">條件：${esc(recDescribe(f))}。刪掉就不能從畫面復原（只能用備份還原）。</p>
+        <div class="row"><button type="button" class="danger-btn" id="recGo">確定刪除（先備份）</button></div></div>`
+    : '<p class="hint">沒有符合條件的紀錄。</p>';
+}
+el('recPreview').addEventListener('click', () => recPreviewFetch());
+el('recResult').addEventListener('click', async e => {
+  const b = e.target.closest('#recGo'); if (!b) return;
+  if (b.dataset.armed !== '1'){ b.dataset.armed = '1'; b.textContent = '再按一次，真的刪除'; setTimeout(() => { if (b.isConnected){ b.dataset.armed = '0'; b.textContent = '確定刪除（先備份）'; } }, 5000); return; }
+  if (recPreviewKey !== JSON.stringify(recForm())){ el('recMsg').textContent = '條件改了，請重新預覽。'; return; }
+  b.disabled = true; el('recMsg').textContent = '備份並刪除中…';
+  const r = await artApi('/api/admin/records-delete', { method: 'POST', body: { ...recForm(), confirm: true } });
+  if (!r.ok){ b.disabled = false; el('recMsg').textContent = r.json.message || '刪除失敗'; return; }
+  recPreviewKey = null;
+  el('recMsg').textContent = '';
+  el('recResult').innerHTML = `<p class="rec-done">已刪除：${esc(recCounts(r.json.deleted))}。${r.json.backup ? `刪之前的備份：<code>${esc(r.json.backup)}</code>（在資料庫旁的 backups 資料夾）。` : ''}</p>`;
+  if (r.json.audit) recAuditPaint(r.json.audit);
+  loadStudentRecords();                                    // 上面的統計跟著更新
+});

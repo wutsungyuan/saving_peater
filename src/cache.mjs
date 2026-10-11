@@ -253,6 +253,52 @@ export function openCache(file = 'data/cache.db'){
       db.prepare(`INSERT OR REPLACE INTO sentences (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map(c => row[c]));
     },
 
+    // ---------- 學生練習紀錄的整理（老師後台）----------
+    /** 條件 → 各表的 WHERE。f：{ kind: all|practice|quiz|exam, from, to（毫秒；to 不含）, setIds }。
+     *  只動學生的紀錄：user_token 不是 'teacher'（老師自己試用的不算）。
+     *  句子作答（attempts）只有 practice 與 exam 兩種來源，單字作答（word_attempts）只有 quiz 與 exam。 */
+    _recWhere(table, f){
+      const sentence = table === 'attempts';
+      const applies = f.kind === 'all' || f.kind === 'exam' || f.kind === (sentence ? 'practice' : 'quiz');
+      if (!applies) return null;
+      const w = ["user_token != 'teacher'"], p = [];
+      if (f.kind !== 'all'){ w.push('source = ?'); p.push(f.kind); }
+      if (f.from){ w.push('created_at >= ?'); p.push(f.from); }
+      if (f.to){ w.push('created_at < ?'); p.push(f.to); }
+      if (!sentence && f.setIds?.length){ w.push(`word_id IN (SELECT id FROM words WHERE set_id IN (${f.setIds.map(() => '?').join(',')}))`); p.push(...f.setIds); }
+      return { sql: w.join(' AND '), p };
+    },
+    recordsCount(f){
+      const n = (table) => { const c = this._recWhere(table, f); return c ? Number(db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE ${c.sql}`).get(...c.p).n) : 0; };
+      let progress = 0;
+      if (f.resetProgress){
+        const w = ["user_token != 'teacher'"], p = [];
+        if (f.setIds?.length){ w.push(`word_id IN (SELECT id FROM words WHERE set_id IN (${f.setIds.map(() => '?').join(',')}))`); p.push(...f.setIds); }
+        progress = Number(db.prepare(`SELECT COUNT(*) n FROM word_progress WHERE ${w.join(' AND ')}`).get(...p).n);
+      }
+      return { attempts: n('attempts'), wordAttempts: n('word_attempts'), progress };
+    },
+    /** 刪除（一個交易）。呼叫前要先備份。回傳實際刪掉的筆數。 */
+    deleteRecords(f){
+      db.exec('BEGIN');
+      try {
+        const del = (table) => { const c = this._recWhere(table, f); return c ? Number(db.prepare(`DELETE FROM ${table} WHERE ${c.sql}`).run(...c.p).changes) : 0; };
+        const attempts = del('attempts'), wordAttempts = del('word_attempts');
+        let progress = 0;
+        if (f.resetProgress){
+          const w = ["user_token != 'teacher'"], p = [];
+          if (f.setIds?.length){ w.push(`word_id IN (SELECT id FROM words WHERE set_id IN (${f.setIds.map(() => '?').join(',')}))`); p.push(...f.setIds); }
+          progress = Number(db.prepare(`DELETE FROM word_progress WHERE ${w.join(' AND ')}`).run(...p).changes);
+        }
+        db.exec('COMMIT');
+        return { attempts, wordAttempts, progress };
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
+    },
+    /** 備份整個資料庫到指定路徑（VACUUM INTO） */
+    backupTo(path){ db.exec(`VACUUM INTO '${String(path).replace(/'/g, "''")}'`); return path; },
+    audit(actor, action, detail){ db.prepare('INSERT INTO audit_log (created_at, actor, action, detail) VALUES (?,?,?,?)').run(Date.now(), actor, action, detail == null ? null : JSON.stringify(detail)); },
+    auditList(limit = 20){ return db.prepare('SELECT id, created_at, actor, action, detail FROM audit_log ORDER BY created_at DESC, id DESC LIMIT ?').all(limit).map(r => ({ id: r.id, at: r.created_at, actor: r.actor, action: r.action, detail: r.detail ? JSON.parse(r.detail) : null })); },
+
     /** 作答紀錄用過哪些使用者代碼、各有多少作答、最早與最近一筆。合併舊代碼前先看這個。 */
     userTokens(){
       const m = new Map();

@@ -1,6 +1,8 @@
 // 路由：老師後台。句子管理（列表、看分析、排除出題、重新分析、刪除）。全部只有老師能用。
 import { cache } from '../context.mjs';
-import { COLD_START_USD } from '../config.mjs';
+import { COLD_START_USD, DB_FILE } from '../config.mjs';
+import { mkdirSync, readdirSync, unlinkSync } from 'node:fs';
+import { dirname, join, basename } from 'node:path';
 import { readBody, authed, denyStudent, sendJson } from '../http.mjs';
 import { internalCall } from '../internal.mjs';
 
@@ -12,7 +14,38 @@ function teacherOnly(req, res, url){
 }
 const r3 = n => Math.round(n * 1000) / 1000;
 
+/** 整理前端送來的條件。日期是本機時間的 YYYY-MM-DD：起（含當天）、迄（含當天，所以內部算到隔天 0 點）。 */
+function recordFilter(b = {}){
+  const kind = ['practice', 'quiz', 'exam'].includes(b.kind) ? b.kind : 'all';
+  const day = (s, add = 0) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s ?? '')); if (!m) return null; const d = new Date(+m[1], +m[2] - 1, +m[3] + add); return Number.isNaN(d.getTime()) ? null : d.getTime(); };
+  const setIds = [...new Set((Array.isArray(b.setIds) ? b.setIds : []).map(Number).filter(n => Number.isInteger(n) && n > 0))].slice(0, 50);
+  return { kind, from: day(b.from), to: day(b.to, 1), setIds, resetProgress: b.resetProgress === true };
+}
+const describe = f => ({ kind: f.kind, from: f.from, to: f.to, setIds: f.setIds, resetProgress: f.resetProgress });
+
 export const routes = [
+  // 學生練習紀錄的整理：先預覽會刪多少
+  { match: (req, url) => url.pathname === '/api/admin/records-preview' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const f = recordFilter(await body(req));
+      return sendJson(res, 200, { counts: cache.recordsCount(f), filter: describe(f), audit: cache.auditList(10) });
+    } },
+  // 真的刪：要帶 confirm:true；先備份整個資料庫、一個交易刪完、留操作紀錄
+  { match: (req, url) => url.pathname === '/api/admin/records-delete' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req), f = recordFilter(b);
+      const counts = cache.recordsCount(f);
+      if (b.confirm !== true) return sendJson(res, 409, { error: 'confirm-required', message: '要先確認才會刪。', counts });
+      if (!counts.attempts && !counts.wordAttempts && !counts.progress) return sendJson(res, 200, { ok: true, deleted: counts, backup: null, message: '沒有符合條件的紀錄。' });
+      const dir = join(dirname(DB_FILE), 'backups'); mkdirSync(dir, { recursive: true });
+      const path = join(dir, `${basename(DB_FILE, '.db')}.before-delete-${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}-${Math.random().toString(36).slice(2, 6)}.db`);
+      cache.backupTo(path);
+      const deleted = cache.deleteRecords(f);
+      cache.audit('teacher', 'records-delete', { filter: describe(f), deleted, backup: basename(path) });
+      // 只留最近 10 份這種備份
+      try { const mine = readdirSync(dir).filter(x => x.includes('.before-delete-')).sort(); for (const old of mine.slice(0, Math.max(0, mine.length - 10))) unlinkSync(join(dir, old)); } catch {}
+      return sendJson(res, 200, { ok: true, deleted, backup: basename(path), audit: cache.auditList(10) });
+    } },
   // 列表：q 搜尋原文與翻譯；filter 篩選；limit、offset 分頁
   { match: (req, url) => url.pathname === '/api/admin/sentences' && req.method === 'GET', handler: async (req, res, url) => {
       if (teacherOnly(req, res, url)) return;

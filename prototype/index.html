@@ -58,6 +58,19 @@
 
     <div id="view-students" hidden>
       <p class="hint">學生的作答紀錄（單字測驗、句子練習、測驗卷）。</p>
+      <details class="box rec-box" id="recBox">
+        <summary>整理紀錄：刪除學生的練習紀錄</summary>
+        <p class="hint">只會動學生的紀錄（老師自己試用的不會動）。先預覽會刪多少，確定後才刪；刪之前會自動備份整個資料庫，並留下刪除紀錄。刪掉的作答不會再計入弱點統計。</p>
+        <div class="row"><label for="recKind" class="hint">哪一種紀錄</label>
+          <select id="recKind"><option value="all">全部（句子與單字）</option><option value="practice">句子練習</option><option value="quiz">單字測驗</option><option value="exam">測驗卷裡的作答</option></select></div>
+        <div class="row"><label class="hint">日期（留白＝不限）</label><input type="date" id="recFrom" aria-label="起"> <span>～</span> <input type="date" id="recTo" aria-label="迄"></div>
+        <div class="row"><label class="hint">單字表（只影響單字作答；都不勾＝全部字表）</label><span id="recSets" class="chips"></span></div>
+        <div class="row"><label class="p-radio"><input type="checkbox" id="recReset"> 連熟練度（背熟程度、複習排程）一起清掉</label></div>
+        <div class="row"><button type="button" id="recPreview">預覽會刪多少</button><span class="hint" id="recMsg"></span></div>
+        <div id="recResult"></div>
+        <h4 class="sec" style="margin-top:14px">最近的刪除紀錄</h4>
+        <div id="recAudit"><p class="hint">還沒有。</p></div>
+      </details>
       <div id="studHead"></div>
       <div id="studCharts"></div>
     </div>

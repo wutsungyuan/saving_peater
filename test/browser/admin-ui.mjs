@@ -94,6 +94,24 @@ try {
   await a.click('#studTabs button[data-src="quiz"]');
   chk('可以切來源：單字測驗只有單字面向', await a.until(`/最弱的單字/.test(document.getElementById('studCharts').textContent) && !/五大句型/.test(document.getElementById('studCharts').textContent)`, 5000));
 
+  section('整理學生紀錄（刪除）');
+  const studentW = () => a.evl(`fetch('/api/weakness?as=student').then(r => r.json())`);          // 用老師的登入狀態讀學生的統計
+  await a.evl(`document.getElementById('recBox').open = true; document.getElementById('recBox').dispatchEvent(new Event('toggle'))`);
+  chk('展開：有範圍、日期、單字表、熟練度選項', await a.until(`document.querySelectorAll('#recSets .tchip').length >= 1`, 5000) && await shown(a, '#recKind') && await shown(a, '#recFrom') && await shown(a, '#recReset'));
+  await a.click('#recPreview');
+  chk('預覽：寫明會刪多少（句子 3、單字 3），有「確定刪除」', await a.until(`/句子作答 3 筆、單字作答 3 筆/.test(document.getElementById('recResult').textContent) && !!document.getElementById('recGo')`, 5000), await a.evl(`document.getElementById('recResult').textContent`));
+  await a.evl(`(() => { const k = document.getElementById('recKind'); k.value = 'practice'; k.dispatchEvent(new Event('change')); })()`);
+  chk('預覽之後又改了條件：確認鈕消失，要求重新預覽', await a.until(`!document.getElementById('recGo') && /重新預覽/.test(document.getElementById('recMsg').textContent)`, 3000));
+  await a.click('#recPreview');
+  chk('只選「句子練習」：句子 3、單字 0', await a.until(`/句子作答 3 筆、單字作答 0 筆/.test(document.getElementById('recResult').textContent)`, 5000));
+  await a.click('#recGo');
+  chk('第一次按：只是變成「再按一次」，資料還在', await a.evl(`/再按一次/.test(document.getElementById('recGo').textContent)`) && (await studentW()).sources.practice.total === 3);
+  await a.click('#recGo');
+  chk('第二次才刪：顯示已刪除與備份檔名', await a.until(`/已刪除：句子作答 3 筆/.test(document.getElementById('recResult').textContent) && /before-delete/.test(document.getElementById('recResult').textContent)`, 8000), await a.evl(`document.getElementById('recResult').textContent`));
+  chk('刪除紀錄多了一列', await a.until(`document.querySelectorAll('#recAudit tbody tr').length === 1 && /句子練習/.test(document.getElementById('recAudit').textContent)`, 5000));
+  chk('上面的學生統計跟著更新（句子面向沒了、單字還在）', await a.until(`!/五大句型/.test(document.getElementById('studCharts').textContent) && /最弱的單字/.test(document.getElementById('studCharts').textContent)`, 8000));
+  chk('伺服器上句子練習紀錄真的沒了，單字的還在', (await studentW()).sources.practice.total === 0 && (await studentW()).sources.quiz.total === 3);
+
   section('費用與用量');
   await a.click('.tabs button[data-view="history"]');
   chk('費用與用量頁讀得到', await a.until(`!document.getElementById('view-history').hidden`));

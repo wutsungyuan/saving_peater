@@ -835,3 +835,10 @@ body[data-app="front"][data-role="teacher"] #wsNew{display:none}
 .pa-exp{margin-top:6px;font-size:.85rem;color:var(--muted)}
 .pa-exp pre{white-space:pre-wrap;font-family:inherit;margin:4px 0 0}
 .pa-acts{margin-top:8px;gap:14px}
+
+/* 整理學生紀錄 */
+.rec-box summary{cursor:pointer;font-weight:700}
+.rec-box .row{align-items:center;gap:10px;margin:8px 0}
+.rec-warn{border-left:4px solid #a82a1e;background:var(--surface);padding:10px 14px;margin-top:8px}
+.rec-done{color:#0f6637;margin:8px 0 0}
+.danger-btn{background:#a82a1e;color:#fff;border-color:#a82a1e;font-weight:700}

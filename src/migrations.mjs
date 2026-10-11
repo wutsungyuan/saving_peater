@@ -215,6 +215,20 @@ function sentenceExcluded(db){
   db.exec(`ALTER TABLE sentences ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;`);
 }
 
+/** 第 10 版：後台的操作紀錄。老師做了不能復原的事（例如刪學生的練習紀錄）要留下是誰、什麼時候、刪了多少。 */
+function auditLog(db){
+  db.exec(`
+    CREATE TABLE audit_log (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at INTEGER NOT NULL,
+      actor      TEXT NOT NULL,
+      action     TEXT NOT NULL,            -- records-delete ...
+      detail     TEXT                      -- JSON
+    );
+    CREATE INDEX idx_audit_time ON audit_log(created_at DESC);
+  `);
+}
+
 export const MIGRATIONS = [
   { version: 1, name: 'baseline', up: baseline },
   { version: 2, name: 'articles', up: articles },
@@ -225,4 +239,5 @@ export const MIGRATIONS = [
   { version: 7, name: 'jobs', up: jobs },
   { version: 8, name: 'request-roles', up: requestRoles },
   { version: 9, name: 'sentence-excluded', up: sentenceExcluded },
+  { version: 10, name: 'audit-log', up: auditLog },
 ];
