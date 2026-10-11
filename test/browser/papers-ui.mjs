@@ -16,9 +16,9 @@ try {
   const text = sel => evl(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ''`);
 
   section('進入測驗卷');
-  await click('.tabs button[data-view="practice"]');
+  await click('.tabs button[data-view="sentence"]');
   await click('.tabs button[data-view="exam"]');
-  chk('測驗卷是和單字、分析、句子練習同一層的分頁', await until(`!document.getElementById('view-exam').hidden && document.getElementById('view-practice').hidden && !!document.querySelector('.tabs > button[data-view=exam]')`));
+  chk('測驗卷是和單字、句子、文章同一層的分頁', await until(`!document.getElementById('view-exam').hidden && document.getElementById('view-sentence').hidden && !!document.querySelector('.tabs > button[data-view=exam]')`));
   chk('列出單字表與文章表讓你勾選', await until(`document.querySelectorAll('#pr-paper [data-scope]').length === 2`));
   // 頁面會預選單字頁目前選的字表（刻意的設計）；先把已選的取消，才是「沒選範圍」
   await evl(`document.querySelectorAll('#pr-paper [data-scope][aria-pressed="true"]').forEach(b => b.click())`);
@@ -40,6 +40,7 @@ try {
   chk('預設勾選能出的題型，預覽照這些出', await until(`document.querySelectorAll('#pTypes .p-type[aria-pressed="true"]').length >= 8 && !!document.querySelector('#pPreview .p-table')`), (await text('#pTypes')) + ' || ' + (await text('#pPreview')));
   await evl(`document.querySelector('input[name="pMode"][value="auto"]').click()`);
   await until(`document.getElementById('pTypes').hidden`);
+  await until(`!document.getElementById('pStart').disabled`, 15000);          // 設定剛改過，報價重算完開始鍵才會開
 
   section('出卷與作答');
   await click('#pStart');
@@ -59,7 +60,7 @@ try {
 
   section('重新整理 → 續做');
   await page.send('Page.reload'); await wait(2500);
-  await click('.tabs button[data-view="practice"]'); await click('.tabs button[data-view="exam"]');
+  await click('.tabs button[data-view="sentence"]'); await click('.tabs button[data-view="exam"]');
   chk('出現「繼續作答」', await until(`!!document.querySelector('[data-act="resume"]')`));
   await click('[data-act="resume"]');
   chk('回到作答畫面、之前的作答都還在', await until(`document.querySelectorAll('#pr-paper [data-qcard]').length === 30`) && await evl(`/已作答 [123] \\/ 30/.test(document.getElementById('pProgress').textContent)`), await text('#pProgress'));

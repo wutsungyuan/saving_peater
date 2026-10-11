@@ -80,17 +80,16 @@ fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
   API = false;
   // 文章表要存在後端，展示模式用不到：藏起來，不要讓人以為可以用
   document.getElementById('artNameRow')?.setAttribute('hidden', '');
-  document.getElementById('anTabs')?.setAttribute('hidden', '');
   hintEl.textContent = '展示模式：沒有連上後端，請點下方範例標籤。要分析任意輸入請在本機執行 npm start。';
   // 這三個分頁在展示模式下沒有資料可用，明確標出來，不要讓人以為點不動
-  for (const v of ['words', 'practice', 'weak', 'history']){
+  for (const v of ['words', 'article', 'weak', 'history']){
     const b = document.querySelector(`.tabs button[data-view="${v}"]`);
     if (!b) continue;
     b.classList.add('needs-api');
     b.title = '需要後端才能使用。請在本機執行 npm start 後開啟 http://127.0.0.1:8787';
   }
   document.querySelector('.tabs')?.insertAdjacentHTML('afterend',
-    '<p class="demo-note">「單字」「句子練習」「弱點」「歷史」需要本機後端才能使用。' +
+    '<p class="demo-note">「單字」「文章」「句子練習」「弱點」「歷史」需要本機後端才能使用。' +
     '這個線上版只能看分析範例與試聽朗讀。</p>');
 });
 
@@ -274,8 +273,12 @@ function showInterrupted(n, text, opts = {}){
 goBtn.addEventListener('click', () => {
   const text = inpEl.value.trim();
   if (!text) return;
-  // 填了文章名稱 → 存成文章表（流程在 articles.js）；沒填就是原本的分析
-  if (API && typeof articleNameValue === 'function' && articleNameValue()){ analyzeAsArticle(articleNameValue(), text); return; }
+  // 「新增文章」用法：要有文章名稱，分析完存成文章表（流程在 articles.js）；「句子分析」只分析、不存
+  if (API && anMode === 'article'){
+    const name = articleNameValue();
+    if (!name){ hintEl.textContent = '請先填文章名稱，分析完才存得進文章表。'; el('artName').focus(); return; }
+    analyzeAsArticle(name, text); return;
+  }
   if (API){ analyzeLive(text); return; }
   // 展示模式：比對內建範例
   const norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();

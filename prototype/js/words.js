@@ -104,32 +104,36 @@ function sayBtn(text, label){
     aria-label="${esc(label)}" title="${esc(label)}"><span class="ico"></span></button>`;
 }
 
+/** 一張單字卡（單字清單與搜尋結果共用）。multi：同時有多份字表時顯示這個字來自哪一份。 */
+function wordCardHtml(w, multi){
+  const setName = id => wsAllSets.find(x => x.id === id)?.name ?? '';
+  const tag = w.total === 0 ? '<span class="box-tag">還沒考過</span>'
+    : w.box >= 3 ? `<span class="box-tag good">已背熟 ${w.correct}/${w.total}</span>`
+    : `<span class="box-tag hot">再加強 ${w.correct}/${w.total}</span>`;
+  return `<div class="wcard"><div class="top">
+    <span class="term">${esc(w.term)}</span>
+    ${w.syllables ? `<span class="syl">${esc(w.syllables)}</span>` : ''}
+    ${sayBtn(w.term, '唸這個單字')}
+    ${multi ? (w.mergedFrom
+      ? `<span class="dupt" title="${esc(w.mergedFrom.map(setName).join('、'))}">合併 ${w.mergedFrom.length} 份</span>`
+      : `<span class="setof" title="來自這份字表">${esc(setName(w.setId))}</span>`) : ''}
+    ${tag}</div>
+    ${(w.senses||[]).map(sn => `<div class="wsense"><b>${esc(sn.pos)}</b>${esc(sn.zh)}
+      ${sn.example ? `<span class="ex"><span class="extxt">${esc(sn.example)}</span>${sayBtn(sn.example, '朗讀例句')}` +
+        `<button class="exan${sn.analyzed ? ' done' : ''}" data-an="${esc(sn.example)}"
+           title="${sn.analyzed ? '已分析過，點了馬上看句型與詞性，不花額度'
+                                : '還沒分析，點了會花一次額度'}">分析</button></span>` : ''}
+      ${sn.exampleZh ? `<span class="exz">${esc(sn.exampleZh)}</span>` : ''}</div>`).join('')}
+    ${w.spellTip ? `<div class="wtip">拼字：${esc(w.spellTip)}</div>` : ''}
+    ${(w.confusable||[]).length ? `<div class="wextra">易混淆：${w.confusable.map(c=>`${esc(c.word)}（${esc(c.zh)}）`).join('、')}</div>` : ''}
+    ${(w.family||[]).length ? `<div class="wextra">衍生字：${w.family.map(c=>`${esc(c.word)}（${esc(c.zh)}）`).join('、')}</div>` : ''}
+    </div>`;
+
+}
+
 function renderWordList(){
   const multi = wsSel.length > 1;
-  const setName = id => wsAllSets.find(x => x.id === id)?.name ?? '';
-  el('wsWords').innerHTML = `<div class="wlist">${wsWordsCache.map(w => {
-    const tag = w.total === 0 ? '<span class="box-tag">還沒考過</span>'
-      : w.box >= 3 ? `<span class="box-tag good">已背熟 ${w.correct}/${w.total}</span>`
-      : `<span class="box-tag hot">再加強 ${w.correct}/${w.total}</span>`;
-    return `<div class="wcard"><div class="top">
-      <span class="term">${esc(w.term)}</span>
-      ${w.syllables ? `<span class="syl">${esc(w.syllables)}</span>` : ''}
-      ${sayBtn(w.term, '唸這個單字')}
-      ${multi ? (w.mergedFrom
-        ? `<span class="dupt" title="${esc(w.mergedFrom.map(setName).join('、'))}">合併 ${w.mergedFrom.length} 份</span>`
-        : `<span class="setof" title="來自這份字表">${esc(setName(w.setId))}</span>`) : ''}
-      ${tag}</div>
-      ${(w.senses||[]).map(sn => `<div class="wsense"><b>${esc(sn.pos)}</b>${esc(sn.zh)}
-        ${sn.example ? `<span class="ex"><span class="extxt">${esc(sn.example)}</span>${sayBtn(sn.example, '朗讀例句')}` +
-          `<button class="exan${sn.analyzed ? ' done' : ''}" data-an="${esc(sn.example)}"
-             title="${sn.analyzed ? '已分析過，點了馬上看句型與詞性，不花額度'
-                                  : '還沒分析，點了會花一次額度'}">分析</button></span>` : ''}
-        ${sn.exampleZh ? `<span class="exz">${esc(sn.exampleZh)}</span>` : ''}</div>`).join('')}
-      ${w.spellTip ? `<div class="wtip">拼字：${esc(w.spellTip)}</div>` : ''}
-      ${(w.confusable||[]).length ? `<div class="wextra">易混淆：${w.confusable.map(c=>`${esc(c.word)}（${esc(c.zh)}）`).join('、')}</div>` : ''}
-      ${(w.family||[]).length ? `<div class="wextra">衍生字：${w.family.map(c=>`${esc(c.word)}（${esc(c.zh)}）`).join('、')}</div>` : ''}
-      </div>`;
-  }).join('')}</div>`;
+  el('wsWords').innerHTML = `<div class="wlist">${wsWordsCache.map(w => wordCardHtml(w, multi)).join('')}</div>`;
 }
 
 function renderWordQ(q, n){
@@ -285,3 +289,22 @@ function shrinkImage(file, maxSide = 1600){
     reader.readAsDataURL(file);
   });
 }
+
+// ===== 搜尋單字：英文或中文都可以，跨所有字表（不只目前選的）=====
+let wsSearchTimer = null, wsSearchSeq = 0;
+async function runWordSearch(){
+  const q = el('wsSearch').value.trim(), out = el('wsSearchOut');
+  el('wsSearchClear').hidden = !q;
+  if (!q || API === false){ out.hidden = true; out.innerHTML = ''; el('wsWords').hidden = false; return; }
+  const seq = ++wsSearchSeq;
+  const d = await fetch(`/api/wordsearch?q=${encodeURIComponent(q)}&user=${encodeURIComponent(USER)}`).then(r => r.ok ? r.json() : null).catch(() => null);
+  if (seq !== wsSearchSeq) return;                    // 打字比回應快：只認最後一次
+  el('wsWords').hidden = true; out.hidden = false;
+  if (!d){ out.innerHTML = '<p class="msg">搜尋失敗，請稍後再試。</p>'; return; }
+  out.innerHTML = d.words.length
+    ? `<p class="hint">在全部單字表裡找到 ${d.total} 個字。</p><div class="wlist">${d.words.map(w => wordCardHtml(w, true)).join('')}</div>`
+    : `<p class="msg">找不到「${esc(q)}」。可以試試只打一部分，或換成中文／英文。</p>`;
+}
+el('wsSearch').addEventListener('input', () => { clearTimeout(wsSearchTimer); wsSearchTimer = setTimeout(runWordSearch, 250); });
+el('wsSearch').addEventListener('keydown', e => { if (e.key === 'Escape'){ el('wsSearch').value = ''; runWordSearch(); } });
+el('wsSearchClear').addEventListener('click', () => { el('wsSearch').value = ''; runWordSearch(); el('wsSearch').focus(); });

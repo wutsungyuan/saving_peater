@@ -82,13 +82,13 @@ historyOut.addEventListener('click', async e => {
   if (b.dataset.kind === 'paper-gen' || b.dataset.kind === 'paper-grade') return;      // 出題與批改的用量紀錄：沒有可以重新分析的原文
   if (b.dataset.kind === 'ocr-text'){       // 句子辨識：把抄到的文字帶回分析的輸入框
     const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
-    document.querySelector('.tabs button[data-view="analyze"]').click();
+    jumpTo('sentence', { sub: 'live' });
     if (text){ curKind = null; setInput(text); }
     return;
   }
   if (b.dataset.kind === 'ocr'){            // 單字表辨識：把結果帶回新增字表的表單
     const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
-    document.querySelector('.tabs button[data-view="words"]').click();
+    jumpTo('words');
     if (text){
       el('wsForm').hidden = false;
       setFormMode(true);
@@ -106,13 +106,13 @@ historyOut.addEventListener('click', async e => {
       return;
     }
     const ref = Number(b.dataset.ref);
-    document.querySelector('.tabs button[data-view="words"]').click();
+    jumpTo('words');
     if (ref) { wsSel = [ref]; wsCurrent = ref; await loadWordsets(); }   // 直接切到那一份
     return;
   }
   const { text } = await fetch(`/api/history?id=${b.dataset.id}`).then(r => r.json());
   if (!text) return;
-  document.querySelector('.tabs button[data-view="analyze"]').click();
+  jumpTo('sentence', { sub: 'live' });
   setInput(text);
   analyzeLive(text);   // 全部命中快取，會瞬間完成
 });

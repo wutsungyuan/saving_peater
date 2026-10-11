@@ -14,14 +14,24 @@ try {
 
   page = await openPage(S.base + '/', { width: 1000, height: 1100, settle: 2500 });
   const { evl, until, click, type, wait } = page;
-  await click('.tabs button[data-view="analyze"]');
+  await click('.tabs button[data-view="sentence"]');
   await wait(300);
 
-  section('分析頁');
-  chk('有「即時分析／文章表」兩個子分頁', await evl(`document.querySelectorAll('#anTabs button').length === 2`));
-  chk('有文章名稱欄、預設留空，按鈕是「分析」', await evl(`document.getElementById('artName').value === '' && document.getElementById('go').textContent.trim() === '分析'`));
+  section('句子頁與文章頁');
+  chk('頂層分頁是 單字／句子／文章／測驗卷／弱點／歷史', await evl(`[...document.querySelectorAll('.tabs button')].map(b => b.textContent.trim()).join() === '單字,句子,文章,測驗卷,弱點,歷史'`));
+  chk('句子頁有「句子分析／句子練習」兩個子頁', await evl(`[...document.querySelectorAll('#snTabs button')].map(b => b.textContent.trim()).join() === '句子分析,句子練習'`));
+  chk('句子分析：沒有文章名稱欄，按鈕是「分析」（只分析、不存）', await evl(`document.getElementById('artNameRow').hidden && document.getElementById('go').textContent.trim() === '分析'`));
+  await click('.tabs button[data-view="article"]');
+  chk('文章頁有「文章表／新增文章」兩個子頁', await evl(`[...document.querySelectorAll('#arTabs button')].map(b => b.textContent.trim()).join() === '文章表,新增文章'`));
+  await click('#arTabs button[data-ap="new"]');
+  await wait(200);
+  chk('新增文章：輸入框搬過來，有文章名稱欄，按鈕是「分析並存成文章」', await evl(`!document.getElementById('artNameRow').hidden && !!document.querySelector('#ar-new #inp') && document.getElementById('go').textContent.trim() === '分析並存成文章'`));
+  chk('新增文章沒有範例句標籤', await evl(`document.querySelector('#ar-new .chips-group').hidden`));
+  await type('#inp', 'Hello there.');
+  await click('#go');
+  chk('沒填文章名稱就按分析：提示先填名稱，不呼叫模型', await evl(`/請先填文章名稱/.test(document.getElementById('inp-hint').textContent)`) && S.calls().length === base);
   await type('#artName', '課文A');
-  chk('填了名稱：按鈕改成「分析並存成文章表」、提示會建立新的', await evl(`document.getElementById('go').textContent.includes('存成文章表') && document.getElementById('artDest').textContent.includes('建立新的文章表')`));
+  chk('填了名稱：提示會建立新的', await evl(`document.getElementById('go').textContent.includes('存成文章') && document.getElementById('artDest').textContent.includes('建立新的文章表')`));
 
   section('報價與確認');
   const text = 'I get up at seven. I eat breakfast.\\n\\nThen I go to school. School is fun.';
@@ -59,7 +69,7 @@ try {
   chk('全部已分析過：直接存成文章表，不跳確認', await until(`/已存成文章表「課文B」/.test(document.getElementById('inp-hint').textContent)`, 8000) && S.calls().length === base + 5, `calls=${S.calls().length - base}`);
 
   section('文章表清單與檢視');
-  await click('#anTabs button[data-ap="articles"]');
+  await click('#arTabs button[data-ap="articles"]');
   chk('清單列出兩份', await until(`document.querySelectorAll('#artList .art-card').length === 2`));
   await evl(`[...document.querySelectorAll('#artList .art-card')].find(c => c.textContent.includes('課文A')).click()`);
   chk('檢視：依段落顯示、有翻譯', await until(`document.querySelectorAll('#artBody .art-para').length === 3 && !!document.querySelector('#artBody .art-zh')`) && await evl(`document.getElementById('artTitle').textContent === '課文A'`));
@@ -93,7 +103,7 @@ try {
 
   section('對話：同一個人說的話框成一組');
   const p4 = await openPage(S.base + '/', { width: 420, height: 900, settle: 2500 });
-  await p4.click('.tabs button[data-view="analyze"]'); await p4.wait(300);
+  await p4.click('.tabs button[data-view="sentence"]'); await p4.wait(300);
   await p4.type('#inp', 'Jamie: Great. And here is a picture of me.\nZac: Wow! You have a snowboard?');
   await p4.click('#go');
   chk('分析後出現 2 組（Jamie、Zac），每組 2 張卡', await p4.until(`document.querySelectorAll('#out .turn-group').length === 2 && [...document.querySelectorAll('#out .turn-group')].every(g => g.querySelectorAll('article.sent').length === 2)`, 20000), await p4.evl(`document.getElementById('out').innerText.slice(0, 200)`));
@@ -143,7 +153,7 @@ try {
   section('分析中：明顯提示不要離開；中途離開 → 下次提示接續');
   const S2 = await start('ui-articles-slow', { FAKE_DELAY_MS: '1500' });
   const p2 = await openPage(S2.base + '/', { width: 1000, height: 1100, settle: 2500 });
-  await p2.click('.tabs button[data-view="analyze"]'); await p2.wait(300);
+  await p2.click('.tabs button[data-view="article"]'); await p2.click('#arTabs button[data-ap="new"]'); await p2.wait(300);
   await p2.type('#inp', 'I like tea. We eat lunch. They read books. She sings well.');
   await p2.type('#artName', '離開測試');
   await p2.click('#go');
@@ -152,8 +162,9 @@ try {
   chk('輸入框上蓋著「文章分析中，請不要離開」', await p2.until(`!document.getElementById('anBusy').hidden && /請不要離開/.test(document.getElementById('anBusyMain').textContent)`), await p2.evl(`document.getElementById('anBusyMain').textContent`));
   chk('記下「分析未完成」', await p2.evl(`!!localStorage.getItem('analyzer-art-pending')`));
   await p2.send('Page.reload'); await p2.wait(2500);
-  chk('重新整理（離開）後：提示「上次分析沒有完成」與「按此繼續」', await p2.until(`!document.getElementById('artConfirm').hidden && /沒有完成/.test(document.getElementById('artConfirm').textContent) && !!document.getElementById('artResume')`), await p2.evl(`document.getElementById('artConfirm').textContent`));
-  await p2.click('.tabs button[data-view="analyze"]');
+  await p2.click('.tabs button[data-view="article"]');
+  chk('重新整理（離開）後進文章頁：直接停在「新增文章」，提示「上次分析沒有完成」與「按此繼續」', await p2.until(`!document.getElementById('artConfirm').hidden && /沒有完成/.test(document.getElementById('artConfirm').textContent) && !!document.getElementById('artResume')`), await p2.evl(`document.getElementById('artConfirm').textContent`));
+  await p2.click('.tabs button[data-view="article"]'); await p2.click('#arTabs button[data-ap="new"]');
   await p2.click('#artResume');
   chk('按「按此繼續」：文字與名稱帶回來（還有句子沒分析就先給報價；伺服器已跑完就直接存）', await p2.until(`(!!document.getElementById('artGo') || /已存成文章表/.test(document.getElementById('inp-hint').textContent)) && document.getElementById('artName').value === '離開測試' && /tea/.test(document.getElementById('inp').value)`), await p2.evl(`document.getElementById('inp-hint').textContent + '|' + document.getElementById('artName').value + '|' + document.getElementById('inp').value.slice(0,30)`));
   if (await p2.evl(`!!document.getElementById('artGo') && !document.getElementById('artConfirm').hidden`)) await p2.click('#artGo');

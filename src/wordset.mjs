@@ -168,6 +168,29 @@ export function lengthHint(text){
     : `共 ${n} 個字母`;
 }
 
+/** 搜尋單字：英文或中文都可以。比對單字本身、各詞性的中文意思、字族與易混淆字、例句。
+ *  單字本身最優先（完全相同 > 開頭相同 > 包含），其次是中文意思，再來是字族與易混淆字，最後才是例句。 */
+export function searchWords(words, query, limit = 50){
+  const q = String(query ?? '').trim().toLowerCase();
+  if (!q) return [];
+  const has = s => String(s ?? '').toLowerCase().includes(q);
+  const scored = [];
+  for (const w of words){
+    const term = String(w.term ?? '').toLowerCase();
+    const senses = w.senses ?? [];
+    let score = 0;
+    if (term === q) score = 100;
+    else if (term.startsWith(q)) score = 80;
+    else if (term.includes(q)) score = 60;
+    else if (senses.some(s => zhParts(s.zh).includes(q))) score = 55;
+    else if (senses.some(s => has(s.zh))) score = 50;
+    else if ([...(w.family ?? []), ...(w.confusable ?? [])].some(x => has(x.word) || has(x.zh))) score = 30;
+    else if (senses.some(s => has(s.example) || has(s.exampleZh))) score = 20;
+    if (score) scored.push({ w, score });
+  }
+  return scored.sort((a, b) => b.score - a.score || String(a.w.term).localeCompare(String(b.w.term))).slice(0, limit).map(x => x.w);
+}
+
 /** 中文意思拆成一段一段（「結尾；末端」→ 結尾、末端），去掉括號註解與空白 */
 const zhParts = zh => String(zh ?? '').replace(/[（(][^）)]*[）)]/g, '').split(/[；;、，,/]/).map(x => x.trim()).filter(Boolean);
 /** 兩個中文意思有沒有共同的一段（end 的「結束」和 finish 的「結束」） */

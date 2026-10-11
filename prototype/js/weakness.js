@@ -109,41 +109,10 @@ async function loadWeakness(){
       (typeRows ? wkSection('題型', '哪一種題目最常答錯。', typeRows) : '');
 
     document.getElementById('weakPractice')?.addEventListener('click', () => {
-      document.querySelector('.tabs button[data-view="practice"]').click();
+      jumpTo('sentence', { sub: 'practice', auto: false });
       startQuiz();
     });
   } catch (e){
     charts.innerHTML = `<p class="msg">載入失敗：${esc(e.message)}</p>`;
   }
-}
-
-// 分頁切換
-for (const b of document.querySelectorAll('.tabs button')){
-  b.addEventListener('click', () => {
-    for (const x of document.querySelectorAll('.tabs button')) x.setAttribute('aria-pressed', String(x === b));
-    Spk.stop();
-    const v = b.dataset.view;
-    document.body.dataset.view = v;      // 給 CSS 用：邊緣把手只在分析分頁出現
-    for (const name of ['analyze', 'words', 'practice', 'exam', 'weak', 'history'])
-      document.getElementById(`view-${name}`).hidden = name !== v;
-    if (v === 'words'){
-      if (API === false) el('wsList').innerHTML =
-        '<span class="hint">單字表需要後端。請在本機執行 npm start 後開啟 http://127.0.0.1:8787</span>';
-      else { loadWordsets(); refreshExamples(); }
-    }
-    if (v === 'exam') loadPaperHome();
-    if (v === 'practice'){
-      if (API === false) quizOut.innerHTML = '<p class="msg">句子練習需要後端。請在本機執行 npm start 後開啟 http://127.0.0.1:8787</p>';
-      else if (!currentQuiz && API) startQuiz();
-    }
-    if (v === 'weak'){
-      if (API === false) document.getElementById('weakCharts').innerHTML =
-        '<p class="msg">弱點統計需要後端。請在本機執行 npm start 後開啟 http://127.0.0.1:8787</p>';
-      else loadWeakness();
-    }
-    if (v === 'history'){
-      if (API === false) historyOut.innerHTML = '<p class="msg">歷史紀錄需要後端。請在本機執行 npm start 後開啟 http://127.0.0.1:8787</p>';
-      else loadHistory();
-    }
-  });
 }

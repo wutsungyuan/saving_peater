@@ -35,7 +35,7 @@ function renderAnalyzeBtn(){
 el('wsAnalyze').addEventListener('click', async () => {
   const left = wsExamples.total - wsExamples.cached;
   if (!left) {                                  // 都分析過了，直接去分析頁看
-    document.querySelector('.tabs button[data-view="analyze"]').click();
+    jumpTo('sentence', { sub: 'live' });
     return;
   }
   const b = el('wsAnalyze');
@@ -90,7 +90,7 @@ el('view-words').addEventListener('click', e => {
   const b = e.target.closest('.exan');
   if (!b) return;
   const text = b.dataset.an;
-  document.querySelector('.tabs button[data-view="analyze"]').click();
+  jumpTo('sentence', { sub: 'live' });
   setInput(text);
   analyzeLive(text);
 });

@@ -26,9 +26,9 @@ async function refreshArticleNames(){
 function syncArticleDest(){
   const name = articleNameValue();
   const hit = artCache.find(a => a.name.toLowerCase() === name.toLowerCase());
-  el('artDest').textContent = !name ? ''
+  el('artDest').textContent = anMode !== 'article' || !name ? ''
     : hit ? `會附加到文章表「${hit.name}」（目前 ${hit.sentences} 句）。` : `會建立新的文章表「${name}」。`;
-  goBtn.textContent = name ? '分析並存成文章表' : '分析';
+  goBtn.textContent = anMode === 'article' ? '分析並存成文章' : '分析';
 }
 el('artName').addEventListener('input', syncArticleDest);
 
@@ -92,18 +92,9 @@ async function runArticle(name, text){
   hintEl.innerHTML = `已${d.appended ? '附加到' : '存成'}文章表「${esc(d.name)}」：新增 ${d.added} 句` +
     `${d.skipped ? `（略過重複的 ${d.skipped} 句）` : ''}，共 ${d.total} 句。 ` +
     `<button class="linky" type="button" id="artSee">看文章表</button>`;
-  el('artSee').onclick = () => { showAnalyzePane('articles'); openArticle(d.id); };
+  el('artSee').onclick = () => { showArticlePane('articles'); openArticle(d.id); };
   await refreshArticleNames();
 }
-
-// ---- 分析頁的兩個子分頁 ----
-function showAnalyzePane(which){
-  for (const b of document.querySelectorAll('#anTabs button')) b.setAttribute('aria-pressed', String(b.dataset.ap === which));
-  el('an-live').hidden = which !== 'live';
-  el('an-articles').hidden = which !== 'articles';
-  if (which === 'articles'){ el('artView').hidden = true; el('artList').hidden = false; loadArticles(); }
-}
-el('anTabs').addEventListener('click', e => { const b = e.target.closest('button[data-ap]'); if (b) showAnalyzePane(b.dataset.ap); });
 
 // ---- 文章表清單 ----
 async function loadArticles(){
@@ -114,7 +105,7 @@ async function loadArticles(){
   artCache = d.json.articles || [];
   if (!artCache.length){
     box.innerHTML = `<div class="box"><p style="margin:0">還沒有文章表。</p>
-      <p class="hint" style="margin:8px 0 0">到「即時分析」輸入英文（或拍課本照片），填上「文章名稱」，分析完成後就會存在這裡。
+      <p class="hint" style="margin:8px 0 0">到「新增文章」輸入英文（或拍課本照片），填上文章名稱，分析完成後就會存在這裡。
       同一個名稱再存一次會接在後面，一次選多張照片也可以。</p></div>`;
     return;
   }
@@ -220,7 +211,7 @@ function showPendingNotice(){
   el('artResume').onclick = () => { box.hidden = true; el('inp').value = p.text; if (typeof updateCount === 'function') updateCount(); el('artName').value = p.name; analyzeAsArticle(p.name, p.text); };
   el('artDrop').onclick = () => { setPending(null); box.hidden = true; };
 }
-showPendingNotice();
+// 進入「新增文章」時才檢查有沒有沒做完的（nav.js 的 showArticlePane 會呼叫）
 
 // ---- 展開後的完整分析卡：「詳解」「朗讀」按鈕（即時分析頁的處理只掛在那一頁，這裡要自己接）----
 el('artBody').addEventListener('click', e => {

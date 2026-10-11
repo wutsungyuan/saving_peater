@@ -27,7 +27,7 @@ try {
     page = await openPage(S.base + '/', { width: 420, height: 900, settle: 1500 });
     await page.send('Page.addScriptToEvaluateOnNewDocument', { source: stub(mode) });
     await page.send('Page.reload'); await page.wait(2500);
-    await page.click('.tabs button[data-view="analyze"]'); await page.wait(300);
+    await page.click('.tabs button[data-view="sentence"]'); await page.wait(300);
     await page.type('#inp', 'We have great teachers.');
     await page.click('#go');
     chk('分析出一張卡、有朗讀按鈕', await page.until(`!!document.querySelector('#out .say')`, 15000));

@@ -16,12 +16,14 @@
 
     <div class="tabs" role="group" aria-label="切換功能">
       <button data-view="words" aria-pressed="true">單字</button>
-      <button data-view="analyze" aria-pressed="false">分析</button>
-      <button data-view="practice" aria-pressed="false">句子練習</button>
+      <button data-view="sentence" aria-pressed="false">句子</button>
+      <button data-view="article" aria-pressed="false">文章</button>
       <button data-view="exam" aria-pressed="false">測驗卷</button>
       <button data-view="weak" aria-pressed="false">弱點</button>
       <button data-view="history" aria-pressed="false">歷史</button>
     </div>
+
+    <div class="backbar" id="backBar" hidden><button class="linky" type="button" id="backBtn"></button></div>
 
     <div id="view-weak" hidden>
       <div id="weakHead"></div>
@@ -87,6 +89,9 @@
         </div>
 
         <div id="pane-list">
+          <div class="wsearch"><input type="search" id="wsSearch" placeholder="搜尋單字：英文或中文都可以（例如 finish、結束）" autocomplete="off" aria-label="搜尋單字">
+            <button class="linky" type="button" id="wsSearchClear" hidden>清除</button></div>
+          <div id="wsSearchOut" hidden></div>
           <div id="wsWords"></div>
         </div>
 
@@ -116,36 +121,11 @@
       <div id="pr-paper"></div>
     </div>
 
-    <div id="view-practice" hidden>
-      <div id="pr-sentence">
-      <div class="box">
-        <label>練習設定</label>
-        <div class="row" id="qtypes"></div>
-        <div class="row">
-          <span class="hint">題數</span>
-          <select id="qcount">
-            <option>5</option><option selected>10</option><option>15</option><option>20</option>
-          </select>
-          <button class="primary" id="quizStart">出題</button>
-          <span class="hint" id="quizHint">題目從你分析過的句子生成，答案與分析結果一致。</span>
-        </div>
-      </div>
-      <div id="quizSummary" hidden></div>
-      <div id="quizOut"></div>
-      <div class="row" id="quizActions" hidden>
-        <button class="primary" id="quizSubmit">交卷</button>
-        <button class="primary" id="quizFix" hidden>訂正錯題</button>
-        <button id="quizAgain" hidden>再來一份</button>
-        <button class="wklink" type="button" id="toWeak">看弱點統計</button>
-      </div>
-      </div>
-    </div>
-
-    <div id="view-analyze" hidden>
+    <div id="view-sentence" hidden>
     <div class="subrow">
-      <div class="subtabs" id="anTabs" role="group" aria-label="切換即時分析與文章表">
-        <button data-ap="live" aria-pressed="true">即時分析</button>
-        <button data-ap="articles" aria-pressed="false">文章表</button>
+      <div class="subtabs" id="snTabs" role="group" aria-label="切換句子分析與句子練習">
+        <button data-sp="live" aria-pressed="true">句子分析</button>
+        <button data-sp="practice" aria-pressed="false">句子練習</button>
       </div>
     </div>
     <div id="an-live">
@@ -166,10 +146,10 @@
         <span class="hint">也可以把圖片直接拖進來，或按 <b id="pasteKey2">⌘V</b> 貼上。<span
           class="longonly">辨識完會填進上面的框，核對後再按分析。</span></span>
       </div>
-      <div class="row" id="artNameRow">
-        <label for="artName" class="hint">文章名稱（選填）</label>
+      <div class="row" id="artNameRow" hidden>
+        <label for="artName" class="hint">文章名稱</label>
         <input type="text" id="artName" list="artNames" autocomplete="off" maxlength="60"
-          placeholder="填了就存成文章表；留空就只分析">
+          placeholder="新名稱就建立文章；選既有的就接在後面">
         <datalist id="artNames"></datalist>
       </div>
       <p class="desthint" id="artDest"></p>
@@ -218,7 +198,41 @@
     <main id="out" data-mode="mark" data-pos-mode="content"></main>
     </div>
 
-    <div id="an-articles" hidden>
+    <div id="sn-practice" hidden>
+      <div id="pr-sentence">
+      <div class="box">
+        <label>練習設定</label>
+        <div class="row" id="qtypes"></div>
+        <div class="row">
+          <span class="hint">題數</span>
+          <select id="qcount">
+            <option>5</option><option selected>10</option><option>15</option><option>20</option>
+          </select>
+          <button class="primary" id="quizStart">出題</button>
+          <span class="hint" id="quizHint">題目從你分析過的句子生成，答案與分析結果一致。</span>
+        </div>
+      </div>
+      <div id="quizSummary" hidden></div>
+      <div id="quizOut"></div>
+      <div class="row" id="quizActions" hidden>
+        <button class="primary" id="quizSubmit">交卷</button>
+        <button class="primary" id="quizFix" hidden>訂正錯題</button>
+        <button id="quizAgain" hidden>再來一份</button>
+        <button class="wklink" type="button" id="toWeak">看弱點統計</button>
+      </div>
+      </div>
+    </div>
+    </div>
+
+    <div id="view-article" hidden>
+    <div class="subrow">
+      <div class="subtabs" id="arTabs" role="group" aria-label="切換文章表與新增文章">
+        <button data-ap="articles" aria-pressed="true">文章表</button>
+        <button data-ap="new" aria-pressed="false">新增文章</button>
+      </div>
+    </div>
+    <div id="ar-new" hidden></div>
+    <div id="an-articles">
       <div id="artList"></div>
       <div id="artView" hidden>
         <div class="subrow">
@@ -267,6 +281,7 @@
 <script src="js/samples.js"></script>
 <script src="js/wordset-form.js"></script>
 <script src="js/weakness.js"></script>
+<script src="js/nav.js"></script>
 <script src="js/articles.js"></script>
 <script src="js/papers.js"></script>
 <script src="js/init.js"></script>

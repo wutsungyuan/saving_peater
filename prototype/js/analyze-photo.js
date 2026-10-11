@@ -58,21 +58,25 @@ el('anFile').addEventListener('change', e => {
 });
 
 // 拖曳與貼上：和單字分頁同一套來源判斷
-{
-  const view = el('view-analyze');
+// 句子頁與文章頁都有輸入區（同一塊 #an-live 搬來搬去）；輸入區看得到才處理拖進來的圖片
+const liveOn = () => el('an-live').offsetParent !== null;
+for (const view of [el('view-sentence'), el('view-article')]) {
   let depth = 0;
   view.addEventListener('dragenter', e => {
+    if (!liveOn()) return;
     if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
     e.preventDefault();
     if (depth++ === 0) view.classList.add('dropping');
   });
   view.addEventListener('dragover', e => {
+    if (!liveOn()) return;
     if ([...(e.dataTransfer?.types || [])].includes('Files')){
       e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
     }
   });
   view.addEventListener('dragleave', () => { if (--depth <= 0){ depth = 0; view.classList.remove('dropping'); } });
   view.addEventListener('drop', e => {
+    if (!liveOn()) return;
     const f = imagesFromTransfer(e.dataTransfer);
     if (!f.length && !(e.dataTransfer?.files?.length)) return;
     e.preventDefault();
@@ -81,6 +85,7 @@ el('anFile').addEventListener('change', e => {
     handleAnalyzeImage(f);
   });
   view.addEventListener('paste', e => {
+    if (!liveOn()) return;
     const f = imageFromTransfer(e.clipboardData);
     if (!f) return;               // 貼文字就照常貼進輸入框
     e.preventDefault();

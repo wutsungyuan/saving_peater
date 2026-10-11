@@ -221,8 +221,8 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .busy-t{font-family:var(--font-mono);font-size:.82rem;color:var(--faint);
   font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion:reduce){ .busy .spin{animation-duration:2.4s} }
-#view-words.dropping,#view-analyze.dropping{position:relative}
-#view-words.dropping::after,#view-analyze.dropping::after{content:'放開就開始辨識課本照片';
+#view-words.dropping,#view-sentence.dropping,#view-article.dropping{position:relative}
+#view-words.dropping::after,#view-sentence.dropping::after,#view-article.dropping::after{content:'放開就開始辨識課本照片';
   position:absolute;inset:-6px;z-index:20;pointer-events:none;
   display:flex;align-items:center;justify-content:center;
   font-size:1.05rem;font-weight:700;color:var(--accent);
@@ -574,7 +574,7 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
   .edge:active,.edge[aria-expanded="true"]{opacity:1;color:var(--accent);border-color:var(--accent)}
   #edgeL{left:0;border-left:0;border-radius:0 4px 4px 0}
   #edgeR{right:0;border-right:0;border-radius:4px 0 0 4px}
-  body[data-view="analyze"] .edge{display:block}
+  body[data-view="sentence"] .edge,body[data-view="article"] .edge{display:block}
   .spk{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .spk .tlabel{grid-column:1/-1;margin-top:8px}
   .spk select{min-width:0;width:100%}
@@ -763,3 +763,9 @@ mark.sw{background:var(--tip-bg);color:inherit;border-bottom:2px solid var(--acc
 .turn-group>article.sent,.turn-group>.art-sent{margin-left:0}
 .logout{position:absolute;top:10px;right:16px;font-size:.8rem}
 header{position:relative}
+
+/* 返回鈕（從別的分頁跳過來時）、單字搜尋框 */
+.backbar{margin:0 0 10px}
+.backbar .linky{font-weight:700}
+.wsearch{display:flex;align-items:center;gap:10px;margin:0 0 12px}
+.wsearch input[type=search]{flex:1;min-width:0;font:inherit;font-size:1rem;padding:9px 12px;border:1px solid var(--rule);border-radius:3px;background:var(--surface);color:var(--fg)}

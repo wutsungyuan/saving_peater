@@ -13,7 +13,7 @@ try {
   for (const width of [360, 390, 430]) {
     section(`寬度 ${width}px：全部詞性`);
     page = await openPage(S.base + '/', { width, height: 900, settle: 2000 });
-    await page.click('.tabs button[data-view="analyze"]');
+    await page.click('.tabs button[data-view="sentence"]');
     await page.evl(`(() => { document.getElementById('out').innerHTML = renderSentence(${JSON.stringify(sentence)}, false); })()`);
     await page.click('#posSeg button[data-pm="all"]');
     await page.evl(`layoutPosLabels()`); await page.wait(500);

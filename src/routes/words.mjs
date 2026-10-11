@@ -3,7 +3,7 @@
 import { join } from 'node:path';
 import { analyzeMany, fixPronounCase, MODEL } from '../analyzer.mjs';
 import { hasBlank } from '../exercises.mjs';
-import { parseWordList, enrich, generateWordQuiz, gradeWord, WORD_MODES, extractFromImage, wordsToText } from '../wordset.mjs';
+import { parseWordList, enrich, generateWordQuiz, gradeWord, WORD_MODES, extractFromImage, wordsToText, searchWords } from '../wordset.mjs';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { ROOT } from '../config.mjs';
@@ -128,6 +128,22 @@ export const routes = [
       } finally {
         await unlink(file).catch(() => {});      // 照片不留在硬碟上
       }
+    },
+  },
+  {
+    // 搜尋單字：跨所有字表，英文或中文都可以。不呼叫模型。
+    match: (req, url) => req.method === 'GET' && url.pathname === '/api/wordsearch',
+    handler: async (req, res, url) => {
+      if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+      const userToken = String(url.searchParams.get('user') || 'anon').slice(0, 64);
+      const q = String(url.searchParams.get('q') || '').trim().slice(0, 60);
+      res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
+      if (!q) return res.end(JSON.stringify({ q, words: [], total: 0 }));
+      const hits = searchWords(cache.wordsOf(cache.wordsets(userToken).map(s => s.id), userToken), q);
+      for (const w of hits)
+        for (const sn of w.senses ?? [])
+          if (sn.example) sn.analyzed = Boolean(cache.get(String(sn.example).trim()));
+      return res.end(JSON.stringify({ q, words: hits, total: hits.length }));
     },
   },
   {

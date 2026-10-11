@@ -14,7 +14,7 @@ try {
   section('沒登入');
   let r = await J(B, '/api/health');
   chk('health 公開：需要驗證、可以登入、尚未登入', r.status === 200 && r.json.authRequired === true && r.json.loginAvailable === true && r.json.loggedIn === false, r.text);
-  for (const p of ['/api/history', '/api/stats', '/api/weakness?user=anon', '/api/wordsets?user=anon', '/api/articles', '/api/papers'])
+  for (const p of ['/api/history', '/api/stats', '/api/weakness?user=anon', '/api/wordsets?user=anon', '/api/wordsearch?q=a&user=anon', '/api/articles', '/api/papers'])
     chk(`GET ${p} 沒登入 → 401`, (await J(B, p)).status === 401);
   chk('POST /api/analyze 沒登入 → 401', (await J(B, '/api/analyze', { method: 'POST', body: { text: 'Hi.' } })).status === 401);
 
@@ -29,7 +29,7 @@ try {
   chk('cookie 是 HttpOnly + SameSite=Lax（JavaScript 讀不到、跨站不帶）', /HttpOnly/.test(setCookie) && /SameSite=Lax/.test(setCookie) && /Max-Age=\d+/.test(setCookie), setCookie);
 
   section('登入之後');
-  for (const p of ['/api/history', '/api/stats', '/api/weakness?user=anon', '/api/wordsets?user=anon', '/api/articles', '/api/papers'])
+  for (const p of ['/api/history', '/api/stats', '/api/weakness?user=anon', '/api/wordsets?user=anon', '/api/wordsearch?q=a&user=anon', '/api/articles', '/api/papers'])
     chk(`GET ${p} 帶 cookie → 200`, (await J(B, p, withCookie(ck))).status === 200);
   r = await J(B, '/api/health', withCookie(ck));
   chk('health 顯示已登入', r.json.loggedIn === true);
