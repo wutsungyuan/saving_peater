@@ -81,14 +81,16 @@ export function openCache(file = 'data/cache.db'){
       return { perCall: Math.min(0.05, r.c / r.calls * 0.15), perQuestion: r.c / r.n * 0.85, msPerCall: 8000, msPerQuestion: r.ms / r.n, samples: r.n, source: 'history' };
     },
     // ---------- 登入 session（只存雜湊）----------
-    createSession(idHash, days){
+    createSession(idHash, days, role = 'teacher'){
       const now = Date.now();
-      db.prepare('INSERT OR REPLACE INTO sessions (id, created_at, expires_at) VALUES (?,?,?)').run(idHash, now, now + days * 86400_000);
+      db.prepare('INSERT OR REPLACE INTO sessions (id, created_at, expires_at, role) VALUES (?,?,?,?)').run(idHash, now, now + days * 86400_000, role);
     },
-    sessionValid(idHash){
-      const r = db.prepare('SELECT expires_at FROM sessions WHERE id = ?').get(idHash);
-      return Boolean(r) && r.expires_at > Date.now();
+    /** 有效的 session 回傳角色（teacher | student），沒有或過期回 null */
+    sessionRole(idHash){
+      const r = db.prepare('SELECT expires_at, role FROM sessions WHERE id = ?').get(idHash);
+      return r && r.expires_at > Date.now() ? r.role : null;
     },
+    sessionValid(idHash){ return this.sessionRole(idHash) !== null; },
     deleteSession(idHash){ db.prepare('DELETE FROM sessions WHERE id = ?').run(idHash); },
     pruneSessions(){ return db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now()).changes; },
 
@@ -157,6 +159,46 @@ export function openCache(file = 'data/cache.db'){
         a.userToken, a.qtype, a.sentenceHash ?? null, a.patternId ?? null,
         a.tenseTime ?? null, a.tenseAspect ?? null, a.pos ?? null, a.pronCase ?? null,
         a.correct ? 1 : 0, a.isFix ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now(), a.source ?? 'practice');
+    },
+
+    /** 作答紀錄用過哪些使用者代碼、各有多少作答、最早與最近一筆。合併舊代碼前先看這個。 */
+    userTokens(){
+      const m = new Map();
+      const add = (rows, key) => { for (const r of rows){
+        const x = m.get(r.user_token) ?? { token: r.user_token, sentences: 0, words: 0, first: null, last: null };
+        x[key] += r.n; x.first = x.first == null ? r.first : Math.min(x.first, r.first); x.last = x.last == null ? r.last : Math.max(x.last, r.last);
+        m.set(r.user_token, x); } };
+      add(db.prepare('SELECT user_token, COUNT(*) n, MIN(created_at) first, MAX(created_at) last FROM attempts GROUP BY user_token').all(), 'sentences');
+      add(db.prepare('SELECT user_token, COUNT(*) n, MIN(created_at) first, MAX(created_at) last FROM word_attempts GROUP BY user_token').all(), 'words');
+      return [...m.values()].sort((a, b) => b.last - a.last);
+    },
+
+    /** 把幾個使用者代碼的紀錄合併成一個（例如手機與筆電各自產生的隨機代碼 → 'student'）。
+     *  作答紀錄直接改名；單字熟練度同一個字有好幾筆時，盒子與到期日取練得最多的那筆，答對與作答次數相加。 */
+    mergeUsers(target, from){
+      const src = [...new Set(from)].filter(t => t && t !== target);
+      if (!src.length) return { attempts: 0, wordAttempts: 0, progress: 0 };
+      const ph = src.map(() => '?').join(',');
+      db.exec('BEGIN');
+      try {
+        const a = db.prepare(`UPDATE attempts SET user_token = ? WHERE user_token IN (${ph})`).run(target, ...src).changes;
+        const w = db.prepare(`UPDATE word_attempts SET user_token = ? WHERE user_token IN (${ph})`).run(target, ...src).changes;
+        const rows = db.prepare(`SELECT user_token, word_id, box, due_at, correct, total FROM word_progress WHERE user_token IN (${ph}, ?)`).all(...src, target);
+        const best = new Map();
+        for (const r of rows){
+          const x = best.get(r.word_id);
+          if (!x) best.set(r.word_id, { ...r });
+          else {
+            const top = r.total > x.total ? r : x;
+            best.set(r.word_id, { word_id: r.word_id, box: top.box, due_at: top.due_at, correct: x.correct + r.correct, total: x.total + r.total });
+          }
+        }
+        db.prepare(`DELETE FROM word_progress WHERE user_token IN (${ph}, ?)`).run(...src, target);
+        const ins = db.prepare('INSERT INTO word_progress (user_token, word_id, box, due_at, correct, total) VALUES (?,?,?,?,?,?)');
+        for (const r of best.values()) ins.run(target, r.word_id, r.box, r.due_at, r.correct, r.total);
+        db.exec('COMMIT');
+        return { attempts: Number(a), wordAttempts: Number(w), progress: best.size };
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
     },
 
     /** 弱點統計：11 個維度（5 句型 + 6 必學時態）＋ 詞性與題型，加上單字面向與測驗卷成績。

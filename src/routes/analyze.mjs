@@ -8,8 +8,8 @@ import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { ROOT, MAX_CHARS, MAX_SENTENCES, MAX_ARTICLE_CHARS, MAX_ARTICLE_SENTENCES, COLD_START_USD, CONCURRENCY, AUTH_ON, HISTORY_DAYS } from '../config.mjs';
 import { cache } from '../context.mjs';
-import { readBody, pool, authed, decodeImage } from '../http.mjs';
-import { loginAvailable } from '../auth.mjs';
+import { readBody, pool, authed, roleOf, denyStudent, decodeImage } from '../http.mjs';
+import { loginAvailable, studentAccount } from '../auth.mjs';
 
 async function handleAnalyze(req, res, url){
   if (!authed(req, url)){
@@ -217,7 +217,7 @@ export const routes = [
       return res.end(JSON.stringify({ ok: true, model: MODEL, maxChars: MAX_CHARS,
         maxSentences: MAX_SENTENCES, articleMaxChars: MAX_ARTICLE_CHARS,
         articleMaxSentences: MAX_ARTICLE_SENTENCES, authRequired: AUTH_ON,
-        loginAvailable, loggedIn: authed(req, url) }));
+        loginAvailable, loggedIn: authed(req, url), role: roleOf(req, url), studentAccount }));
     },
   },
     // 拍照辨識：課本上的英文句子 → 文字，填進分析的輸入框
@@ -277,6 +277,7 @@ export const routes = [
     match: (req, url) => url.pathname === '/api/history',
     handler: async (req, res, url) => {
       if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+      if (denyStudent(req, res, url)) return;
       const id = url.searchParams.get('id');
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       if (id) return res.end(JSON.stringify({ text: cache.historyText(Number(id)) }));
@@ -291,6 +292,7 @@ export const routes = [
     match: (req, url) => url.pathname === '/api/stats',
     handler: async (req, res, url) => {
       if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+      if (denyStudent(req, res, url)) return;
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify(cache.stats(), null, 2));
     },

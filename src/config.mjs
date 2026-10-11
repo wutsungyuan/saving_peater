@@ -24,8 +24,12 @@ export const AUTH_TOKEN = process.env.AUTH_TOKEN || '';
 export const AUTH_USER = process.env.AUTH_USER || '';
 export const AUTH_PASS = process.env.AUTH_PASS || '';
 export const SESSION_DAYS = Number(process.env.SESSION_DAYS || 90);
+// 學生帳號（選填）。AUTH_USER / AUTH_PASS 是老師（管理者）；學生登入後只能用前台功能，花錢與管理的操作會被擋。
+// 沒設學生帳號就和以前一樣：只有一組帳密，等於老師。
+export const STUDENT_USER = process.env.STUDENT_USER || '';
+export const STUDENT_PASS = process.env.STUDENT_PASS || '';
 // 有任何一種驗證設定就代表需要驗證
-export const AUTH_ON = Boolean(AUTH_TOKEN || (AUTH_USER && AUTH_PASS));
+export const AUTH_ON = Boolean(AUTH_TOKEN || (AUTH_USER && AUTH_PASS) || (STUDENT_USER && STUDENT_PASS));
 export const HISTORY_DAYS = Number(process.env.HISTORY_DAYS || 30);
 // 測驗卷歷史（快取性質）：保留天數與份數，先到者為準；題庫（模型出的題）設上限
 export const PAPER_DAYS = Number(process.env.PAPER_DAYS || 30);

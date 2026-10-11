@@ -174,10 +174,16 @@ function sources(db){
   `);
 }
 
+/** 第 6 版：登入 session 記下角色（teacher | student）。既有的 session 都是以前唯一那組帳密登入的，視為老師。 */
+function sessionRoles(db){
+  db.exec(`ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'teacher';`);
+}
+
 export const MIGRATIONS = [
   { version: 1, name: 'baseline', up: baseline },
   { version: 2, name: 'articles', up: articles },
   { version: 3, name: 'papers-and-questions', up: papers },
   { version: 4, name: 'sessions', up: sessions },
   { version: 5, name: 'attempt-sources', up: sources },
+  { version: 6, name: 'session-roles', up: sessionRoles },
 ];

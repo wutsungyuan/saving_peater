@@ -12,7 +12,7 @@ export const routes = [
         return sendJson(res, status, { error: r.error, message: r.message, retryAfter: r.retryAfter });
       }
       res.setHeader('set-cookie', setCookie(r.cookie));
-      return sendJson(res, 200, { ok: true });
+      return sendJson(res, 200, { ok: true, role: r.role });
     } },
   { match: (req, url) => url.pathname === '/api/logout' && req.method === 'POST', handler: async (req, res) => {
       logout(req);

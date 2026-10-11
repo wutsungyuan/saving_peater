@@ -1,7 +1,7 @@
 // 路由：文章表。所有端點都要驗證（含讀取），因為文章是使用者的課文內容。
 // 存文章表不呼叫模型：句子要先分析過（分析走 /api/analyze，article:true），這裡只存順序。
 import { cache } from '../context.mjs';
-import { readBody, authed, sendJson } from '../http.mjs';
+import { readBody, authed, denyStudent, sendJson } from '../http.mjs';
 import { saveArticle, articleView } from '../articles.mjs';
 import { setIdList } from './shared.mjs';
 
@@ -22,6 +22,7 @@ export const routes = [
         return sendJson(res, 200, r);
       }
       if (req.method === 'DELETE'){
+        if (denyStudent(req, res, url)) return;
         const ids = setIdList(url.searchParams.get('ids'), url.searchParams.get('id'));
         return sendJson(res, 200, { ok: true, deleted: ids.length ? cache.deleteArticles(ids) : 0 });
       }

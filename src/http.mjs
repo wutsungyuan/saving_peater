@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { join, extname, normalize as pathNormalize } from 'node:path';
 import { WEB, AUTH_TOKEN, AUTH_ON } from './config.mjs';
-import { sessionOk } from './auth.mjs';
+import { sessionRole, studentAccount } from './auth.mjs';
 
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css',
   '.json':'application/json', '.svg':'image/svg+xml', '.ico':'image/x-icon' };
@@ -32,13 +32,33 @@ export async function pool(items, n, fn){
   }));
 }
 
-/** 通過驗證的方式（任一）：登入後的 cookie、舊的存取碼（x-auth-token 標頭或 ?token=，給腳本與測試）。沒設任何驗證就一律放行。 */
-export function authed(req, url){
-  if (!AUTH_ON) return true;
-  if (sessionOk(req)) return true;
-  if (!AUTH_TOKEN) return false;
+/** 這個請求的角色：teacher | student，沒通過驗證回 null。
+ *  登入後的 cookie 帶著角色；舊的存取碼（x-auth-token 標頭或 ?token=，給腳本與測試）等於老師。
+ *  沒設任何驗證（本機單人使用）一律當老師。 */
+export function roleOf(req, url){
+  if (!AUTH_ON) return 'teacher';
+  const r = sessionRole(req);
+  if (r) return r;
+  if (!AUTH_TOKEN) return null;
   const sent = req.headers['x-auth-token'] || url.searchParams.get('token') || '';
-  return sent === AUTH_TOKEN;
+  return sent === AUTH_TOKEN ? 'teacher' : null;
+}
+export const authed = (req, url) => roleOf(req, url) !== null;
+
+/** 只有老師能用的功能：學生呼叫時回 403 並回 true，呼叫端直接 return。 */
+export function denyStudent(req, res, url){
+  if (roleOf(req, url) !== 'student') return false;
+  sendJson(res, 403, { error: 'forbidden', message: '這個功能只有老師能用。' });
+  return true;
+}
+
+/** 這個請求的作答紀錄要記在誰名下。
+ *  有設驗證時由伺服器決定、不看瀏覽器自報的代碼：這樣手機、筆電、換瀏覽器都是同一份紀錄。
+ *  有另外設學生帳號時，老師自己試用記在 'teacher'，不會混進學生的紀錄；沒設學生帳號時唯一的使用者就是學生。
+ *  沒設驗證（本機、測試）維持原本：用呼叫端給的代碼。 */
+export function userOf(req, url, given){
+  if (!AUTH_ON) return String(given || 'anon').slice(0, 64);
+  return roleOf(req, url) === 'teacher' && studentAccount ? 'teacher' : 'student';
 }
 
 /** 解析前端送來的 data URL：驗 MIME、大小與檔頭。

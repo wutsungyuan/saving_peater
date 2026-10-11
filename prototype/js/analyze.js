@@ -66,6 +66,7 @@ const noteUnauthorized = url => res => {
 
 fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
   API = h;
+  document.body.dataset.role = h.role || '';           // teacher | student；CSS 靠這個藏起學生用不到的功能
   updateCount();
   loadSampleCounts();
   if (typeof refreshArticleNames === 'function') refreshArticleNames();     // articles.js 在後面載入，這裡已經是非同步，一定有了

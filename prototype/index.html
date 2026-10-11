@@ -20,7 +20,7 @@
       <button data-view="article" aria-pressed="false">文章</button>
       <button data-view="exam" aria-pressed="false">測驗卷</button>
       <button data-view="weak" aria-pressed="false">弱點</button>
-      <button data-view="history" aria-pressed="false">歷史</button>
+      <button data-view="history" aria-pressed="false" class="teacher-only">歷史</button>
     </div>
 
     <div class="backbar" id="backBar" hidden><button class="linky" type="button" id="backBtn"></button></div>
@@ -40,11 +40,11 @@
     <div id="view-words">
       <div class="box">
         <div class="lblrow"><label>單字表</label>
-          <button id="wsNew" class="linky">＋ 新增字表</button></div>
+          <button id="wsNew" class="linky teacher-only">＋ 新增字表</button></div>
         <div class="chips" id="wsList"></div>
         <div class="setbar" id="wsBar">
           <span class="hint" id="wsSelInfo"></span>
-          <button class="linky danger" id="wsDel">刪除目前字表</button>
+          <button class="linky danger teacher-only" id="wsDel">刪除目前字表</button>
         </div>
         <div id="wsForm" hidden>
           <div class="dest">
@@ -85,7 +85,7 @@
             <button data-pane="list" aria-pressed="true">單字清單</button>
             <button data-pane="quiz" aria-pressed="false">單字測驗</button>
           </div>
-          <button id="wsAnalyze" class="linky" hidden></button>
+          <button id="wsAnalyze" class="linky teacher-only" hidden></button>
         </div>
 
         <div id="pane-list">
@@ -241,7 +241,7 @@
             <label for="artSets" class="hint">標出單字表的字</label>
             <select id="artSets"><option value="">不標</option></select>
             <button class="linky" type="button" id="artRename">改名</button>
-            <button class="linky danger" type="button" id="artDelete">刪除</button>
+            <button class="linky danger teacher-only" type="button" id="artDelete">刪除</button>
           </span>
         </div>
         <div id="artConfirm" hidden></div>

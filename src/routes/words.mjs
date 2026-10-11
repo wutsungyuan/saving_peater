@@ -8,7 +8,7 @@ import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { ROOT } from '../config.mjs';
 import { cache } from '../context.mjs';
-import { readBody, authed, decodeImage } from '../http.mjs';
+import { readBody, authed, denyStudent, userOf, decodeImage } from '../http.mjs';
 import { setIdList, redoQuestions, exampleSentences } from './shared.mjs';
 
 export const routes = [
@@ -16,7 +16,7 @@ export const routes = [
   {
     match: (req, url) => url.pathname === '/api/wordsets',
     handler: async (req, res, url) => {
-      const userToken = String(url.searchParams.get('user') || 'anon').slice(0, 64);
+      const userToken = userOf(req, url, url.searchParams.get('user'));
       if (req.method === 'GET'){
         if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
         res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
@@ -24,6 +24,7 @@ export const routes = [
       }
       if (req.method === 'POST'){
         if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+        if (denyStudent(req, res, url)) return;
         let b = {};
         try { b = JSON.parse(await readBody(req)) || {}; } catch {}
         const items = parseWordList(b.text || '');
@@ -82,6 +83,7 @@ export const routes = [
       }
       if (req.method === 'DELETE'){
         if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+        if (denyStudent(req, res, url)) return;
         const ids = setIdList(url.searchParams.get('ids'), url.searchParams.get('id'));
         const n = ids.length ? cache.deleteWordset(ids) : 0;
         res.writeHead(200, { 'content-type':'application/json' });
@@ -94,6 +96,7 @@ export const routes = [
     match: (req, url) => req.method === 'POST' && url.pathname === '/api/wordset-ocr',
     handler: async (req, res, url) => {
       if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+      if (denyStudent(req, res, url)) return;
       let b = {};
       try { b = JSON.parse(await readBody(req, 14e6)) || {}; } catch {
         res.writeHead(413, { 'content-type':'application/json; charset=utf-8' });
@@ -135,7 +138,7 @@ export const routes = [
     match: (req, url) => req.method === 'GET' && url.pathname === '/api/wordsearch',
     handler: async (req, res, url) => {
       if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
-      const userToken = String(url.searchParams.get('user') || 'anon').slice(0, 64);
+      const userToken = userOf(req, url, url.searchParams.get('user'));
       const q = String(url.searchParams.get('q') || '').trim().slice(0, 60);
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       if (!q) return res.end(JSON.stringify({ q, words: [], total: 0 }));
@@ -149,7 +152,7 @@ export const routes = [
   {
     match: (req, url) => url.pathname === '/api/wordset',
     handler: async (req, res, url) => {
-      const userToken = String(url.searchParams.get('user') || 'anon').slice(0, 64);
+      const userToken = userOf(req, url, url.searchParams.get('user'));
       const ids = setIdList(url.searchParams.get('ids'), url.searchParams.get('id'));
       if (req.method === 'GET' && !authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
@@ -174,9 +177,10 @@ export const routes = [
     match: (req, url) => req.method === 'POST' && url.pathname === '/api/wordset-analyze',
     handler: async (req, res, url) => {
       if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
+      if (denyStudent(req, res, url)) return;
       let b = {};
       try { b = JSON.parse(await readBody(req)) || {}; } catch {}
-      const userToken = String(b.userToken || 'anon').slice(0, 64);
+      const userToken = userOf(req, url, b.userToken);
       const words = cache.wordsOf(setIdList(b.setIds, b.setId), userToken);
       const all = exampleSentences(words);
       const todo = all.filter(t => !cache.get(t));      // 已分析過的不重跑
@@ -250,7 +254,7 @@ export const routes = [
       if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
       let b = {};
       try { b = JSON.parse(await readBody(req)) || {}; } catch {}
-      const userToken = String(b.userToken || 'anon').slice(0, 64);
+      const userToken = userOf(req, url, b.userToken);
       // 訂正：把答錯的原題重出，題型不換
       if (b.redoFrom && Array.isArray(b.redoIds) && b.redoIds.length){
         const questions = redoQuestions(b.redoFrom, b.redoIds);
@@ -294,7 +298,7 @@ export const routes = [
         res.writeHead(410, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error:'quiz-expired', message:'這份測驗已失效，請重新出題。' }));
       }
-      const userToken = String(b.userToken || 'anon').slice(0, 64);
+      const userToken = userOf(req, url, b.userToken);
       const given = b.answers || {};
       const isFix = quiz.kind.endsWith('-fix');     // 訂正不計入統計，也不推進 Leitner
       const results = quiz.questions.map(q => {

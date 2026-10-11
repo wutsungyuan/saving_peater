@@ -774,3 +774,6 @@ header{position:relative}
 #weakHead .subrow{margin:0 0 12px}
 .subtabs button small{font-weight:400;opacity:.75;margin-left:4px;font-family:var(--font-mono)}
 .wk-hero .cta{display:flex;gap:8px;flex-wrap:wrap}
+
+/* 學生登入時藏起老師才能用的功能（後端也會擋，這裡只是不顯示按了會失敗的按鈕） */
+body[data-role="student"] .teacher-only{display:none !important}
