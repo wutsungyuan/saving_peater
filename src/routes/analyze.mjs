@@ -6,7 +6,7 @@ import { splitSentences, splitDialogue, dialogueUnits } from '../segment.mjs';
 import { hasBlank } from '../exercises.mjs';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { ROOT, MAX_CHARS, MAX_SENTENCES, MAX_ARTICLE_CHARS, MAX_ARTICLE_SENTENCES, COLD_START_USD, CONCURRENCY, AUTH_ON, HISTORY_DAYS } from '../config.mjs';
+import { STUDENT_OCR_PER_DAY, ROOT, MAX_CHARS, MAX_SENTENCES, MAX_ARTICLE_CHARS, MAX_ARTICLE_SENTENCES, COLD_START_USD, CONCURRENCY, AUTH_ON, HISTORY_DAYS } from '../config.mjs';
 import { cache } from '../context.mjs';
 import { readBody, pool, authed, roleOf, denyStudent, decodeImage } from '../http.mjs';
 import { loginAvailable, studentAccount } from '../auth.mjs';
@@ -257,10 +257,11 @@ export const routes = [
         res.writeHead(img.code, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error: img.error, message: img.message }));
       }
-      // 學生：辨識要呼叫模型，開申請單（照片先存在申請單裡，核准後才辨識，辨識完就清掉）
-      if (roleOf(req, url) === 'student'){
+      // 學生：每天有免審的辨識張數，直接辨識；超過才開申請單（照片先存在申請單裡，核准後才辨識，辨識完就清掉）
+      const student = roleOf(req, url) === 'student';
+      if (student && cache.studentOcrToday() >= STUDENT_OCR_PER_DAY){
         const job = submitJob(cache, { kind: 'ocr', by: 'student', payload: { image: b.image, mode: b.mode === 'article' ? 'article' : 'sentence' },
-          summary: `辨識課本照片（${Math.round(img.buf.length / 1024)} KB）` });
+          summary: `辨識課本照片（${Math.round(img.buf.length / 1024)} KB）・超過今天免審的辨識張數` });
         res.writeHead(202, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ pending: true, jobId: job.id, reused: job.reused }));
       }
@@ -275,9 +276,9 @@ export const routes = [
         cache.log({ kind:'ocr-text', chars: img.buf.length,
           sentences: text ? splitSentences(text).length : 0,
           cached:0, analyzed:0, ms: Date.now() - t0,
-          text: text || '（照片裡沒有抄到英文句子）', ...usage });
+          text: text || '（照片裡沒有抄到英文句子）', byRole: student ? 'student' : null, ...usage });
         res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ text, filled, usage }));
+        return res.end(JSON.stringify({ text, filled, usage: student ? {} : usage }));      // 學生看不到費用
       } catch (e){
         const kind = e.kind || 'other';
         res.writeHead(kind === 'rate-limit' ? 429 : 500, { 'content-type':'application/json; charset=utf-8' });

@@ -35,7 +35,7 @@ async function handleAnalyzeImage(files){
         const fresh = d.text.split('\n').filter(l => l.trim() && !seen.has(l.trim().toLowerCase())).join('\n');
         setInput(own ? [own, fresh].filter(Boolean).join('\n') : d.text);
         curKind = null;
-        ok++; lines += d.text.split('\n').filter(Boolean).length; filled += d.filled || 0; cost += d.usage.costUsd || 0;
+        ok++; lines += d.text.split('\n').filter(Boolean).length; filled += d.filled || 0; cost += d.usage?.costUsd || 0;
       } catch (err){
         failed.push(`第 ${i + 1} 張辨識失敗：${err.message}`);
       }
@@ -43,10 +43,10 @@ async function handleAnalyzeImage(files){
     if (ok) inp.focus();
     const total = inp.value.split('\n').filter(l => l.trim()).length;
     const parts = [];
-    if (ok) parts.push(`辨識了 ${ok} 張，抄到 ${lines} 行，輸入框目前共 ${total} 行（參考費用 ${money(cost)}）。` +
+    if (ok) parts.push(`辨識了 ${ok} 張，抄到 ${lines} 行，輸入框目前共 ${total} 行${isStudentRole() ? '' : `（參考費用 ${money(cost)}）`}。` +
       (filled ? `考卷的 ${filled} 個空格已依選項填上答案 —— 那是分析出來的，不是解答本，請自己核對。`
               : '請核對上面的內容，刪掉不需要的部分再按分析。'));
-    if (queued) parts.push(`已送出 ${queued} 張照片的辨識申請。老師核准後，辨識結果會出現在「我的申請」，到時可以一鍵帶回輸入框。`);
+    if (queued) parts.push(`今天免審的照片辨識張數用完了，已送出 ${queued} 張的辨識申請。老師核准後，辨識結果會出現在「我的申請」，可以一鍵帶回輸入框。`);
     if (failed.length) parts.push('失敗：' + failed.join('；') + '。');
     hint.textContent = parts.join(' ');
   } finally { anBusy(false); btn.disabled = false; goBtn.disabled = false; }

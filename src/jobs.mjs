@@ -56,7 +56,7 @@ export function cancelJob(cache, id, by){
 
 // 照片很大，辨識完（或被拒絕、撤回）就不必留著
 function clearPayload(cache, job){
-  if (job.kind === 'ocr' && job.payload?.image) cache.updateJob(job.id, { payload: { ...job.payload, image: null } });
+  if ((job.kind === 'ocr' || job.kind === 'wordset-ocr') && job.payload?.image) cache.updateJob(job.id, { payload: { ...job.payload, image: null } });
 }
 
 // ---- 排隊執行 ----
@@ -116,6 +116,11 @@ async function execute(cache, job){
     const r = await internalCall('POST', '/api/analyze-ocr', { image: p.image });
     if (r.status !== 200 || !r.json?.text) return finish(cache, job, 'failed', { error: r.json?.message || r.json?.error || `HTTP ${r.status}` });
     return finish(cache, job, 'done', { text: r.json.text, filled: r.json.filled ?? 0 }, r.json.usage?.costUsd ?? 0);
+  }
+  if (job.kind === 'wordset-ocr'){
+    const r = await internalCall('POST', '/api/wordset-ocr', { image: p.image });
+    if (r.status !== 200 || !r.json?.text) return finish(cache, job, 'failed', { error: r.json?.message || r.json?.error || `HTTP ${r.status}` });
+    return finish(cache, job, 'done', { text: r.json.text, words: r.json.words?.length ?? 0 }, r.json.usage?.costUsd ?? 0);
   }
   if (job.kind === 'wordset'){
     const r = await internalCall('POST', '/api/wordsets', p);

@@ -1,7 +1,7 @@
 // 申請單：學生看自己的申請（「我的申請」），老師審核（「待審」）。同一個畫面，依角色顯示不同內容。
 // 經典腳本（不是 ES module）：和其他 js/*.js 共用全域，由 index.html 依固定順序載入，順序不能換。
 
-const JOB_KIND = { analyze: '分析句子', ocr: '辨識照片', wordset: '單字表', 'ai-grade': 'AI 批改' };
+const JOB_KIND = { analyze: '分析句子', ocr: '辨識照片', 'wordset-ocr': '辨識單字表照片', wordset: '單字表', 'ai-grade': 'AI 批改' };
 const JOB_STATUS = { pending: '等待核准', approved: '已核准，排隊中', running: '執行中', done: '完成', failed: '失敗', rejected: '被拒絕', cancelled: '已撤回' };
 const isStudentRole = () => document.body.dataset.role === 'student';
 const usd = n => 'US$' + Number(n || 0).toFixed(2);
@@ -24,6 +24,7 @@ function jobResultLine(j){
   const r = j.result; if (!r) return '';
   if (j.status === 'failed') return r.error || '失敗';
   if (j.kind === 'analyze') return r.articleName ? `已存成文章「${r.articleName}」（${r.analyzed} 句新分析）` : `${r.analyzed} 句已分析好，之後再按分析就是瞬間出結果`;
+  if (j.kind === 'wordset-ocr') return `辨識出 ${r.words ?? ''} 個單字`;
   if (j.kind === 'ocr') return `辨識出 ${String(r.text || '').split('\n').filter(Boolean).length} 行`;
   if (j.kind === 'wordset') return `「${r.name}」：${r.count ?? ''} 個字`;
   if (j.kind === 'ai-grade') return `已批改${r.graded != null ? ` ${r.graded} 題` : ''}`;
@@ -47,6 +48,7 @@ function jobCard(j, teacher){
     if (j.status === 'done'){
       if (j.kind === 'analyze' && j.result?.articleId) acts = `<button type="button" data-job="open-article" data-id="${j.id}">看文章</button>`;
       else if (j.kind === 'analyze') acts = `<button type="button" data-job="open-sentences" data-id="${j.id}">看分析結果</button>`;
+      else if (j.kind === 'wordset-ocr') acts = `<button type="button" data-job="use-wsocr" data-id="${j.id}">帶回單字表輸入框</button>`;
       else if (j.kind === 'ocr') acts = `<button type="button" data-job="use-ocr" data-id="${j.id}">帶回輸入框</button>`;
       else if (j.kind === 'wordset') acts = `<button type="button" data-job="open-words" data-id="${j.id}">看單字表</button>`;
       else if (j.kind === 'ai-grade') acts = `<button type="button" data-job="open-exam" data-id="${j.id}">看成績</button>`;
@@ -117,6 +119,10 @@ el('view-jobs').addEventListener('click', async e => {
     const toArticle = j.payload?.mode === 'article';
     jumpTo(toArticle ? 'article' : 'sentence', { sub: toArticle ? 'new' : 'live' });
     setTimeout(() => { setInput(j.result.text); curKind = null; }, 200);
+  }
+  else if (act === 'use-wsocr'){
+    jumpTo('words');
+    setTimeout(() => { el('wsForm').hidden = false; setFormMode(true); el('wsText').value = j.result.text; el('wsText').dispatchEvent(new Event('input')); }, 400);
   }
   else if (act === 'open-words'){ wsSel = [j.result.id]; wsCurrent = j.result.id; jumpTo('words'); }
   else if (act === 'open-exam'){ jumpTo('exam'); }

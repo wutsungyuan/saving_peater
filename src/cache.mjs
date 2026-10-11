@@ -34,8 +34,8 @@ export function openCache(file = 'data/cache.db'){
     VALUES (?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT hits FROM sentences WHERE hash = ?), 0), ?,?,?,?,?)`);
   const qLog  = db.prepare(`INSERT INTO requests
     (chars, sentences, cached, analyzed, ms, created_at, kind, ref_id, text,
-     input_tokens, output_tokens, cache_read_tokens, cost_usd)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+     input_tokens, output_tokens, cache_read_tokens, cost_usd, by_role)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const qStats = db.prepare(`SELECT
       (SELECT COUNT(*) FROM sentences) AS sentences,
       (SELECT COALESCE(SUM(hits),0) FROM sentences) AS cache_hits,
@@ -114,7 +114,12 @@ export function openCache(file = 'data/cache.db'){
       qLog.run(row.chars, row.sentences, row.cached, row.analyzed, row.ms, Date.now(),
         row.kind ?? 'analyze', row.refId ?? null, row.text ?? null,
         row.inputTokens ?? 0, row.outputTokens ?? 0,
-        row.cacheReadTokens ?? 0, row.costUsd ?? 0);
+        row.cacheReadTokens ?? 0, row.costUsd ?? 0, row.byRole ?? null);
+    },
+    /** 學生今天（本機時間）已經辨識了幾張照片（句子與單字表都算） */
+    studentOcrToday(){
+      const d = new Date(); d.setHours(0, 0, 0, 0);
+      return Number(db.prepare("SELECT COUNT(*) n FROM requests WHERE kind IN ('ocr-text','ocr') AND by_role = 'student' AND created_at >= ?").get(d.getTime()).n);
     },
 
     /** 分析歷史：最近幾次請求 */

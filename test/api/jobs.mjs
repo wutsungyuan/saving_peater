@@ -1,6 +1,7 @@
 // 申請單（花費關卡）：學生要花額度的操作先開申請單，老師核准後才在背景執行。假 CLI，不花額度。
 // 跑法：node --no-warnings test/api/jobs.mjs
 import { rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { start, J, chk, section, finish, wait } from './_harness.mjs';
 import { makeFixture } from './_fixture.mjs';
 
@@ -24,7 +25,7 @@ async function sseAs(base, ck, body){
 const ev = (r, name) => r.events.filter(e => e.event === name).map(e => e.data);
 
 try {
-  const S = await start('jobs', { AUTH_USER: T.user, AUTH_PASS: T.pass, STUDENT_USER: K.user, STUDENT_PASS: K.pass, ANALYZE_GROUP: '6' }, { dbFile: fx.dbFile });
+  const S = await start('jobs', { AUTH_USER: T.user, AUTH_PASS: T.pass, STUDENT_USER: K.user, STUDENT_PASS: K.pass, ANALYZE_GROUP: '6', STUDENT_OCR_PER_DAY: '1' }, { dbFile: fx.dbFile });
   const B = S.base;
   const tk = cookieFrom(await J(B, '/api/login', { method: 'POST', body: T }));
   const sk = cookieFrom(await J(B, '/api/login', { method: 'POST', body: K }));
@@ -103,16 +104,28 @@ try {
   chk('跑完：文章已存好', doneArt?.status === 'done' && doneArt.result.articleId && doneArt.result.articleName === '課文X', JSON.stringify(doneArt));
   chk('學生的文章表看得到', (await J(B, '/api/articles', withCookie(sk))).json.articles.some(a => a.name === '課文X'));
 
-  section('拍照辨識');
+  section('拍照辨識：每天有免審的張數，用完才申請');
   r = await J(B, '/api/analyze-ocr', { method: 'POST', ...withCookie(sk), body: { image: png, mode: 'sentence' } });
-  chk('學生辨識 → 202，開申請單，沒呼叫模型', r.status === 202 && r.json.pending && r.json.jobId && S.calls().length === 2, r.text.slice(0, 100));
+  chk('學生第一張：直接辨識（免審），拿到文字', r.status === 200 && r.json.text === 'I like cats.\nShe runs fast.' && S.calls().length === 3, r.text.slice(0, 100));
+  chk('學生看不到辨識的費用', !r.json.usage?.costUsd, JSON.stringify(r.json.usage));
+  r = await J(B, '/api/wordset-ocr', { method: 'POST', ...withCookie(sk), body: { image: png } });
+  chk('單字表照片也算在同一個每日張數裡：用完了 → 202 申請，沒呼叫模型', r.status === 202 && r.json.pending && S.calls().length === 3, r.text.slice(0, 100));
+  const jWsOcr = r.json.jobId;
+  r = await J(B, '/api/analyze-ocr', { method: 'POST', ...withCookie(sk), body: { image: png, mode: 'sentence' } });
+  chk('學生第二張句子照片：超過 → 202 申請，沒呼叫模型', r.status === 202 && r.json.pending && r.json.jobId && S.calls().length === 3, r.text.slice(0, 100));
   const jOcr = r.json.jobId;
   chk('老師的列表不帶整張照片', !JSON.stringify(await jobsAs(tk, '?status=pending')).includes('base64'));
   await decide(jOcr, 'approve');
   const doneOcr = await waitJob(sk, jOcr);
   chk('核准後辨識完成，學生拿到文字', doneOcr?.status === 'done' && doneOcr.result.text === 'I like cats.\nShe runs fast.', JSON.stringify(doneOcr));
+  await decide(jWsOcr, 'approve');
+  const doneWsOcr = await waitJob(sk, jWsOcr);
+  chk('單字表照片的申請核准後辨識完成，學生拿到文字', doneWsOcr?.status === 'done' && String(doneWsOcr.result.text || '').trim().length > 0, JSON.stringify(doneWsOcr));
   r = await J(B, '/api/analyze-ocr', { method: 'POST', ...withCookie(tk), body: { image: png } });
-  chk('老師自己辨識：直接執行', r.status === 200 && r.json.text);
+  chk('老師自己辨識：直接執行，不受張數限制、有費用資訊', r.status === 200 && r.json.text && r.json.usage?.costUsd > 0);
+  const dbm = new DatabaseSync(S.dbFile, { readOnly: true });
+  const byRole = dbm.prepare("SELECT by_role, COUNT(*) n FROM requests WHERE kind IN ('ocr-text','ocr') GROUP BY by_role").all(); dbm.close();
+  chk('請求紀錄：學生的辨識有標記（每日張數靠這個算）', byRole.some(x => x.by_role === 'student' && x.n >= 1), JSON.stringify(byRole));
 
   section('建單字表');
   r = await J(B, '/api/wordsets', { method: 'POST', ...withCookie(sk), body: { name: '學生申請的字表', text: 'apple, 蘋果\nbanana, 香蕉' } });

@@ -36,7 +36,7 @@ try {
   for (const [m, p, body] of [
     ['GET', '/api/history'], ['GET', '/api/stats'],
     ['DELETE', '/api/wordsets?id=1'],
-    ['POST', '/api/wordset-ocr', {}], ['POST', '/api/wordset-analyze', { setId: 1 }],
+    ['POST', '/api/wordset-analyze', { setId: 1 }],
     ['DELETE', '/api/articles?ids=1'],
     ['POST', '/api/paper-preview', {}], ['POST', '/api/papers', {}], ['DELETE', '/api/papers?id=x'],
   ]) {

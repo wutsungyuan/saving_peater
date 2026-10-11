@@ -205,6 +205,11 @@ function jobs(db){
   `);
 }
 
+/** 第 8 版：請求紀錄記下是哪個角色做的。學生每天免審的照片辨識張數靠這個算。 */
+function requestRoles(db){
+  db.exec(`ALTER TABLE requests ADD COLUMN by_role TEXT;`);
+}
+
 export const MIGRATIONS = [
   { version: 1, name: 'baseline', up: baseline },
   { version: 2, name: 'articles', up: articles },
@@ -213,4 +218,5 @@ export const MIGRATIONS = [
   { version: 5, name: 'attempt-sources', up: sources },
   { version: 6, name: 'session-roles', up: sessionRoles },
   { version: 7, name: 'jobs', up: jobs },
+  { version: 8, name: 'request-roles', up: requestRoles },
 ];

@@ -229,9 +229,8 @@ function mergeWordLines(old, add){
 async function handleImageFile(files){
   const list = [].concat(files || []).filter(Boolean);
   if (!list.length) return;
-  if (isStudentRole()){ el('wsHint').textContent = '單字表的照片辨識要老師操作。你可以直接把單字打進上面的框，再按「建立新字表」送出申請。'; return; }
   el('wsPhoto').disabled = true; el('wsCreate').disabled = true;
-  let ok = 0, dupTotal = 0, cost = 0; const failed = [];
+  let ok = 0, dupTotal = 0, cost = 0, queued = 0; const failed = [];
   try {
     for (let i = 0; i < list.length; i++){
       const tag = list.length > 1 ? `第 ${i + 1}／${list.length} 張：` : '';
@@ -246,6 +245,7 @@ async function handleImageFile(files){
           method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
           body: JSON.stringify({ image }),
         }).then(r => r.json());
+        if (d.pending){ queued++; continue; }                      // 學生：今天免審的辨識張數用完了，已開申請單
         if (d.error === 'unauthorized') showTokenBanner('存取碼不對或還沒輸入，所以照片沒辦法辨識。請輸入存取碼。');
         if (d.error){ failed.push(`第 ${i + 1} 張：${d.message || d.error}`); continue; }
         if (!d.words.length){ failed.push(`第 ${i + 1} 張沒抄到單字`); continue; }
@@ -253,14 +253,15 @@ async function handleImageFile(files){
         const m = mergeWordLines(el('wsText').value.trim(), d.text);
         el('wsText').value = m.text;
         el('wsText').dispatchEvent(new Event('input'));
-        ok++; dupTotal += m.dup; cost += d.usage.costUsd || 0;
+        ok++; dupTotal += m.dup; cost += d.usage?.costUsd || 0;
       } catch (err){
         failed.push(`第 ${i + 1} 張辨識失敗：${err.message}`);
       }
     }
     const total = el('wsText').value.split('\n').filter(l => l.trim()).length;
     const parts = [];
-    if (ok) parts.push(`辨識了 ${ok} 張，目前共 ${total} 行（參考費用 ${money(cost)}）${dupTotal ? `，略過 ${dupTotal} 個重複的字` : ''}。請核對上面的內容，刪掉不考的部分再按建立字表。`);
+    if (ok) parts.push(`辨識了 ${ok} 張，目前共 ${total} 行${isStudentRole() ? '' : `（參考費用 ${money(cost)}）`}${dupTotal ? `，略過 ${dupTotal} 個重複的字` : ''}。請核對上面的內容，刪掉不考的部分再按建立字表。`);
+    if (queued) parts.push(`今天免審的照片辨識張數用完了，已送出 ${queued} 張的辨識申請。老師核准後，結果會出現在「我的申請」，可以一鍵帶回這裡。`);
     if (failed.length) parts.push('失敗：' + failed.join('；') + '。');
     el('wsHint').textContent = parts.join(' ');
   } finally { wsBusy(false); el('wsPhoto').disabled = false; el('wsCreate').disabled = false; }

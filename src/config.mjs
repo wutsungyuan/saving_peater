@@ -28,6 +28,8 @@ export const SESSION_DAYS = Number(process.env.SESSION_DAYS || 90);
 // 沒設學生帳號就和以前一樣：只有一組帳密，等於老師。
 export const STUDENT_USER = process.env.STUDENT_USER || '';
 export const STUDENT_PASS = process.env.STUDENT_PASS || '';
+// 學生每天可以免審直接辨識的照片張數（句子與單字表合計）。超過的改成申請，等老師核准。0＝一律要申請。
+export const STUDENT_OCR_PER_DAY = Number(process.env.STUDENT_OCR_PER_DAY ?? 10);
 // 有任何一種驗證設定就代表需要驗證
 export const AUTH_ON = Boolean(AUTH_TOKEN || (AUTH_USER && AUTH_PASS) || (STUDENT_USER && STUDENT_PASS));
 export const HISTORY_DAYS = Number(process.env.HISTORY_DAYS || 30);
