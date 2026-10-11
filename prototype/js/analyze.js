@@ -18,26 +18,44 @@ let LOGIN_AVAIL = false;       // 伺服器有沒有設帳號密碼（health 回
 
 /** 沒登入（或舊的存取碼不對）時：頁面最上面出現登入框。登入後瀏覽器會記住（cookie），手機不用再編網址。
  *  伺服器沒設帳號密碼、只設了舊的 AUTH_TOKEN 時，退回「輸入存取碼」。 */
-function showTokenBanner(msg){
-  document.getElementById('tokenBanner')?.remove();
-  const b = document.createElement('div'); b.id = 'tokenBanner'; b.className = 'token-banner';
+function showTokenBanner(msg, { error = false } = {}){
+  // 已經開著就只更新訊息、不重建：同一頁常常同時有好幾個請求收到 401，重建會把使用者打到一半的帳號密碼清掉
+  const mode = LOGIN_AVAIL ? 'login' : 'token';
+  let old = document.getElementById('tokenBanner');
+  // 頁面剛載入時，有些請求在伺服器還沒告知「可以用帳號密碼登入」之前就收到 401，會先建出「存取碼」版；類型不對就換掉
+  if (old && old.dataset.mode !== mode){ old.remove(); old = null; document.body.classList.remove('login-open'); const pg = document.querySelector('.page'); if (pg) pg.inert = false; }
+  if (old){
+    const m = old.querySelector('.tb-msg');
+    if (m && (m.textContent !== msg || old.classList.contains('err') !== error)){ m.textContent = msg; old.classList.toggle('err', error); }
+    return;
+  }
+  const b = document.createElement('div'); b.id = 'tokenBanner'; b.className = 'token-banner login-screen';
+  b.dataset.mode = mode;
+  b.setAttribute('role', 'dialog'); b.setAttribute('aria-modal', 'true'); b.setAttribute('aria-labelledby', 'loginTitle');
+  const head = '<div class="login-card"><div class="login-rule"></div><h1 id="loginTitle">英文句型解剖</h1><p class="login-sub">逐句看懂英文句子的結構</p><p class="tb-msg" role="status"></p>';
   b.innerHTML = LOGIN_AVAIL
-    ? '<p class="tb-msg"></p><form class="row" id="loginForm"><input type="text" id="loginUser" name="username" placeholder="帳號" autocomplete="username" autocapitalize="off" spellcheck="false">' +
-      '<input type="password" id="loginPass" name="password" placeholder="密碼" autocomplete="current-password"><button class="primary" type="submit" id="loginGo">登入</button></form>'
-    : '<p class="tb-msg"></p><div class="row"><input type="text" id="tokenInput" placeholder="貼上存取碼" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="primary" type="button" id="tokenSave">儲存並重新載入</button></div>';
+    ? head + '<form id="loginForm"><label for="loginUser">帳號</label><input type="text" id="loginUser" name="username" autocomplete="username" autocapitalize="off" spellcheck="false">' +
+      '<label for="loginPass">密碼</label><input type="password" id="loginPass" name="password" autocomplete="current-password">' +
+      '<label class="login-show"><input type="checkbox" id="loginShow"> 顯示密碼</label>' +
+      '<button class="primary" type="submit" id="loginGo">登入</button></form><p class="login-foot">老師與學生各用自己的帳號登入。</p></div>'
+    : head + '<label for="tokenInput">存取碼</label><input type="text" id="tokenInput" placeholder="貼上存取碼" autocomplete="off" autocapitalize="off" spellcheck="false">' +
+      '<button class="primary" type="button" id="tokenSave">儲存</button></div>';
   document.body.insertBefore(b, document.body.firstChild);
-  b.querySelector('.tb-msg').textContent = msg;
+  document.body.classList.add('login-open');
+  const page = document.querySelector('.page'); if (page) page.inert = true;       // 背後的畫面不能用鍵盤跳進去
+  b.querySelector('.tb-msg').textContent = msg; b.classList.toggle('err', error);
   if (LOGIN_AVAIL){
+    document.getElementById('loginShow').onchange = e => { document.getElementById('loginPass').type = e.target.checked ? 'text' : 'password'; };
     document.getElementById('loginForm').onsubmit = async e => {
       e.preventDefault();
       const msgEl = b.querySelector('.tb-msg'), go = document.getElementById('loginGo');
-      go.disabled = true; msgEl.textContent = '登入中…';
+      go.disabled = true; msgEl.textContent = '登入中…'; b.classList.remove('err');
       let r, j = {};
       try { r = await _fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ user: document.getElementById('loginUser').value.trim(), pass: document.getElementById('loginPass').value }) }); j = await r.json().catch(() => ({})); }
-      catch { msgEl.textContent = '連不上伺服器。'; go.disabled = false; return; }
-      if (r.ok){ location.reload(); return; }
-      msgEl.textContent = j.message || '登入失敗。'; go.disabled = false; document.getElementById('loginPass').select();
+      catch { msgEl.textContent = '連不上伺服器。'; b.classList.add('err'); go.disabled = false; return; }
+      if (r.ok){ msgEl.textContent = '登入成功，載入中…'; location.reload(); return; }
+      msgEl.textContent = j.message || '登入失敗。'; b.classList.add('err'); go.disabled = false; document.getElementById('loginPass').select();
     };
     document.getElementById('loginUser').focus();
   } else {
@@ -46,6 +64,7 @@ function showTokenBanner(msg){
       try { localStorage.setItem('analyzer-token', v); } catch {}
       location.href = location.pathname + '?token=' + encodeURIComponent(v);
     };
+    document.getElementById('tokenInput').focus();
   }
 }
 
@@ -60,7 +79,7 @@ window.fetch = (input, init = {}) => {
   return _fetch(input, { ...init, headers }).then(noteUnauthorized(url));
 };
 const noteUnauthorized = url => res => {
-  if (res.status === 401 && url.startsWith('/api/')) showTokenBanner(LOGIN_AVAIL ? '登入已過期或還沒登入，請登入。' : TOKEN ? '存取碼不對，請重新輸入。' : '這個網站需要存取碼才能使用。請輸入存取碼（只要輸入一次，這個瀏覽器會記住）。');
+  if (res.status === 401 && url.startsWith('/api/')) showTokenBanner(LOGIN_AVAIL ? '請先登入。' : TOKEN ? '存取碼不對，請重新輸入。' : '這個網站需要存取碼才能使用。請輸入存取碼（只要輸入一次，這個瀏覽器會記住）。');
   return res;
 };
 

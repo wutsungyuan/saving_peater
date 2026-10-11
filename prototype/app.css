@@ -752,10 +752,22 @@ mark.sw{background:var(--tip-bg);color:inherit;border-bottom:2px solid var(--acc
 .turn-tag{margin:14px 0 4px}
 .turn-tag .who,.art-para h4 .who{font-family:var(--font-mono);font-size:.8rem;font-weight:700;color:var(--accent);
   background:var(--card,#fff);border:1px solid var(--rule);border-radius:999px;padding:2px 12px}
-.token-banner{position:sticky;top:0;z-index:50;background:#fff4d6;border-bottom:2px solid #d9a400;padding:10px 16px}
-.token-banner .tb-msg{margin:0 0 8px;font-weight:600}
-.token-banner .row{display:flex;gap:8px;flex-wrap:wrap}
-.token-banner input{flex:1;min-width:180px;font-size:16px}
+/* 登入畫面：整頁蓋住，置中一張卡片（沒登入時背後的畫面不顯示） */
+.login-screen{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto;
+  background:radial-gradient(1200px 600px at 50% -10%,#dcebea 0%,var(--bg) 60%)}
+.login-card{width:min(100%,380px);background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:28px 28px 22px;box-shadow:0 12px 40px rgba(20,50,55,.14)}
+.login-rule{height:3px;width:46px;background:var(--accent);border-radius:2px;margin-bottom:16px}
+.login-card h1{font-size:1.6rem;font-weight:700;letter-spacing:-.01em;margin:0 0 4px}
+.login-sub{color:var(--muted);margin:0 0 18px;font-size:.92rem}
+.login-card .tb-msg{margin:0 0 6px;padding:9px 12px;border-radius:6px;background:var(--surface-2);color:var(--muted);font-size:.9rem;font-weight:500}
+.login-screen.err .tb-msg{background:#fdecea;color:#a82a1e;font-weight:600}
+.login-card label{display:block;font-size:.82rem;font-weight:700;margin:14px 0 5px;color:var(--muted)}
+.login-card input[type=text],.login-card input[type=password]{width:100%;box-sizing:border-box;font:inherit;font-size:16px;padding:11px 12px;border:1px solid var(--rule);border-radius:6px;background:var(--surface);color:var(--fg)}
+.login-card input[type=text]:focus,.login-card input[type=password]:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.login-card .login-show{display:flex;align-items:center;gap:6px;font-weight:500;margin-top:10px;cursor:pointer}
+.login-card button.primary{width:100%;margin-top:18px;padding:12px;font-size:1rem}
+.login-foot{color:var(--faint);font-size:.78rem;text-align:center;margin:16px 0 0}
+body.login-open{overflow:hidden}
 .turn-group{border:1px solid var(--rule);border-left:4px solid var(--accent);border-radius:10px;padding:10px 12px 4px;margin:16px 0;background:rgba(255,255,255,.35)}
 .turn-head{margin:0 0 10px}
 .turn-head .turn-en{font-family:var(--font-serif,serif);font-size:1.15rem;margin:8px 0 2px}

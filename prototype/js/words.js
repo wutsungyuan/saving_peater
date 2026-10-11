@@ -24,7 +24,7 @@ el('wsModes').addEventListener('click', e => {
 
 async function loadWordsets(){
   try {
-    const d = await fetch(`/api/wordsets?user=${encodeURIComponent(USER)}`).then(r => r.json());
+    const d = await fetch(`/api/wordsets?user=${encodeURIComponent(USER)}`).then(r => { if (r.status === 401) throw Object.assign(new Error('login'), { quiet: true }); return r.json(); });      // 沒登入：登入畫面已經蓋住，不要在背後顯示錯誤
     wsAllSets = d.sets;
     if (!d.sets.length){
       el('wsList').innerHTML = '<span class="hint">還沒有字表。按「＋ 新增字表」貼上老師給的範圍。</span>';
@@ -54,6 +54,7 @@ async function loadWordsets(){
     if (!wsSel.length) await selectSet(d.sets[0].id, true);
     else { wsCurrent = wsSel[0]; renderSelInfo(); }
   } catch (e){
+    if (e.quiet) return;
     el('wsList').innerHTML = `<span class="hint">載入失敗：${esc(e.message)}</span>`;
   }
 }
