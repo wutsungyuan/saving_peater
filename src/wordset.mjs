@@ -10,6 +10,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT = join(__dirname, '..', 'prompts', 'wordset-system.md');
 
 /** 解析使用者貼上的字表。一行一個，可用逗號／tab／全形逗號分隔中文 */
+/** 課本常把意思相近的幾個字寫在同一行、用 / 隔開（normally / generally、hardly ever / almost never）。
+ *  每一個都是獨立的單字，要拆開。兩邊都是純英文才拆（he/she、and/or 也會拆成兩個字；a.m./p.m. 這種帶句點的不拆）。
+ *  中文意思也用 / 隔開、而且段數一樣時各給各的；否則每個字都用同一個中文。 */
+export function splitAlternatives(term, zh = null){
+  const parts = String(term ?? '').split(/\s*[/／]\s*/).map(s => s.trim()).filter(Boolean);
+  if (parts.length < 2 || !parts.every(p => /^[A-Za-z][A-Za-z '’-]*$/.test(p))) return [{ term: String(term ?? '').trim(), zh }];
+  const zhs = zh ? String(zh).split(/\s*[/／]\s*/).map(s => s.trim()).filter(Boolean) : [];
+  return parts.map((p, i) => ({ term: p, zh: zhs.length === parts.length ? zhs[i] : (zh || null) }));
+}
+
 export function parseWordList(text){
   const out = [];
   const seen = new Set();
@@ -17,12 +27,14 @@ export function parseWordList(text){
     const line = raw.trim();
     if (!line || /^[#／/]/.test(line)) continue;              // 空行與註解行
     const m = line.split(/\s*[,，\t|]\s*/);
-    const term = (m[0] ?? '').trim();
-    if (!term || !/[A-Za-z]/.test(term)) continue;            // 至少要有英文字母
-    const key = term.toLowerCase();
-    if (seen.has(key)) continue;                              // 去重
-    seen.add(key);
-    out.push({ term, zh: (m[1] ?? '').trim() || null });
+    const first = (m[0] ?? '').trim();
+    if (!first || !/[A-Za-z]/.test(first)) continue;          // 至少要有英文字母
+    for (const { term, zh } of splitAlternatives(first, (m[1] ?? '').trim() || null)){
+      const key = term.toLowerCase();
+      if (seen.has(key)) continue;                            // 去重
+      seen.add(key);
+      out.push({ term, zh });
+    }
   }
   return out;
 }
@@ -443,7 +455,7 @@ export function extractFromImage(imagePath, { model = MODEL, timeoutMs = 180_000
       catch (e){ return reject(new Error('辨識結果無法解析：' + e.message)); }
 
       const words = (data.words ?? [])
-        .map(w => ({ term: String(w.term ?? '').trim(), zh: w.zh ? String(w.zh).trim() : null }))
+        .flatMap(w => splitAlternatives(String(w.term ?? '').trim(), w.zh ? String(w.zh).trim() : null))
         .filter(w => w.term && /[A-Za-z]/.test(w.term));
       const u = env.usage ?? {};
       resolve({ words, usage: {
