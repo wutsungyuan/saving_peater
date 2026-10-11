@@ -796,3 +796,4 @@ body:not([data-role="student"]) .student-only{display:none !important}
 
 body[data-role="student"] .teacher-label{display:none}
 body:not([data-role="student"]) .student-label{display:none}
+#jobsMsg:empty{display:none}
