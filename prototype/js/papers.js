@@ -31,11 +31,12 @@ async function loadPaperHome(){
   if (P.tab === 'result' && P.paper) return renderResult();
   if (P.tab === 'history') return loadHistory2();
   pBox().innerHTML = '<p class="msg">讀取中…</p>';
-  const [s, a] = await Promise.all([
+  const [s, a, ol] = await Promise.all([
     fetch(`/api/wordsets?user=${encodeURIComponent(USER)}`).then(r => r.json()).catch(() => ({ sets: [] })),
     artApi('/api/articles').then(r => r.json?.articles ?? []).catch(() => []),
+    artApi('/api/papers').then(r => (r.json?.papers ?? []).filter(p => p.status === 'open' && p.kind !== 'fix').reverse()).catch(() => null),
   ]);
-  P.sets = s.sets ?? []; P.articles = a;
+  P.sets = s.sets ?? []; P.articles = a; P.openList = ol;
   // 範圍預設選目前單字頁選的字表（沒有就不預選，讓使用者自己選）
   P.cfg.setIds = P.cfg.setIds.filter(id => P.sets.some(x => x.id === id));
   P.cfg.articleIds = P.cfg.articleIds.filter(id => P.articles.some(x => x.id === id));
@@ -46,10 +47,11 @@ async function loadPaperHome(){
 
 // ================= 出卷設定 =================
 function renderSetup(){
-  const c = P.cfg, resume = rememberedOpen();
+  const c = P.cfg, resume = rememberedOpen(), ol = P.openList;
   const chip = (kind, id, label) => `<button type="button" class="tchip" data-scope="${kind}" data-id="${id}" aria-pressed="${(kind === 'set' ? c.setIds : c.articleIds).includes(id)}">${esc(label)}</button>`;
   pBox().innerHTML = `${pNav()}
-  ${resume ? `<div class="box p-resume" id="pResume">有一份還沒交卷的卷子。<button class="linky" type="button" data-act="resume">繼續作答</button></div>` : ''}
+  ${ol?.length ? `<div class="box p-resume" id="pResume">有 ${ol.length} 份還沒交卷的卷子：${ol.map((p, i) => `<button class="linky" type="button" data-act="resume" data-id="${esc(p.id)}">第 ${i + 1} 份（${esc(p.difficultyName || '')}・${p.n} 題）繼續作答</button>`).join(' ')}</div>`
+    : ol === null && resume ? `<div class="box p-resume" id="pResume">有一份還沒交卷的卷子。<button class="linky" type="button" data-act="resume">繼續作答</button></div>` : ''}
   <div class="box p-setup">
     <label>① 範圍（單字表、文章表各自勾選）</label>
     <div class="p-scope"><b>單字表</b><div class="row">${P.sets.length ? P.sets.map(s => chip('set', s.id, `${s.name}（${s.word_count} 字）`)).join('') : '<span class="hint">還沒有單字表，到「單字」建立。</span>'}</div></div>
@@ -86,6 +88,7 @@ function renderTypes(){
 
 function schedulePreview(ms = 250){
   clearTimeout(P.previewTimer);
+  const b = el('pStart'); if (b) b.disabled = true;      // 設定剛改過，報價還沒重算，先不讓按（不然會拿舊報價出卷）
   P.previewTimer = setTimeout(runPreview, ms);
 }
 async function runPreview(){
@@ -185,7 +188,7 @@ function openPaper(paper){
 }
 
 function handlePaperAction(act, node){
-  if (act === 'resume'){ artApi(`/api/paper?id=${rememberedOpen()}`).then(r => r.ok ? openPaper(r.json) : (rememberOpen(null), loadPaperHome())); }
+  if (act === 'resume'){ artApi(`/api/paper?id=${node?.dataset.id || rememberedOpen()}`).then(r => r.ok ? openPaper(r.json) : (rememberOpen(null), loadPaperHome())); }
 }
 
 // ================= 作答 =================
@@ -246,7 +249,7 @@ function renderRun(){
   pBox().innerHTML = `${pNav()}
   <div class="box p-head"><div><b>${fix ? '訂正' : `${esc(paper.settings.difficultyName || '')}・${paper.n} 題・滿分 100 分`}</b>
     <span class="hint" id="pProgress"></span><span class="hint" id="pSave"></span></div>
-    <div class="row"><button class="linky" type="button" data-act2="print">列印試卷</button></div></div>
+    <div class="row"><button class="linky" type="button" data-act2="print">列印試卷</button>${fix ? '' : '<button class="linky" type="button" data-act2="newpaper">先放著，再出一份新卷</button>'}</div></div>
   ${fix ? '<p class="hint">訂正不影響統計，也不改變原卷的分數。</p>' : ''}
   ${paper.sections.map((s, si) => `<section class="p-sec"><h3>${fix ? '' : `第 ${['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][si] ?? si + 1} 部分　`}${esc(s.name)}${s.pts ? `<small>　每題 ${fmtPts(s.pts)} 分</small>` : ''}</h3>
     ${s.passages.filter(p => s.questions.some(q => q.passageId === p.id)).map(p => `<div class="p-passage"><b>${esc(p.title ?? '')}</b><p>${inlinePassage(p.text)}</p>${p.bank ? `<p class="hint">字庫：${p.bank.map(esc).join('、')}</p>` : ''}</div>`).join('')}
@@ -332,6 +335,7 @@ pBox().addEventListener('click', async e => {
   const act2 = e.target.closest('[data-act2]')?.dataset.act2;
   if (act2 === 'print') printPaper(false);
   if (act2 === 'print-ans') printPaper(true);
+  if (act2 === 'newpaper') { saveNow().finally(() => { P.tab = 'setup'; P.paper = null; loadPaperHome(); }); }
   if (act2 === 'fix') startFix();
   if (act2 === 'again') { P.tab = 'setup'; P.paper = null; loadPaperHome(); }
   if (act2 === 'to-setup') { P.tab = 'setup'; loadPaperHome(); }
