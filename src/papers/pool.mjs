@@ -41,7 +41,18 @@ export function buildPool(cache, { setIds = [], articleIds = [], userToken = 'an
     }
     // 對話課文：文章表的「段」就是一次發言（para = 第幾次發言），帶說話者。出題時用說話者名字標出誰說的。
     const paragraphs = [...byPara.entries()].sort((x, y) => x[0] - y[0]).map(([para, sentences]) => ({ para, sentences, speaker: sentences[0]?.speaker ?? null }));
-    articles.push({ id: a.id, name: a.name, dialogue: paragraphs.length >= 2 && paragraphs.every(p => p.speaker), paragraphs });
+    const dialogue = paragraphs.length >= 2 && paragraphs.every(p => p.speaker);
+    // 對話：把「前一次發言」掛在每一句上（context）。單獨抽出一句出題時，代名詞（it、they、so）才有對象可看；
+    // 翻譯題會把它顯示在題目上方，和句子練習的對話題一致。
+    if (dialogue) for (let i = 1; i < paragraphs.length; i++){
+      const prev = paragraphs[i - 1], text = prev.sentences.map(s => s.original).join(' ');
+      const context = { speaker: prev.speaker, text: text.length > 240 ? text.slice(0, 240).replace(/\s+\S*$/, '') + '…' : text };
+      for (const s of paragraphs[i].sentences){
+        const rec = records.find(r => r.hash === s.hash);
+        if (rec && !rec.data.context) rec.data = { ...rec.data, context };
+      }
+    }
+    articles.push({ id: a.id, name: a.name, dialogue, paragraphs });
   }
   // 單字例句（字表建立時存的、分析過的才有）
   for (const w of words) for (const s of w.senses ?? []) if (s.example) addRecord(s.example, cache.peek(s.example));

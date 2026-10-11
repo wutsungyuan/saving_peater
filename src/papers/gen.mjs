@@ -261,6 +261,7 @@ const CONTENT = new Set(['n', 'v', 'adj', 'adv']);
 function candTrans(pool){
   return pool.records.filter(r => r.data.translation && !r.data.issue && (r.data.original.split(/\s+/).length >= 3)).map(r => ({
     type: 'trans', skill: 'trans', inputMode: 'open', src: 'scope', prompt: '把下面的句子翻成英文', question: r.data.translation,
+    ...(r.data.context ? { context: r.data.context } : {}),                    // 對話句：附上對方說的話，代名詞才有指涉對象
     answer: [r.data.original], keywords: (r.data.words ?? []).filter(w => CONTENT.has(w.pos)).map(w => lc(w.text)),
     explain: `參考答案：${r.data.original}`, meta: { key: `s${r.hash}`, stat: null } }));
 }

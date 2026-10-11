@@ -438,7 +438,7 @@ function printPaper(withAnswers){
     ${paper.sections.map((s, si) => `<section><h3>${['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][si] ?? si + 1}、${esc(s.name)}（每題 ${fmtPts(s.pts)} 分）</h3>
       ${s.passages.filter(p => s.questions.some(q => q.passageId === p.id)).map(p => `<div class="pp-passage"><b>${esc(p.title ?? '')}</b><p>${inlinePassage(p.text)}</p>${p.bank ? `<p>字庫：${p.bank.map(esc).join('、')}</p>` : ''}</div>`).join('')}
       ${s.questions.map(q => { n++; const it = r?.items.find(x => x.id === q.id);
-        return `<div class="pp-q"><p><b>${n}.</b> ${esc(q.prompt ?? '')}　${q.display || q.sentence ? qDisplay(q) : esc(q.question ?? '')}${q.hint ? `（${esc(q.hint)}）` : ''}</p>
+        return `<div class="pp-q">${q.context ? `<p class="pp-ctx"><i>${esc(q.context.speaker || '對方')}：${esc(q.context.text)}</i></p>` : ''}<p><b>${n}.</b> ${esc(q.prompt ?? '')}${q.display || q.sentence ? qDisplay(q) : esc(q.question ?? '')}${q.hint ? `（${esc(q.hint)}）` : ''}</p>
         ${q.inputMode === 'choice' ? (['cloze', 'wbank', 'match'].includes(q.type) ? '<p>答：______</p>' : `<p class="pp-opts">${q.choices.map((c, i) => `(${'ABCD'[i]}) ${esc(c.label)}`).join('　')}</p>`)
           : q.inputMode === 'order' ? `<p>${q.chunks.map(esc).join(' ／ ')}</p><p>答：________________________________</p>`
           : '<p>答：________________________________</p>'}
