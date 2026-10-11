@@ -11,7 +11,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { openCache } from './cache.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -102,4 +102,5 @@ function main(){
   cache.close();
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// 直接執行時才跑 main()（被 server import 時不跑）。Windows 的路徑要用 pathToFileURL 轉，直接拼 file:// 永遠不相等
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
