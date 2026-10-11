@@ -168,18 +168,45 @@ export function lengthHint(text){
     : `共 ${n} 個字母`;
 }
 
-function qZh2En(w){
+/** 中文意思拆成一段一段（「結尾；末端」→ 結尾、末端），去掉括號註解與空白 */
+const zhParts = zh => String(zh ?? '').replace(/[（(][^）)]*[）)]/g, '').split(/[；;、，,/]/).map(x => x.trim()).filter(Boolean);
+/** 兩個中文意思有沒有共同的一段（end 的「結束」和 finish 的「結束」） */
+export const sharesZh = (a, b) => { const pb = zhParts(b); return zhParts(a).some(x => pb.includes(x)); };
+/** 同一份字表裡，另一個字也有和 sense 相同的中文意思 —— 只看中文提示時，這些字都說得通 */
+export const synonymsOf = (w, sense, all) => (all ?? []).filter(x => x !== w && x.id !== w.id && !/\s/.test(x.term)
+  && (x.senses ?? []).some(o => o.zh && sharesZh(o.zh, sense.zh)));
+
+function qZh2En(w, all){
   const s = pick(w.senses);
   if (!s?.zh) return null;
-  return {
+  // 練習不是考試：另一個字也有同樣的中文意思，寫那個字也算對，解說裡再提醒差別
+  const alike = synonymsOf(w, s, all);
+  const base = {
     mode: 'zh2en', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
-    prompt: '寫出這個中文意思的英文單字',
-    question: s.zh, hint: `${s.pos}　${abbrevHint(w.term) || lengthHint(w.syllables || w.term)}`.trim(),
     inputMode: 'text', blanks: 1,
-    answer: [w.term],
-    explain: `${w.term}（${w.syllables}）${s.pos} ${s.zh}` + (w.spellTip ? `\n拼字：${w.spellTip}` : ''),
     meta: { senseIdx: w.senses.indexOf(s) },
   };
+  const tail = (w.spellTip ? `\n拼字：${w.spellTip}` : '');
+  const f = alike.length && s.example ? findForm(s.example, w.term) : null;
+  if (f){
+    // 有同義字：用情境分辨。挖空的例句加上中文句子，句子裡只有這個字放得進去
+    const inflected = norm(f.text) !== norm(w.term);
+    return { ...base,
+      prompt: '看情境，把單字填進句子裡',
+      question: s.example.slice(0, f.start) + '______' + s.example.slice(f.end),
+      hint: `${s.pos}　${s.zh}` + (s.exampleZh ? `\n${s.exampleZh}` : ''),
+      answer: [f.text], alsoAccept: inflected ? [w.term] : [],
+      explain: `${s.example}\n${s.exampleZh ?? ''}\n${w.term}（${w.syllables}）${s.pos} ${s.zh}` +
+        `\n注意：${alike.map(x => x.term).join('、')} 也有「${s.zh}」的意思，要看句子的搭配來選。` + tail };
+  }
+  // 沒有例句可用：只好兩個字都收，並在解說提醒
+  return { ...base,
+    prompt: '寫出這個中文意思的英文單字',
+    question: s.zh, hint: `${s.pos}　${abbrevHint(w.term) || lengthHint(w.syllables || w.term)}`.trim(),
+    answer: [w.term],
+    alsoAccept: alike.map(x => x.term),
+    explain: `${w.term}（${w.syllables}）${s.pos} ${s.zh}` + tail
+      + (alike.length ? `\n也可以寫 ${alike.map(x => x.term).join('、')}（也有「${s.zh}」的意思），這題兩個都算對。` : '') };
 }
 
 function qEn2Zh(w, all){
@@ -215,7 +242,7 @@ function qListen(w){
   };
 }
 
-function qCloze(w){
+function qCloze(w, all){
   const cands = (w.senses ?? []).map((s, i) => ({ s, i, f: findForm(s.example, w.term) }))
     .filter(x => x.f);
   if (!cands.length) return null;
@@ -225,7 +252,8 @@ function qCloze(w){
   return {
     mode: 'cloze', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
     prompt: '把單字填進句子裡',
-    question: display, hint: s.zh ? `${s.pos}　${s.zh}` : null,
+    // 字表裡有別的字也是這個中文意思時，多給字母數，免得兩個字都填得進去
+    question: display, hint: s.zh ? `${s.pos}　${s.zh}` + (synonymsOf(w, s, all).length ? `（${lengthHint(w.term)}）` : '') : null,
     inputMode: 'text', blanks: 1,
     answer: [f.text],
     alsoAccept: inflected ? [w.term] : [],

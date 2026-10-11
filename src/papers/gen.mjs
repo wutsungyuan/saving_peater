@@ -3,7 +3,7 @@
 // 題目格式沿用既有的練習題（inputMode: choice | text），新增 order（排序）與 open（開放題）。
 
 import { generate as generateGrammar } from '../exercises.mjs';
-import { WORD_BUILDERS, findForm } from '../wordset.mjs';
+import { WORD_BUILDERS, findForm, synonymsOf } from '../wordset.mjs';
 
 // ---------- 小工具（亂數由呼叫端提供，測試才能固定）----------
 const mk = rng => ({
@@ -55,8 +55,10 @@ function zh2enChoice(w, all, rng){
   const { pick, shuffle } = mk(rng);
   const sense = pick(sensesZh(w)); if (!sense) return null;
   const answer = w.term;
-  const others = all.filter(x => x !== w && !/\s/.test(x.term) && lc(x.term) !== lc(answer));
-  const confusable = (w.confusable ?? []).map(c => c.word).filter(t => t && !/\s/.test(t) && lc(t) !== lc(answer));
+  // 中文意思相同的字（end / finish 都是「結束」）不能當干擾選項，不然兩個都對
+  const alike = new Set(synonymsOf(w, sense, all).map(x => lc(x.term)));
+  const others = all.filter(x => x !== w && !/\s/.test(x.term) && lc(x.term) !== lc(answer) && !alike.has(lc(x.term)));
+  const confusable = (w.confusable ?? []).map(c => c.word).filter(t => t && !/\s/.test(t) && lc(t) !== lc(answer) && !alike.has(lc(t)));
   const similar = others.filter(x => lev(lc(x.term), lc(answer)) <= 3).map(x => x.term);
   const samePos = others.filter(x => (x.senses ?? []).some(s => s.pos === sense.pos)).map(x => x.term);
   const d = [];
