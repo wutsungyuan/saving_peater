@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { MODEL } from './analyzer.mjs';
 import { PORT, MAX_CHARS, MAX_SENTENCES, CONCURRENCY, HOST, AUTH_ON, AUTH_USER, AUTH_PASS, HISTORY_DAYS, PAPER_KEEP, QUESTION_MAX, isLoopback } from './config.mjs';
 import { cache, seeded } from './context.mjs';
-import { serveStatic } from './http.mjs';
+import { serveStatic, roleOf } from './http.mjs';
 import { routes as analyzeRoutes } from './routes/analyze.mjs';
 import { routes as practiceRoutes } from './routes/practice.mjs';
 import { routes as wordRoutes } from './routes/words.mjs';
@@ -14,10 +14,11 @@ import { routes as articleRoutes } from './routes/articles.mjs';
 import { routes as paperRoutes } from './routes/papers.mjs';
 import { routes as authRoutes } from './routes/auth.mjs';
 import { routes as jobRoutes } from './routes/jobs.mjs';
+import { routes as adminRoutes } from './routes/admin.mjs';
 import { setRoutes } from './internal.mjs';
 import { resumeJobs } from './jobs.mjs';
 
-const ROUTES = [...authRoutes, ...analyzeRoutes, ...practiceRoutes, ...wordRoutes, ...articleRoutes, ...paperRoutes, ...jobRoutes];
+const ROUTES = [...authRoutes, ...analyzeRoutes, ...practiceRoutes, ...wordRoutes, ...articleRoutes, ...paperRoutes, ...jobRoutes, ...adminRoutes];
 setRoutes(ROUTES);                  // 申請單核准後的背景執行，要能把請求交給同一份路由表
 
 const server = createServer(async (req, res) => {
@@ -28,6 +29,11 @@ const server = createServer(async (req, res) => {
       await route.handler(req, res, url);
       // 處理完就結束；沒送出任何回應就繼續比對下一條（和原本 if 串列的行為一致）
       if (res.headersSent || res.writableEnded) return;
+    }
+    // 老師後台：學生登入的話明確擋掉（沒登入的照樣送頁面，頁面自己會跳出登入框）
+    if (req.method === 'GET' && /^\/admin\/?$/.test(url.pathname) && roleOf(req, url) === 'student'){
+      res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end('<!doctype html><meta charset="utf-8"><title>後台</title><p style="font:16px sans-serif;margin:2em">這個頁面只有老師能用。<a href="/">回到練習頁</a></p>');
     }
     if (req.method === 'GET') return await serveStatic(req, res, url);
     res.writeHead(405); res.end('method not allowed');

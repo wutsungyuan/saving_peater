@@ -210,6 +210,11 @@ function requestRoles(db){
   db.exec(`ALTER TABLE requests ADD COLUMN by_role TEXT;`);
 }
 
+/** 第 9 版：老師可以把分析有誤的句子標成「排除出題」。句子仍在快取裡（畫面照常顯示），只是練習與測驗卷不再用它出題。 */
+function sentenceExcluded(db){
+  db.exec(`ALTER TABLE sentences ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;`);
+}
+
 export const MIGRATIONS = [
   { version: 1, name: 'baseline', up: baseline },
   { version: 2, name: 'articles', up: articles },
@@ -219,4 +224,5 @@ export const MIGRATIONS = [
   { version: 6, name: 'session-roles', up: sessionRoles },
   { version: 7, name: 'jobs', up: jobs },
   { version: 8, name: 'request-roles', up: requestRoles },
+  { version: 9, name: 'sentence-excluded', up: sentenceExcluded },
 ];

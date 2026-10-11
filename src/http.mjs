@@ -91,7 +91,7 @@ const HEAD = `<!doctype html>
 `;
 
 export async function serveStatic(req, res, url){
-  let rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+  let rel = url.pathname === '/' || /^\/admin\/?$/.test(url.pathname) ? 'index.html' : url.pathname.slice(1);      // /admin 是同一份頁面，由頁面依網址切成後台
   rel = pathNormalize(rel).replace(/^(\.\.[/\\])+/, '');
   const file = join(WEB, rel);
   if (!file.startsWith(WEB)){ res.writeHead(403); return res.end('forbidden'); }

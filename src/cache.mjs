@@ -209,6 +209,50 @@ export function openCache(file = 'data/cache.db'){
       return Number(db.prepare("DELETE FROM jobs WHERE status IN ('done','failed','rejected','cancelled') AND created_at < ?").run(Date.now() - days * 86400_000).changes);
     },
 
+    // ---------- 句子管理（老師後台）----------
+    /** 被排除出題的句子 hash 集合（測驗卷的素材池用） */
+    excludedHashes(){ return new Set(db.prepare('SELECT hash FROM sentences WHERE excluded = 1').all().map(r => r.hash)); },
+    /** 列出已分析的句子。q：比對原文與翻譯；filter：all | excluded | issue（有問題：無法分析或有錯誤標註）| outscope（超出範圍）| unused（沒有被任何文章用到） */
+    sentenceList({ q = '', filter = 'all', limit = 50, offset = 0 } = {}){
+      const where = [], p = [];
+      if (q){ where.push('(s.original LIKE ? OR s.result LIKE ?)'); p.push('%' + q + '%', '%' + q + '%'); }
+      if (filter === 'excluded') where.push('s.excluded = 1');
+      else if (filter === 'issue') where.push("(s.issue IS NOT NULL OR s.result LIKE '%\"type\":\"error\"%')");
+      else if (filter === 'outscope') where.push('s.in_scope = 0');
+      else if (filter === 'unused') where.push('NOT EXISTS (SELECT 1 FROM article_items i WHERE i.hash = s.hash)');
+      const W = where.length ? 'WHERE ' + where.join(' AND ') : '';
+      const total = Number(db.prepare(`SELECT COUNT(*) n FROM sentences s ${W}`).get(...p).n);
+      const rows = db.prepare(`SELECT s.hash, s.original, s.result, s.pattern_id, s.tense_time, s.tense_aspect, s.in_scope, s.issue, s.speaker,
+          s.hits, s.created_at, s.excluded, s.model,
+          (SELECT COUNT(*) FROM article_items i WHERE i.hash = s.hash) used
+        FROM sentences s ${W} ORDER BY s.created_at DESC, s.hash LIMIT ? OFFSET ?`).all(...p, limit, offset);
+      return { total, items: rows.map(r => {
+        let tr = '', errors = 0;
+        try { const d = JSON.parse(r.result); tr = d.translation ?? ''; errors = (d.notes ?? []).filter(n => n.type === 'error').length; } catch {}
+        return { hash: r.hash, original: r.original, translation: tr, patternId: r.pattern_id, tense: r.tense_time ? `${r.tense_time}-${r.tense_aspect}` : null,
+          inScope: r.in_scope == null ? null : Boolean(r.in_scope), issue: r.issue, errors, speaker: r.speaker, hits: r.hits, createdAt: r.created_at,
+          excluded: Boolean(r.excluded), model: r.model, usedInArticles: Number(r.used) };
+      }) };
+    },
+    sentenceRow(hash){ return db.prepare('SELECT * FROM sentences WHERE hash = ?').get(String(hash)) ?? null; },
+    /** 這一句被哪些文章表用到 */
+    sentenceUsage(hash){
+      return db.prepare(`SELECT DISTINCT a.id, a.name FROM article_items i JOIN articles a ON a.id = i.article_id WHERE i.hash = ? ORDER BY a.name`).all(String(hash));
+    },
+    setSentenceExcluded(hash, flag){ return Number(db.prepare('UPDATE sentences SET excluded = ? WHERE hash = ?').run(flag ? 1 : 0, String(hash)).changes); },
+    /** 刪除一句。被文章表用到的不能刪（文章會缺句），回 { error:'in-use', articles } */
+    deleteSentence(hash){
+      const used = this.sentenceUsage(hash);
+      if (used.length) return { error: 'in-use', articles: used };
+      return { deleted: Number(db.prepare('DELETE FROM sentences WHERE hash = ?').run(String(hash)).changes) };
+    },
+    /** 重新分析前先把舊的拿掉；失敗時用 restoreSentenceRow 放回去 */
+    removeSentenceRow(hash){ db.prepare('DELETE FROM sentences WHERE hash = ?').run(String(hash)); },
+    restoreSentenceRow(row){
+      const cols = Object.keys(row);
+      db.prepare(`INSERT OR REPLACE INTO sentences (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map(c => row[c]));
+    },
+
     /** 作答紀錄用過哪些使用者代碼、各有多少作答、最早與最近一筆。合併舊代碼前先看這個。 */
     userTokens(){
       const m = new Map();
@@ -345,7 +389,7 @@ export function openCache(file = 'data/cache.db'){
     /** 取出可出題的句子（之後 M4 可依弱點加權） */
     pickSentences(limit = 40){
       return db.prepare(`SELECT hash, result, speaker, context FROM sentences
-        WHERE issue IS NULL AND pattern_id IS NOT NULL
+        WHERE issue IS NULL AND pattern_id IS NOT NULL AND excluded = 0
         ORDER BY RANDOM() LIMIT ?`).all(limit)
         .map(r => { try {
           const data = JSON.parse(r.result);

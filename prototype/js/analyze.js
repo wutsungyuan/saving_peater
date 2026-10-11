@@ -74,6 +74,9 @@ fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
   const needLogin = h.authRequired && !h.loggedIn && !TOKEN;
   if (needLogin) showTokenBanner(LOGIN_AVAIL ? '請先登入。' : '這個網站需要存取碼才能使用。請輸入存取碼（只要輸入一次，這個瀏覽器會記住）。');
   const lo = document.getElementById('logoutBtn'); if (lo) lo.hidden = !(LOGIN_AVAIL && h.loggedIn);
+  // 老師：前台與後台之間的連結。學生沒有後台。
+  el('adminLink').hidden = h.role !== 'teacher' || isAdminApp();
+  el('frontLink').hidden = h.role !== 'teacher' || !isAdminApp();
   hintEl.textContent = needLogin
     ? '請先登入才能使用。'
     : `已連上分析後端（${h.model}）。可貼上一句話或一段文章，上限 ${h.maxChars} 字 / ${h.maxSentences} 句。`;

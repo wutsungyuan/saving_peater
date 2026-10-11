@@ -3,6 +3,7 @@
 <link rel="stylesheet" href="app.css">
 
 <div class="page">
+<script>document.body.dataset.app = /^\/admin(\/|$)/.test(location.pathname) ? 'admin' : 'front';</script>
   <aside class="rail rail-l" id="rail-c"></aside>
 
   <div class="center">
@@ -11,18 +12,22 @@
       <h1>英文句型解剖</h1>
       <p id="intro">貼上一句話或一段文章，逐句標出五大句型的成分、每個字的詞性、時態與繁體中文翻譯。原句一個字元都不會被改動 —— 成分代號浮在句子上方，詞性標在下方，游標移到任一個字會說明它的詞性與在句中的角色。</p>
       <button class="more" id="introMore" hidden>看說明</button>
+      <a class="linky switch-app" id="adminLink" href="/admin" hidden>進入後台</a>
+      <a class="linky switch-app" id="frontLink" href="/" hidden>回到前台</a>
       <button class="linky logout" id="logoutBtn" type="button" hidden>登出</button>
     </header>
 
     <div class="tabs" role="group" aria-label="切換功能">
-      <button data-view="words" aria-pressed="true">單字</button>
-      <button data-view="sentence" aria-pressed="false">句子</button>
-      <button data-view="article" aria-pressed="false">文章</button>
+      <button data-view="words" aria-pressed="true"><span class="front-lbl">單字</span><span class="admin-lbl">單字表</span></button>
+      <button data-view="sentence" aria-pressed="false" class="front-only">句子</button>
+      <button data-view="article" aria-pressed="false"><span class="front-lbl">文章</span><span class="admin-lbl">文章表</span></button>
       <button data-view="exam" aria-pressed="false">測驗卷</button>
-      <button data-view="weak" aria-pressed="false">弱點</button>
+      <button data-view="weak" aria-pressed="false" class="front-only"><span class="front-lbl">弱點</span></button>
       <button data-view="jobs" aria-pressed="false" class="student-only">我的申請<span class="bdg" id="jobsBadgeS" hidden></span></button>
-      <button data-view="jobs" aria-pressed="false" class="teacher-only">待審<span class="bdg" id="jobsBadgeT" hidden></span></button>
-      <button data-view="history" aria-pressed="false" class="teacher-only">歷史</button>
+      <button data-view="jobs" aria-pressed="false" class="admin-only">待審<span class="bdg" id="jobsBadgeT" hidden></span></button>
+      <button data-view="sentences" aria-pressed="false" class="admin-only">句子</button>
+      <button data-view="students" aria-pressed="false" class="admin-only">學生紀錄</button>
+      <button data-view="history" aria-pressed="false" class="admin-only">費用與用量</button>
     </div>
 
     <div class="backbar" id="backBar" hidden><button class="linky" type="button" id="backBtn"></button></div>
@@ -36,6 +41,25 @@
       <p class="msg" id="jobsMsg"></p>
       <div id="jobsHead"></div>
       <div id="jobsList"></div>
+    </div>
+
+    <div id="view-sentences" hidden>
+      <div class="box">
+        <div class="row">
+          <input type="search" id="snQ" class="grow" placeholder="搜尋句子：英文或中文翻譯" autocomplete="off" aria-label="搜尋句子">
+          <select id="snFilter" aria-label="篩選"></select>
+          <span class="hint" id="snCount"></span>
+        </div>
+        <p class="hint" style="margin:8px 0 0">分析有誤的句子可以「排除出題」：畫面照常顯示，但練習和測驗卷不再用它出題。被文章表用到的句子不能刪。</p>
+      </div>
+      <div id="snList"></div>
+      <div class="row"><button type="button" id="snMore" hidden>載入更多</button></div>
+    </div>
+
+    <div id="view-students" hidden>
+      <p class="hint">學生的作答紀錄（單字測驗、句子練習、測驗卷）。</p>
+      <div id="studHead"></div>
+      <div id="studCharts"></div>
     </div>
 
     <div id="view-history" hidden>
@@ -52,7 +76,7 @@
         <div class="chips" id="wsList"></div>
         <div class="setbar" id="wsBar">
           <span class="hint" id="wsSelInfo"></span>
-          <button class="linky danger teacher-only" id="wsDel">刪除目前字表</button>
+          <button class="linky danger admin-only" id="wsDel">刪除目前字表</button>
         </div>
         <div id="wsForm" hidden>
           <div class="dest">
@@ -91,9 +115,9 @@
         <div class="subrow">
           <div class="subtabs" role="group" aria-label="切換單字清單與測驗">
             <button data-pane="list" aria-pressed="true">單字清單</button>
-            <button data-pane="quiz" aria-pressed="false">單字測驗</button>
+            <button data-pane="quiz" aria-pressed="false" class="front-only">單字測驗</button>
           </div>
-          <button id="wsAnalyze" class="linky teacher-only" hidden></button>
+          <button id="wsAnalyze" class="linky admin-only" hidden></button>
         </div>
 
         <div id="pane-list">
@@ -236,7 +260,7 @@
     <div class="subrow">
       <div class="subtabs" id="arTabs" role="group" aria-label="切換文章表與新增文章">
         <button data-ap="articles" aria-pressed="true">文章表</button>
-        <button data-ap="new" aria-pressed="false">新增文章</button>
+        <button data-ap="new" aria-pressed="false" class="front-only">新增文章</button>
       </div>
     </div>
     <div id="ar-new" hidden></div>
@@ -249,7 +273,7 @@
             <label for="artSets" class="hint">標出單字表的字</label>
             <select id="artSets"><option value="">不標</option></select>
             <button class="linky" type="button" id="artRename">改名</button>
-            <button class="linky danger teacher-only" type="button" id="artDelete">刪除</button>
+            <button class="linky danger admin-only" type="button" id="artDelete">刪除</button>
           </span>
         </div>
         <div id="artConfirm" hidden></div>
@@ -293,4 +317,5 @@
 <script src="js/articles.js"></script>
 <script src="js/papers.js"></script>
 <script src="js/jobs.js"></script>
+<script src="js/admin.js"></script>
 <script src="js/init.js"></script>

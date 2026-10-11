@@ -9,7 +9,7 @@ const fx = makeFixture('peater-multi-');
 let page, code = 1;
 try {
   const S = await start('ui-papers-multi', {}, { dbFile: fx.dbFile });
-  page = await openPage(S.base + '/', { width: 900, height: 1200, settle: 2500 });
+  page = await openPage(S.base + '/admin', { width: 900, height: 1200, settle: 2500 });
   const { evl, until, click } = page;
   const set = (sel, v) => evl(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); e.value = ${JSON.stringify(v)}; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   const ready = () => until(`!document.getElementById('pStart').disabled`, 15000);

@@ -2,7 +2,7 @@
 // 每條路由是 { match, handler }。handler 沒有送出回應時，server 會繼續比對下一條（和原本的 if 串列一致）。
 import { generate, grade, TYPES } from '../exercises.mjs';
 import { cache } from '../context.mjs';
-import { readBody, pool, authed, userOf } from '../http.mjs';
+import { readBody, pool, authed, roleOf, userOf } from '../http.mjs';
 import { redoQuestions } from './shared.mjs';
 
 export const routes = [
@@ -89,7 +89,8 @@ export const routes = [
     match: (req, url) => url.pathname === '/api/weakness',
     handler: async (req, res, url) => {
       if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
-      const userToken = userOf(req, url, url.searchParams.get('user'));
+      // 老師在後台看學生的紀錄：as=student。其他人帶這個參數無效。
+      const userToken = url.searchParams.get('as') === 'student' && roleOf(req, url) === 'teacher' ? 'student' : userOf(req, url, url.searchParams.get('user'));
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify(cache.weakness(userToken, url.searchParams.get('source') || 'all'), null, 2));
     },

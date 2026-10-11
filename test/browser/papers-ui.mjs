@@ -10,7 +10,7 @@ const fx = makeFixture('peater-ui-');
 let page, code = 1;
 try {
   const S = await start('ui-papers', {}, { dbFile: fx.dbFile });
-  page = await openPage(S.base + '/', { width: 900, height: 1200, settle: 2500 });
+  page = await openPage(S.base + '/admin', { width: 900, height: 1200, settle: 2500 });
   const { evl, until, click, type, wait } = page;
   const set = (sel, v) => evl(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); e.value = ${JSON.stringify(v)}; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   const text = sel => evl(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ''`);

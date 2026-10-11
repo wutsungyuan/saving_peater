@@ -48,7 +48,10 @@ function wkSection(title, cap, rows){
 }
 
 // 弱點頁的來源：all 全部、quiz 單字測驗、practice 句子練習、exam 測驗卷
-let wkSource = 'all';
+// 弱點頁的兩個版本：前台是自己的紀錄；後台「學生紀錄」是學生的（as=student，只有老師能這樣看），沒有練習用的按鈕
+const WK_FRONT = { head: 'weakHead', charts: 'weakCharts', tabsId: 'wkTabs', source: 'all', as: null, cta: true };
+const WK_STUDENT = { head: 'studHead', charts: 'studCharts', tabsId: 'studTabs', source: 'all', as: 'student', cta: false };
+const loadStudentRecords = () => loadWeakness(WK_STUDENT);
 const WK_SOURCES = [['all', '全部'], ['quiz', '單字測驗'], ['practice', '句子練習'], ['exam', '測驗卷']];
 
 /** 句子面向：五大句型、時態、代名詞格位、詞性、題型（資料來自 attempts） */
@@ -126,46 +129,46 @@ function wkExamSections(w){
   return trend + sec;
 }
 
-async function loadWeakness(){
-  const head = document.getElementById('weakHead');
-  const charts = document.getElementById('weakCharts');
+async function loadWeakness(ctx = WK_FRONT){
+  const head = document.getElementById(ctx.head);
+  const charts = document.getElementById(ctx.charts);
   charts.innerHTML = '<p class="msg">載入中…</p>';
   try {
-    const w = await fetch(`/api/weakness?user=${encodeURIComponent(USER)}&source=${wkSource}`).then(r => r.json());
+    const w = await fetch(`/api/weakness?user=${encodeURIComponent(USER)}&source=${ctx.source}${ctx.as ? '&as=' + ctx.as : ''}`).then(r => r.json());
     const o = w.overall || { total: 0, correct: 0 };
     const S = w.sources || {};
-    const tabs = `<div class="subrow"><div class="subtabs" id="wkTabs" role="group" aria-label="切換弱點的來源">${WK_SOURCES.map(([k, zh]) => {
+    const tabs = `<div class="subrow"><div class="subtabs" id="${ctx.tabsId}" role="group" aria-label="切換弱點的來源">${WK_SOURCES.map(([k, zh]) => {
       const n = k === 'all' ? (S.practice?.total || 0) + (S.quiz?.total || 0) + (S.exam?.total || 0) : S[k]?.total || 0;
-      return `<button data-src="${k}" aria-pressed="${k === wkSource}">${zh}${n ? `<small> ${n}</small>` : ''}</button>`;
+      return `<button data-src="${k}" aria-pressed="${k === ctx.source}">${zh}${n ? `<small> ${n}</small>` : ''}</button>`;
     }).join('')}</div></div>`;
 
     if (!o.total && !(w.papers && (w.papers.trend.length || w.papers.bySection.length))){
       head.innerHTML = tabs;
-      charts.innerHTML = `<div class="wk-empty">${wkSource === 'all' ? '還沒有作答紀錄。<br>先到「單字」做單字測驗、或到「句子」做句子練習，這裡就會統計你的正確率，並在之後出題時優先挑你最弱的部分。'
-        : `「${WK_SOURCES.find(x => x[0] === wkSource)[1]}」還沒有作答紀錄。`}</div>`;
+      charts.innerHTML = `<div class="wk-empty">${ctx.source === 'all' ? '還沒有作答紀錄。<br>' + (ctx.as ? '學生做過單字測驗、句子練習或測驗卷之後，這裡就會統計。' : '先到「單字」做單字測驗、或到「句子」做句子練習，這裡就會統計你的正確率，並在之後出題時優先挑你最弱的部分。')
+        : `「${WK_SOURCES.find(x => x[0] === ctx.source)[1]}」還沒有作答紀錄。`}</div>`;
       return;
     }
 
     const pct = o.total ? Math.round(o.correct / o.total * 100) : null;
     const wordWeak = Boolean(w.words?.weakest?.length);
     head.innerHTML = tabs + `<div class="wk-hero">
-      <div><div class="n">${pct == null ? '—' : pct + '%'}</div><div class="lbl">${wkSource === 'all' ? '整體' : WK_SOURCES.find(x => x[0] === wkSource)[1]}正確率<br>${o.correct} / ${o.total} 題</div></div>
+      <div><div class="n">${pct == null ? '—' : pct + '%'}</div><div class="lbl">${ctx.source === 'all' ? '整體' : WK_SOURCES.find(x => x[0] === ctx.source)[1]}正確率<br>${o.correct} / ${o.total} 題</div></div>
       <div class="sep"></div>
       <div><div class="lbl" style="margin:0">句子練習出題時會依句型、時態等數字加權，<br>
         最弱的維度出現機率最高（全錯約 2.5 倍、全對約 0.25 倍）。單字則靠間隔複習，沒背熟的字優先出現。</div></div>
-      <span class="cta">${wkSource !== 'quiz' && wkSource !== 'exam' || w.byPattern?.length ? '<button class="primary" id="weakPractice">針對弱點練習句子</button>' : ''}
-        ${wordWeak ? '<button id="weakWords">複習單字</button>' : ''}</span></div>`;
+      <span class="cta">${ctx.cta && (ctx.source !== 'quiz' && ctx.source !== 'exam' || w.byPattern?.length) ? '<button class="primary" id="weakPractice">針對弱點練習句子</button>' : ''}
+        ${ctx.cta && wordWeak ? '<button id="weakWords">複習單字</button>' : ''}</span></div>`;
 
     // 總覽：全部時列出三個來源各自的正確率，一眼看出哪一塊最弱
-    const overview = wkSource === 'all' ? wkSection('各來源', '單字測驗、句子練習、測驗卷各自累計的正確率。',
+    const overview = ctx.source === 'all' ? wkSection('各來源', '單字測驗、句子練習、測驗卷各自累計的正確率。',
       [['quiz', '單字測驗'], ['practice', '句子練習'], ['exam', '測驗卷']]
         .map(([k, zh]) => wkRow(zh, '', S[k]?.correct ?? 0, S[k]?.total ?? 0)).join('')) : '';
 
     charts.innerHTML = overview
-      + (wkSource === 'quiz' ? '' : wkSource === 'exam' ? wkExamSections(w) : '')
-      + (wkSource === 'quiz' ? wkWordSections(w) : '')
-      + (wkSource === 'all' || wkSource === 'practice' || wkSource === 'exam' ? wkSentenceSections(w) : '')
-      + (wkSource === 'all' ? wkWordSections(w) + wkExamSections(w) : '')
+      + (ctx.source === 'quiz' ? '' : ctx.source === 'exam' ? wkExamSections(w) : '')
+      + (ctx.source === 'quiz' ? wkWordSections(w) : '')
+      + (ctx.source === 'all' || ctx.source === 'practice' || ctx.source === 'exam' ? wkSentenceSections(w) : '')
+      + (ctx.source === 'all' ? wkWordSections(w) + wkExamSections(w) : '')
       || '<div class="wk-empty">這個來源還沒有可以統計的內容。</div>';
 
     document.getElementById('weakPractice')?.addEventListener('click', () => {
@@ -180,9 +183,12 @@ async function loadWeakness(){
     charts.innerHTML = `<p class="msg">載入失敗：${esc(e.message)}</p>`;
   }
 }
-document.getElementById('weakHead').addEventListener('click', e => {
-  const b = e.target.closest('#wkTabs button[data-src]');
-  if (!b || b.dataset.src === wkSource) return;
-  wkSource = b.dataset.src;
-  loadWeakness();
-});
+// 來源切換：前台（自己的）與後台「學生紀錄」各一組
+for (const ctx of [WK_FRONT, WK_STUDENT]){
+  el(ctx.head).addEventListener('click', e => {
+    const b = e.target.closest('#' + ctx.tabsId + ' button[data-src]');
+    if (!b || b.dataset.src === ctx.source) return;
+    ctx.source = b.dataset.src;
+    loadWeakness(ctx);
+  });
+}

@@ -22,7 +22,7 @@ const rememberedOpen = () => { try { return localStorage.getItem(pOpenKey); } ca
 
 // ---- 導覽列：出卷／歷史 ----
 const pNav = () => `<div class="subrow"><div class="subtabs" role="group" aria-label="測驗卷">
-  <button data-pt="setup" class="teacher-only" aria-pressed="${P.tab === 'setup' || P.tab === 'run' || P.tab === 'result'}">出卷</button>
+  <button data-pt="setup" class="admin-only" aria-pressed="${P.tab === 'setup' || P.tab === 'run' || P.tab === 'result'}">出卷</button>
   <button data-pt="history" aria-pressed="${P.tab === 'history'}">歷史</button></div></div>`;
 
 async function loadPaperHome(){
@@ -30,7 +30,7 @@ async function loadPaperHome(){
   if (P.tab === 'run' && P.paper) return renderRun();
   if (P.tab === 'result' && P.paper) return renderResult();
   if (P.tab === 'history') return loadHistory2();
-  if (document.body.dataset.role === 'student'){ P.tab = 'history'; return loadHistory2(); }      // 學生不能出卷，只看自己的卷子
+  if (!isAdminApp()){ P.tab = 'history'; return loadHistory2(); }      // 前台只看卷子（學生與老師都一樣）；出卷在後台
   pBox().innerHTML = '<p class="msg">讀取中…</p>';
   const [s, a, ol] = await Promise.all([
     fetch(`/api/wordsets?user=${encodeURIComponent(USER)}`).then(r => r.json()).catch(() => ({ sets: [] })),
@@ -393,7 +393,7 @@ function renderResult(){
   ${pending.length ? `<div class="box p-note">有 ${pending.length} 題（造句、翻譯）要由你自評：看過參考答案後，標「我答對了」或「沒答對」，分數會更新。自評不計入弱點統計。</div>` : ''}
   ${aiBox(r)}
   <div class="row"><button class="primary" data-act2="fix" ${wrong.length + pending.filter(id => r.items.find(x => x.id === id).marked === false).length || wrong.length ? '' : 'disabled'}>訂正錯題</button>
-    <button data-act2="print-ans">列印答案卷</button><button data-act2="again" class="teacher-only">再出一份</button><button data-act2="to-setup" class="teacher-only">回到出卷</button></div>
+    <button data-act2="print-ans">列印答案卷</button><button data-act2="again" class="admin-only">再出一份</button><button data-act2="to-setup" class="admin-only">回到出卷</button></div>
   <p class="hint" id="pFixMsg"></p>
   ${wrong.length ? `<h3 class="p-h">答錯的題（${wrong.length}）</h3>${wrong.map(card).join('')}` : ''}
   ${pending.length ? `<h3 class="p-h">待自評（${pending.length}）</h3>${pending.map(card).join('')}` : ''}
@@ -418,7 +418,7 @@ async function loadHistory2(){
     <td>${new Date(p.createdAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
     <td>${p.kind === 'fix' ? '<span class="tag t-model">訂正</span> ' : ''}${p.n} 題${p.kind === 'fix' ? '' : `・${esc(p.difficultyName || '')}`}<br><small>${esc(names([...(p.setIds || []), ...(p.articleIds || [])]))}</small></td>
     <td>${p.status === 'submitted' ? (p.kind === 'fix' ? '已完成' : `<b>${fmtPts(p.score)}</b> 分`) : '作答中'}</td>
-    <td><button class="linky" data-open="${p.id}">${p.status === 'submitted' ? '看結果' : '繼續'}</button> <button class="linky danger teacher-only" data-del="${p.id}">刪除</button></td></tr>`).join('')}</tbody></table></div>`
+    <td><button class="linky" data-open="${p.id}">${p.status === 'submitted' ? '看結果' : '繼續'}</button> <button class="linky danger admin-only" data-del="${p.id}">刪除</button></td></tr>`).join('')}</tbody></table></div>`
     : '<div class="box"><p style="margin:0">還沒有出過卷子。</p></div>'}
   <p class="hint">歷史只用快取存放：保留 ${r.json.keepDays} 天、最近 20 份，到期自動清除。答題統計（弱點）另外保存，不會跟著清除。</p>`;
 }

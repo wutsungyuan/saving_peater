@@ -10,8 +10,8 @@ const fx = makeFixture('peater-stuui-');
 fx.cache.db.close?.();
 const T = { user: 'teacher1', pass: 'tpass-1' }, K = { user: 'kid1', pass: 'kpass-2' };
 let pages = [], code = 1;
-const login = async (base, who) => {
-  const p = await openPage(base + '/', { width: 1000, height: 1100, settle: 2500 });
+const login = async (base, who, path = '/') => {
+  const p = await openPage(base + path, { width: 1000, height: 1100, settle: 2500 });
   pages.push(p);
   await p.until(`!!document.getElementById('loginUser')`);
   await p.type('#loginUser', who.user); await p.type('#loginPass', who.pass);
@@ -30,7 +30,7 @@ try {
   chk('看得到單字、句子、文章、測驗卷、弱點', await s.evl(`['words','sentence','article','exam','weak'].every(v => getComputedStyle(document.querySelector('.tabs button[data-view="' + v + '"]')).display !== 'none')`));
   await s.until(`document.querySelectorAll('#wsList .chip, #wsList button').length > 0`, 8000);
   chk('單字：沒有「刪除目前字表」、「批次分析例句」；「新增字表」改成「申請新增字表」', !(await shown(s, '#wsDel')) && !(await shown(s, '#wsAnalyze')) && await shown(s, '#wsNew .student-label') && !(await shown(s, '#wsNew .teacher-label')));
-  chk('單字：分頁有「我的申請」、沒有「待審」', await shown(s, '.tabs button.student-only') && !(await shown(s, '.tabs button.teacher-only[data-view="jobs"]')));
+  chk('單字：分頁有「我的申請」、沒有「待審」', await shown(s, '.tabs button.student-only') && !(await shown(s, '.tabs button.admin-only[data-view="jobs"]')));
   chk('單字搜尋框還在', await shown(s, '#wsSearch'));
   await s.click('.tabs button[data-view="exam"]');
   chk('測驗卷：沒有「出卷」，直接是自己的卷子列表', await s.until(`!!document.querySelector('#pr-paper') && getComputedStyle(document.querySelector('#pr-paper [data-pt="setup"]')).display === 'none' && !document.getElementById('pStart')`, 8000));
@@ -42,11 +42,12 @@ try {
   chk('沒有 JS 錯誤', s.errors.length === 0, s.errors.join(' | '));
 
   section('老師');
-  const t = await login(S.base, T);
+  const t = await login(S.base, T, '/admin');
+  chk('登入後是後台', await t.until(`document.body.dataset.app === 'admin'`));
   chk('登入後 body 標著 teacher', await t.until(`document.body.dataset.role === 'teacher'`));
-  chk('有「歷史」分頁', await shown(t, '.tabs button[data-view="history"]'));
+  chk('後台有「費用與用量」分頁', await shown(t, '.tabs button[data-view="history"]'));
   await t.until(`document.querySelectorAll('#wsList .chip, #wsList button').length > 0`, 8000);
-  chk('單字：有「新增字表」，分頁有「待審」', await shown(t, '#wsNew .teacher-label') && await shown(t, '.tabs button.teacher-only[data-view="jobs"]'));
+  chk('單字：有「新增字表」，分頁有「待審」', await shown(t, '#wsNew .teacher-label') && await shown(t, '.tabs button.admin-only[data-view="jobs"]'));
   await t.click('.tabs button[data-view="exam"]');
   chk('測驗卷：有「出卷」與開始出卷鈕', await t.until(`getComputedStyle(document.querySelector('#pr-paper [data-pt="setup"]')).display !== 'none'`, 8000));
   chk('沒有 JS 錯誤', t.errors.length === 0, t.errors.join(' | '));

@@ -797,3 +797,28 @@ body:not([data-role="student"]) .student-only{display:none !important}
 body[data-role="student"] .teacher-label{display:none}
 body:not([data-role="student"]) .student-label{display:none}
 #jobsMsg:empty{display:none}
+
+/* 前台與後台：同一份頁面，依網址（body[data-app]）切換分頁與按鈕 */
+body[data-app="admin"] .front-only,body[data-app="admin"] .front-lbl{display:none !important}
+body:not([data-app="admin"]) .admin-only,body:not([data-app="admin"]) .admin-lbl{display:none !important}
+body[data-app="admin"] .tabs button[data-view="jobs"]{order:1}
+body[data-app="admin"] .tabs button[data-view="exam"]{order:2}
+body[data-app="admin"] .tabs button[data-view="words"]{order:3}
+body[data-app="admin"] .tabs button[data-view="article"]{order:4}
+body[data-app="admin"] .tabs button[data-view="sentences"]{order:5}
+body[data-app="admin"] .tabs button[data-view="students"]{order:6}
+body[data-app="admin"] .tabs button[data-view="history"]{order:7}
+body[data-app="admin"] h1::after{content:"　後台";font-size:.5em;font-weight:500;color:var(--muted)}
+/* 老師在前台不新增字表（那是後台的事）；學生的「申請新增字表」照常 */
+body[data-app="front"][data-role="teacher"] #wsNew{display:none}
+.switch-app{position:absolute;top:10px;right:76px;font-size:.8rem}
+/* 句子管理 */
+.srow{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:12px 14px;margin:0 0 10px}
+.srow.ex{border-left:4px solid #b8821f}
+.srow-main{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.srow .en{font-family:var(--font-en);font-size:1.05rem;overflow-wrap:anywhere}
+.srow-zh{color:var(--muted);margin-top:2px}
+.srow-tags{font-size:.78rem;color:var(--faint);margin-top:6px}
+.srow-acts{margin-top:8px;align-items:center;gap:14px}
+.srow-detail{margin-top:10px;border-top:1px solid var(--rule);padding-top:10px}
+#snQ{flex:1;min-width:12em;font:inherit;padding:8px 10px;border:1px solid var(--rule);border-radius:3px;background:var(--surface);color:var(--fg)}

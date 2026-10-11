@@ -19,9 +19,11 @@ export function buildPool(cache, { setIds = [], articleIds = [], userToken = 'an
   const words = setIds.length ? cache.wordsOf(setIds, userToken) : [];
   const seen = new Set();
   const records = [];
+  const excluded = cache.excludedHashes();                 // 老師標成「不要用來出題」的句子
   const addRecord = (original, data) => {
     if (!data || !original || hasBlank(original)) return;
     const hash = cache.hashOf(original);
+    if (excluded.has(hash)) return;
     if (seen.has(hash)) return;
     seen.add(hash);
     records.push({ hash, data: { ...data, original: data.original ?? original } });

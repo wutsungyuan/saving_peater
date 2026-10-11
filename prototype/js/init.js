@@ -6,6 +6,7 @@
 // 擺在前面會踩到 TDZ，而且在 async 函式裡失敗還會被無聲吞掉。
 // 首頁預設停在「單字」，所以啟動時就要把字表載進來。
 document.body.dataset.view = 'words';   // 預設分頁，CSS 靠這個決定要不要顯示邊緣把手
+if (isAdminApp()) showView('jobs');     // 後台一進來先看待審
 if (API !== false) loadWordsets();
 
 // 手機上「顯示／詞性／朗讀」預設收起 —— 那三列會把句子卡推到很下面，

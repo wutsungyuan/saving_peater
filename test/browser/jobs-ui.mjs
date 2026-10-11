@@ -10,8 +10,8 @@ const fx = makeFixture('peater-jobsui-');
 fx.cache.db.close?.();
 const T = { user: 'teacher1', pass: 'tpass-1' }, K = { user: 'kid1', pass: 'kpass-2' };
 let pages = [], code = 1;
-const login = async (base, who, size = { width: 1000, height: 1100 }) => {
-  const p = await openPage(base + '/', { ...size, settle: 2500 });
+const login = async (base, who, path = '/', size = { width: 1000, height: 1100 }) => {
+  const p = await openPage(base + path, { ...size, settle: 2500 });
   pages.push(p);
   await p.until(`!!document.getElementById('loginUser')`);
   await p.type('#loginUser', who.user); await p.type('#loginPass', who.pass);
@@ -21,7 +21,7 @@ const login = async (base, who, size = { width: 1000, height: 1100 }) => {
 };
 try {
   const S = await start('ui-jobs', { AUTH_USER: T.user, AUTH_PASS: T.pass, STUDENT_USER: K.user, STUDENT_PASS: K.pass }, { dbFile: fx.dbFile });
-  const s = await login(S.base, K), t = await login(S.base, T);
+  const s = await login(S.base, K), t = await login(S.base, T, '/admin');
 
   section('學生：分析新句子 → 送申請');
   await s.click('.tabs button[data-view="sentence"]');
@@ -36,11 +36,11 @@ try {
   chk('分頁上的徽章：1', await s.until(`document.getElementById('jobsBadgeS').textContent === '1'`, 8000));
 
   section('老師：待審');
-  await t.click('.tabs button[data-view="jobs"].teacher-only');
+  await t.click('.tabs button[data-view="jobs"].admin-only');
   chk('「待審」有 1 張、顯示句數與預估費用', await t.until(`document.querySelectorAll('#jobsList .job').length === 1 && /2 句要請模型分析/.test(document.getElementById('jobsList').textContent) && /US\\$\\d/.test(document.getElementById('jobsList').textContent)`, 8000), await t.evl(`document.getElementById('jobsList').textContent.slice(0, 200)`));
   chk('可以看原文', await t.evl(`!!document.querySelector('.job-text pre') && /I like tea/.test(document.querySelector('.job-text pre').textContent)`));
   await t.click('[data-job="approve"]');
-  chk('核准後執行完成，列在「處理過的」，顯示實際花費', await t.until(`/完成/.test(document.getElementById('jobsList').textContent) && /實際花費/.test(document.getElementById('jobsList').textContent)`, 15000) || await (async () => { await t.click('.tabs button[data-view="jobs"].teacher-only'); return t.until(`/完成/.test(document.getElementById('jobsList').textContent)`, 8000); })());
+  chk('核准後執行完成，列在「處理過的」，顯示實際花費', await t.until(`/完成/.test(document.getElementById('jobsList').textContent) && /實際花費/.test(document.getElementById('jobsList').textContent)`, 15000) || await (async () => { await t.click('.tabs button[data-view="jobs"].admin-only'); return t.until(`/完成/.test(document.getElementById('jobsList').textContent)`, 8000); })());
   chk('模型被呼叫一次', S.calls().length === 1);
 
   section('學生：看到結果');
@@ -54,7 +54,7 @@ try {
   await s.type('#inp', 'Birds can fly high.');
   await s.click('#go');
   await s.until(`/已送出申請/.test(document.getElementById('usageBar').textContent)`, 8000);
-  await t.click('.tabs button[data-view="jobs"].teacher-only');
+  await t.click('.tabs button[data-view="jobs"].admin-only');
   await t.until(`!!document.querySelector('[data-job="reject"]')`, 8000);
   await t.type('.jnote', '這週先不加');
   await t.click('[data-job="reject"]');
