@@ -20,6 +20,8 @@
       <button data-view="article" aria-pressed="false">文章</button>
       <button data-view="exam" aria-pressed="false">測驗卷</button>
       <button data-view="weak" aria-pressed="false">弱點</button>
+      <button data-view="jobs" aria-pressed="false" class="student-only">我的申請<span class="bdg" id="jobsBadgeS" hidden></span></button>
+      <button data-view="jobs" aria-pressed="false" class="teacher-only">待審<span class="bdg" id="jobsBadgeT" hidden></span></button>
       <button data-view="history" aria-pressed="false" class="teacher-only">歷史</button>
     </div>
 
@@ -28,6 +30,12 @@
     <div id="view-weak" hidden>
       <div id="weakHead"></div>
       <div id="weakCharts"></div>
+    </div>
+
+    <div id="view-jobs" hidden>
+      <p class="msg" id="jobsMsg"></p>
+      <div id="jobsHead"></div>
+      <div id="jobsList"></div>
     </div>
 
     <div id="view-history" hidden>
@@ -40,7 +48,7 @@
     <div id="view-words">
       <div class="box">
         <div class="lblrow"><label>單字表</label>
-          <button id="wsNew" class="linky teacher-only">＋ 新增字表</button></div>
+          <button id="wsNew" class="linky"><span class="teacher-label">＋ 新增字表</span><span class="student-label">＋ 申請新增字表</span></button></div>
         <div class="chips" id="wsList"></div>
         <div class="setbar" id="wsBar">
           <span class="hint" id="wsSelInfo"></span>
@@ -65,7 +73,7 @@
             </div>
           </div>
           <div class="row">
-            <button id="wsPhoto">拍照／選課本照片</button>
+            <button id="wsPhoto" class="teacher-only">拍照／選課本照片</button>
             <input type="file" id="wsFile" accept="image/*" multiple hidden>
             <span class="hint">也可以把圖片直接拖進來，或按 <b id="pasteKey">⌘V</b> 貼上。辨識完會填進上面的框，核對後再按建立。</span>
           </div>
@@ -284,4 +292,5 @@
 <script src="js/nav.js"></script>
 <script src="js/articles.js"></script>
 <script src="js/papers.js"></script>
+<script src="js/jobs.js"></script>
 <script src="js/init.js"></script>

@@ -20,7 +20,7 @@ try {
   const { evl, until, click, type, wait } = page;
 
   section('頂層分頁與子頁');
-  chk('頂層：單字、句子、文章、測驗卷、弱點、歷史', await evl(`[...document.querySelectorAll('.tabs button')].map(b => b.textContent.trim()).join() === '單字,句子,文章,測驗卷,弱點,歷史'`));
+  chk('頂層（老師看到的）：單字、句子、文章、測驗卷、弱點、待審、歷史', await evl(`[...document.querySelectorAll('.tabs button')].filter(b => getComputedStyle(b).display !== 'none').map(b => b.textContent.trim()).join() === '單字,句子,文章,測驗卷,弱點,待審,歷史'`));
   chk('單字底下：單字清單、單字測驗', await evl(`[...document.querySelectorAll('#view-words .subtabs button')].map(b => b.textContent.trim()).join() === '單字清單,單字測驗'`));
   chk('沒有獨立的「句子練習」頂層分頁', await evl(`!document.getElementById('view-practice') && ![...document.querySelectorAll('.tabs button')].some(b => /練習/.test(b.textContent))`));
   await click('.tabs button[data-view="sentence"]');

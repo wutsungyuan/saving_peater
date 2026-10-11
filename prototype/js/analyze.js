@@ -150,7 +150,7 @@ async function analyzeLive(text, opts = {}){
       method: 'POST',
       signal: ctrl.signal,
       headers: { 'content-type': 'application/json', ...(TOKEN ? { 'x-auth-token': TOKEN } : {}) },
-      body: JSON.stringify({ text, article: opts.article === true }),
+      body: JSON.stringify({ text, article: opts.article === true, ...(opts.saveAs ? { saveAs: opts.saveAs } : {}) }),
     });
     if (!res.ok){
       const e = await res.json().catch(() => ({}));
@@ -215,11 +215,27 @@ async function analyzeLive(text, opts = {}){
           usageBar.hidden = false;
           markUnfinished(slots, settled, total, '沒有送出分析');
           paint();
+        } else if (ev === 'approval'){
+          // 學生：沒分析過的句子要老師核准。已經出來的是快取命中的，其餘標成「等老師核准」
+          summary.pending = d.jobId; summary.pendingCount = d.toAnalyze;
+          for (let i = 0; i < total; i++){
+            if (settled.has(i)) continue;
+            slots.set(i, `<article class="sent"><div class="badges"><span class="badge idx">${i + 1}</span>
+              <span class="badge warn">等老師核准</span></div>
+              <div class="body"><p class="zh" style="border:0;padding:0;margin:0">這句還沒分析過，已送出申請。老師核准後會自動分析，之後再按「分析」就是瞬間出結果。</p></div></article>`);
+          }
+          paint();
+          usageBar.innerHTML = `<span class="u">📨 已送出申請：${d.toAnalyze} 句等老師核准。</span>
+            <button class="linky" type="button" id="goJobs">看我的申請</button>`;
+          usageBar.hidden = false;
+          usageBar.querySelector('#goJobs')?.addEventListener('click', () => showView('jobs'));
+          hintEl.textContent = d.reused ? '這份內容之前已經送出申請了，還在等老師核准。' : '已送出申請，老師核准後就能看到分析。';
         } else if (ev === 'progress'){
           done = d.done;
           hintEl.textContent = `分析中 ${done} / ${d.total} 句…`;
         } else if (ev === 'done'){
           gotDone = true; summary.done = true;
+          if (d.pendingApproval) continue;                  // 申請單已送出，沒有花費可顯示
           showUsage(d);
           hintEl.textContent = '可以再貼新的一段，或切到「句子練習」從這些句子出題。';
         }

@@ -313,6 +313,7 @@ pBox().addEventListener('click', async e => {
   if (e.target.id === 'pAi'){
     e.target.disabled = true; el('pAiMsg').textContent = '算報價中…';
     const q = await artApi('/api/paper-ai-grade', { method: 'POST', body: { id: P.paper.id } });
+    if (q.status === 202){ el('pAiMsg').textContent = '已送出申請，老師核准後會批改，結果在「我的申請」。'; return; }
     if (q.status !== 409){ e.target.disabled = false; el('pAiMsg').textContent = q.json.message || '無法批改'; return; }
     const est = q.json.quote.estimate;
     el('pAiBox').insertAdjacentHTML('beforeend', `<div class="quote" id="pAiQuote"><p>💰 報價：一次呼叫批改 <b>${q.json.quote.count}</b> 題，預估 <b>US$${est.low.toFixed(2)}–${est.high.toFixed(2)}</b>、約 ${est.seconds} 秒（${est.unit === 'history' ? '依你最近的批改紀錄估算' : '還沒有批改紀錄，用預設單價估算'}；上限已含第一次呼叫的暖機成本）。</p>
@@ -355,10 +356,11 @@ function fmtExpected(q, it){
 /** 請 AI 批改造句與翻譯：選用。先報價、你確認才呼叫（一次呼叫批改全部）。 */
 function aiCount(r){ return r.items.filter(it => (it.type === 'make' || it.type === 'trans') && !it.ai && (it.given || []).some(x => String(x).trim())).length; }
 function aiBox(r){
-  if (document.body.dataset.role === 'student') return '';
   if (P.paper.kind === 'fix') return '';
   const n = aiCount(r), done = r.items.filter(it => it.ai).length;
   if (!n) return done ? `<p class="hint">造句與翻譯已由 AI 批改（${done} 題）。你仍然可以在每題改自評。</p>` : '';
+  if (isStudentRole()) return `<div class="box" id="pAiBox"><p style="margin:0">造句和翻譯有 <b>${n}</b> 題，程式只能做基本檢查。想要更準確的批改，可以請老師核准後由 AI 批改。</p>
+    <div class="row"><button type="button" id="pAi">申請 AI 批改（${n} 題）</button><span class="hint" id="pAiMsg">不申請就維持自評。</span></div></div>`;
   return `<div class="box" id="pAiBox"><p style="margin:0">造句和翻譯有 <b>${n}</b> 題，程式只能做基本檢查。想要更準確的批改，可以請 AI 看一次（選用）。</p>
     <div class="row"><button type="button" id="pAi">請 AI 批改（${n} 題）</button><span class="hint" id="pAiMsg">先顯示報價，你確認才會呼叫模型；不按就維持自評，不花額度。</span></div></div>`;
 }

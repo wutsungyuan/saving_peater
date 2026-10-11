@@ -49,8 +49,17 @@ async function analyzeAsArticle(name, text){
   const p = q.json;
   const run = () => runArticle(name, text);
   if (!p.toAnalyze){ hintEl.textContent = `共 ${p.total} 句，全部分析過了，直接存成文章表。`; return run(); }
-  const mins = Math.max(1, Math.round(p.estimate.seconds / 60));
+  const mins = p.estimate ? Math.max(1, Math.round(p.estimate.seconds / 60)) : 0;      // 學生的報價沒有費用與時間
   const box = el('artConfirm');
+  if (isStudentRole()){          // 學生：沒分析過的句子要老師核准，這裡沒有費用，只有句數
+    box.innerHTML = `<p class="ac-title">這份文章共 ${p.total} 句，其中 <b>${p.toAnalyze} 句</b>還沒分析過，要送給老師核准${p.cached ? `（另外 ${p.cached} 句以前分析過，馬上就能看）` : ''}。</p>
+      <p class="hint">核准後會自動分析，並存成文章「${esc(name)}」。到「我的申請」看進度。</p>
+      <div class="row"><button class="primary" type="button" id="artGo">送出申請</button><button class="linky" type="button" id="artNo">取消</button></div>`;
+    box.hidden = false; hintEl.textContent = '';
+    el('artNo').onclick = () => { box.hidden = true; hintEl.textContent = '已取消，沒有送出申請。'; };
+    el('artGo').onclick = () => { box.hidden = true; analyzeLive(text, { article: true, saveAs: name }); };
+    return;
+  }
   box.innerHTML = `<p class="ac-title">這份文章共 ${p.total} 句，其中 <b>${p.toAnalyze} 句要請模型分析</b>${p.cached ? `（另外 ${p.cached} 句以前分析過，不花額度）` : ''}。</p>
     <p class="ac-cost">預估花費 <b>${money2(p.estimate.low)}～${money2(p.estimate.high)}</b>，約 ${mins} 分鐘。</p>
     <p class="hint">${p.truncated ? `超過 ${p.limits.maxSentences} 句的部分不會處理，也就不會存成文章表，請分批。` : ''}費用是依你最近的分析紀錄估的參考值。按下確定才會呼叫模型。</p>

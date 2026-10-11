@@ -777,3 +777,22 @@ header{position:relative}
 
 /* 學生登入時藏起老師才能用的功能（後端也會擋，這裡只是不顯示按了會失敗的按鈕） */
 body[data-role="student"] .teacher-only{display:none !important}
+
+/* 申請單：學生的「我的申請」與老師的「待審」 */
+body:not([data-role="student"]) .student-only{display:none !important}
+.bdg{display:inline-block;min-width:18px;height:18px;line-height:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--accent);color:var(--surface);font-size:.72rem;font-weight:700;text-align:center;font-family:var(--font-mono)}
+.tabs button[aria-pressed="true"] .bdg{background:var(--surface);color:var(--fg)}
+.job{background:var(--surface);border:1px solid var(--rule);border-left-width:4px;border-radius:4px;padding:12px 14px;margin:0 0 10px}
+.job.mid{border-left-color:#b8821f}.job.good{border-left-color:#0f6637}.job.bad{border-left-color:#a82a1e}
+.job-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.job-head b{flex:1;min-width:0;overflow-wrap:anywhere}
+.job-st{font-size:.8rem;color:var(--muted);white-space:nowrap}
+.job-meta{font-size:.78rem;color:var(--muted);margin-top:4px}
+.job-quote{margin:8px 0 0;font-size:.9rem}
+.job-res{margin:8px 0 0;font-size:.88rem}.job-res.bad{color:#a82a1e}
+.job-text pre{white-space:pre-wrap;font-family:var(--font-en);font-size:.9rem;margin:6px 0 0;max-height:12em;overflow:auto}
+.job-acts{margin-top:10px;align-items:center}
+.jnote{flex:1;min-width:8em;font:inherit;padding:6px 8px;border:1px solid var(--rule);border-radius:3px;background:var(--surface);color:var(--fg)}
+
+body[data-role="student"] .teacher-label{display:none}
+body:not([data-role="student"]) .student-label{display:none}

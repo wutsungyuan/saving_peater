@@ -153,6 +153,11 @@ async function submitWordset(appendTo){
       body: JSON.stringify({ name: el('wsName').value.trim() || null, text, appendTo: appendTo || undefined }),
     }).then(r => r.json());
     if (d.error){ el('wsHint').textContent = d.message || d.error; return; }
+    if (d.pending){        // 學生：整理單字要老師核准，已開申請單
+      el('wsHint').textContent = `已送出申請（${d.words} 個字）。老師核准後字表會自動建好，進度在「我的申請」。`;
+      el('wsText').value = ''; el('wsName').value = ''; el('wsForm').hidden = true; setFormMode(false);
+      return;
+    }
     const dup = d.skipped ? `（有 ${d.skipped} 個字那份已經有了，略過）` : '';
     el('wsHint').textContent = d.count
       ? (d.appended ? `已加入 ${d.count} 個字${dup}。` : `建立完成：${d.count} 個字。`)
@@ -224,6 +229,7 @@ function mergeWordLines(old, add){
 async function handleImageFile(files){
   const list = [].concat(files || []).filter(Boolean);
   if (!list.length) return;
+  if (isStudentRole()){ el('wsHint').textContent = '單字表的照片辨識要老師操作。你可以直接把單字打進上面的框，再按「建立新字表」送出申請。'; return; }
   el('wsPhoto').disabled = true; el('wsCreate').disabled = true;
   let ok = 0, dupTotal = 0, cost = 0; const failed = [];
   try {

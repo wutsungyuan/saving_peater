@@ -18,7 +18,7 @@ try {
   await wait(300);
 
   section('句子頁與文章頁');
-  chk('頂層分頁是 單字／句子／文章／測驗卷／弱點／歷史', await evl(`[...document.querySelectorAll('.tabs button')].map(b => b.textContent.trim()).join() === '單字,句子,文章,測驗卷,弱點,歷史'`));
+  chk('頂層分頁（老師）：單字／句子／文章／測驗卷／弱點／待審／歷史', await evl(`[...document.querySelectorAll('.tabs button')].filter(b => getComputedStyle(b).display !== 'none').map(b => b.textContent.trim()).join() === '單字,句子,文章,測驗卷,弱點,待審,歷史'`));
   chk('句子頁有「句子分析／句子練習」兩個子頁', await evl(`[...document.querySelectorAll('#snTabs button')].map(b => b.textContent.trim()).join() === '句子分析,句子練習'`));
   chk('句子分析：沒有文章名稱欄，按鈕是「分析」（只分析、不存）', await evl(`document.getElementById('artNameRow').hidden && document.getElementById('go').textContent.trim() === '分析'`));
   await click('.tabs button[data-view="article"]');

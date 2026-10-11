@@ -29,7 +29,8 @@ try {
   chk('看不到「歷史」分頁（費用與用量）', !(await shown(s, '.tabs button[data-view="history"]')));
   chk('看得到單字、句子、文章、測驗卷、弱點', await s.evl(`['words','sentence','article','exam','weak'].every(v => getComputedStyle(document.querySelector('.tabs button[data-view="' + v + '"]')).display !== 'none')`));
   await s.until(`document.querySelectorAll('#wsList .chip, #wsList button').length > 0`, 8000);
-  chk('單字：沒有「新增字表」、「刪除目前字表」、「批次分析例句」', !(await shown(s, '#wsNew')) && !(await shown(s, '#wsDel')) && !(await shown(s, '#wsAnalyze')));
+  chk('單字：沒有「刪除目前字表」、「批次分析例句」；「新增字表」改成「申請新增字表」', !(await shown(s, '#wsDel')) && !(await shown(s, '#wsAnalyze')) && await shown(s, '#wsNew .student-label') && !(await shown(s, '#wsNew .teacher-label')));
+  chk('單字：分頁有「我的申請」、沒有「待審」', await shown(s, '.tabs button.student-only') && !(await shown(s, '.tabs button.teacher-only[data-view="jobs"]')));
   chk('單字搜尋框還在', await shown(s, '#wsSearch'));
   await s.click('.tabs button[data-view="exam"]');
   chk('測驗卷：沒有「出卷」，直接是自己的卷子列表', await s.until(`!!document.querySelector('#pr-paper') && getComputedStyle(document.querySelector('#pr-paper [data-pt="setup"]')).display === 'none' && !document.getElementById('pStart')`, 8000));
@@ -45,7 +46,7 @@ try {
   chk('登入後 body 標著 teacher', await t.until(`document.body.dataset.role === 'teacher'`));
   chk('有「歷史」分頁', await shown(t, '.tabs button[data-view="history"]'));
   await t.until(`document.querySelectorAll('#wsList .chip, #wsList button').length > 0`, 8000);
-  chk('單字：有「新增字表」', await shown(t, '#wsNew'));
+  chk('單字：有「新增字表」，分頁有「待審」', await shown(t, '#wsNew .teacher-label') && await shown(t, '.tabs button.teacher-only[data-view="jobs"]'));
   await t.click('.tabs button[data-view="exam"]');
   chk('測驗卷：有「出卷」與開始出卷鈕', await t.until(`getComputedStyle(document.querySelector('#pr-paper [data-pt="setup"]')).display !== 'none'`, 8000));
   chk('沒有 JS 錯誤', t.errors.length === 0, t.errors.join(' | '));
