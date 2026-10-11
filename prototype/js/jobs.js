@@ -75,7 +75,7 @@ async function loadJobs(){
   jobsCache = r.jobs;
   setJobsBadge(r.pending, r.jobs);
   if (isStudentRole()){
-    head.innerHTML = `<p class="hint">要請模型分析的內容（新的句子、照片、單字表、AI 批改）會先送給老師，核准後才會執行。已經分析過的句子不用申請，馬上就能看。</p>`;
+    head.innerHTML = `<p class="hint">還沒分析過的新句子、新的單字表、AI 批改，要先送給老師核准才會做。已經分析過的句子不用申請，馬上就能看。</p>`;
     list.innerHTML = r.jobs.length ? r.jobs.map(j => jobCard(j, false)).join('') : '<div class="box"><p style="margin:0">還沒有申請。</p></div>';
     return;
   }

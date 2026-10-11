@@ -2,11 +2,11 @@
 
 | 項目 | 內容 |
 |---|---|
-| 文件版本 | 1.0 |
-| 對應程式 | `main` 分支 commit `3143efa` 之後（含測驗卷多份並存、單字同義字情境題） |
-| 撰寫日期 | 2026-10-11 |
+| 文件版本 | 2.0（加入學生與老師的前後台、花費關卡、後台管理） |
+| 對應程式 | `dev` 分支，包含第 0～5 階段改版（資料表第 5～10 版）；併進 `main` 後以 `main` 為準 |
+| 撰寫日期 | 2026-10-12（第 1 版 2026-10-11） |
 | 讀者 | 維護者、日後接手的開發者 |
-| 範圍 | 整個系統：分析、單字表、文章表、句子練習、測驗卷、弱點統計、登入與維運 |
+| 範圍 | 整個系統：分析、單字表、文章表、句子練習、測驗卷、弱點統計、登入與角色、花費關卡（申請單）、老師後台、維運 |
 
 > 本文依目前程式碼重新整理而成。與 README 重疊的使用說明不在此重複，這裡著重「為什麼這樣設計」「各部分怎麼接在一起」「有什麼限制」。
 
@@ -32,6 +32,7 @@
 | 結果可信 | 模型輸出一律經程式驗證／校正（代名詞格位、原句比對、題目驗證）；對不上就重送或略過 | 偶爾多花一次呼叫 |
 | 花費透明 | 凡會呼叫模型的操作先「報價」（dry run），使用者確認才執行；每次呼叫記錄用量 | 多一步確認 |
 | 區網安全 | 預設只聽 127.0.0.1；對外必須設帳密 | 單一帳號，無帳號管理 |
+| 學生與老師分開 | 兩組帳號、兩個入口（`/` 與 `/admin`）；**花額度的操作學生只能「申請」，老師核准才執行**，由後端強制（不只是藏按鈕） | 老師要審核；學生新句子不是即時的 |
 
 ### 1.3 名詞
 
@@ -77,15 +78,30 @@ flowchart LR
 
 ### 2.2 功能分頁
 
-| 分頁 | 功能 | 是否可能花模型額度 |
+同一份前端（`prototype/`），依網址切成**前台**（`/`）與**後台**（`/admin`，只有老師）。
+
+**前台**（學生練習用；老師也能進，記在 `teacher` 身分）
+
+| 分頁 | 內容 | 可能花額度 |
 |---|---|---|
-| 分析 → 即時分析 | 貼文字／拍照 → 斷句 → 逐句分析 → 卡片顯示；可存成文章表 | 是（先報價） |
-| 分析 → 文章表 | 檢視文章、展開分析、標出單字表涵蓋、改名、刪除 | 否 |
-| 單字 → 單字清單／單字測驗 | 建立字表（貼上／拍照）、五種＋三態模式測驗、批次分析例句 | 建字表、分析例句時是；測驗否 |
-| 句子練習 | 從分析過的句子反向出題（句型、時態、詞性、三態、改錯、代名詞） | 否 |
-| 測驗卷 | 出卷（範圍、題數、難度、題型）→ 作答 → 交卷 → 訂正／自評／AI 批改 → 歷史 | 視難度與題型（先報價） |
-| 弱點 | 各維度正確率；出題時依弱點加權 | 否 |
-| 歷史 | 近期請求紀錄與用量 | 否 |
+| 單字 | 清單與搜尋（中英文、跨字表）、單字測驗（五種＋三態模式、Leitner） | 否 |
+| 句子 | 句子分析（貼文字／拍照，只分析不存）、句子練習 | 學生：新句子要申請；老師：先報價 |
+| 文章 | 文章表（看、展開分析、改名）、新增文章（分析並存成文章） | 同上 |
+| 測驗卷 | 只看與作答已發佈的卷子；交卷後訂正、自評、申請 AI 批改 | 申請 AI 批改才花 |
+| 弱點 | 單字測驗、句子練習、測驗卷綜合，可切換來源 | 否 |
+| 我的申請（學生） | 自己送出的申請單、撤回、看結果 | 否 |
+
+**後台**（老師）
+
+| 分頁 | 內容 |
+|---|---|
+| 待審 | 申請單佇列：報價、原文、核准／拒絕／重新執行；處理過的與實際花費 |
+| 測驗卷 | 出卷（先報價）、草稿編修（改名、換題、刪題）、發佈與收回、看學生逐題作答、刪除 |
+| 單字表 | 新增（貼上／拍照）、批次分析例句、刪除 |
+| 文章表 | 看、改名、刪除 |
+| 句子 | **句子管理**：搜尋、篩選、看完整分析、排除出題、重新分析、刪除 |
+| 學生紀錄 | 學生的弱點統計（唯讀）＋**整理（刪除）紀錄** |
+| 費用與用量 | 近期請求紀錄與用量 |
 
 ### 2.3 技術堆疊
 
@@ -110,18 +126,19 @@ saving_peater/
 │  ├─ config.mjs          環境變數 → 常數
 │  ├─ context.mjs         開啟資料庫（含種子快取）
 │  ├─ http.mjs            readBody / sendJson / pool / authed / decodeImage / serveStatic
-│  ├─ auth.mjs            帳密登入、session、鎖定
+│  ├─ auth.mjs            兩組帳密登入、角色、session、鎖定
 │  ├─ analyzer.mjs        呼叫模型分析、重試、JSON 解析、代名詞格位校正
 │  ├─ segment.mjs         斷句、對話拆分
 │  ├─ articles.mjs        文章 → 段落 → 句子
 │  ├─ wordset.mjs         單字表整理、單字題型、批改、讀圖
 │  ├─ exercises.mjs       句子練習出題（程式）
 │  ├─ cache.mjs           全部 SQL（句子、字表、作答、文章、卷子、session…）
-│  ├─ migrate.mjs / migrations.mjs   版本化遷移（v1~v4）
+│  ├─ migrate.mjs / migrations.mjs   版本化遷移（v1~v10）
 │  ├─ claude-bin.mjs      找 claude 執行檔、spawn
 │  ├─ cache-cli.mjs       種子快取匯入／清理的命令列
-│  ├─ routes/             analyze · practice · words · articles · papers · auth · shared
-│  └─ papers/             測驗卷：plan · pool · gen · model · validate · grade · aigrade · paper
+│  ├─ jobs.mjs / internal.mjs   申請單（花費關卡）與背景執行；內部呼叫（以老師身分重送請求給現有路由）
+│  ├─ routes/             analyze · practice · words · articles · papers · auth · jobs · admin · shared
+│  └─ papers/             測驗卷：plan · pool · gen · model · validate · grade · aigrade · paper · edit（草稿編修）
 ├─ prompts/               analyzer-system · analyze-ocr · wordset-system · wordset-ocr · exam-gen · exam-grade
 ├─ prototype/             前端：index.html · app.css · speech.js · js/*.js
 ├─ test/                  api/ · browser/ · 單元測試 · fake-claude.mjs
@@ -131,7 +148,7 @@ saving_peater/
 └─ README.md · MIGRATION.md
 ```
 
-規模（約）：後端 4,800 行、前端 JS 3,200 行、CSS 770 行、提示詞 1,000 行。
+規模（約）：後端 5,600 行、前端 JS 4,600 行、CSS 900 行、提示詞 1,000 行。
 
 ---
 
@@ -163,7 +180,10 @@ erDiagram
 | `articles` / `article_items` | v2 | 文章表只存 `(idx, para, hash)`；`para` 對話時是「第幾次發言」 | 永久 |
 | `papers` | v3 | 卷子：設定、題目（含答案）、作答、結果、狀態 `open/submitted`、分數 | `PAPER_DAYS`（30）天或最近 `PAPER_KEEP`（20）份，先到者為準 |
 | `questions` | v3 | 題庫：模型出的題 `type / src / ref / anchors / payload / used / wrong` | 上限 `QUESTION_MAX`（500）淘汰 |
-| `sessions` | v4 | 登入 session：**只存 cookie 的 SHA-256**、到期時間 | 過期自動清 |
+| 其他新增欄位 | v5～v9 | `attempts.source`／`word_attempts.source`（practice／quiz／exam）、`requests.by_role`（算學生每天辨識張數）、`sentences.excluded`（排除出題）；`papers.status` 多了 `draft` | — |
+| `sessions` | v4、v6 | 登入 session：**只存 cookie 的 SHA-256**、到期時間、`role`（teacher／student） | 過期自動清 |
+| `jobs` | v7 | 申請單：`kind`（analyze／ocr／wordset-ocr／wordset／ai-grade）、`status`（pending／approved／running／done／failed／rejected／cancelled）、`dedup`、`payload`（重送用的請求內容）、`quote`（只有老師看）、`result`、`cost_usd` | 結束超過 60 天清掉 |
+| `audit_log` | v10 | 後台不可復原操作的紀錄（誰、何時、條件、刪了多少、備份檔名） | 永久 |
 
 ### 4.2 設計決策
 
@@ -260,6 +280,8 @@ sequenceDiagram
 - **批次分析例句**：字表上方一鍵，每批寫快取、可中斷續跑；分析過的例句併入句子練習題庫。
 - **同義字判定**：`sharesZh`（中文意思拆段，比對是否有共同段）→ `synonymsOf`；測驗卷選擇題也用它剔除干擾選項。
 
+**搜尋與拆分**：單字清單上方有搜尋框（`GET /api/wordsearch`，跨全部字表比對單字、中文意思、字族與易混淆字、例句，排序：單字本身 > 中文 > 字族 > 例句）。課本常把相近字寫在同一行用 `/` 隔開（`normally / generally`、`hardly ever / almost never`），貼上文字與照片辨識都會拆成各自的單字（`splitAlternatives`；兩邊純英文才拆，`a.m./p.m.` 不拆）。
+
 ### 5.4 句子練習（`exercises.mjs`、`routes/practice.mjs`）
 
 由分析結果**反向生成**，1 毫秒、零成本、題目與解答必然與分析一致。
@@ -328,9 +350,21 @@ flowchart TD
 - **統計**：第一次交卷才記弱點與 Leitner；自評題不計入。
 - 歷史：列表可繼續／看結果／兩段確認刪除；列印試卷與答案卷。
 
+#### 5.5.6 草稿、編修與發佈（`papers/edit.mjs`）
+
+- 老師出卷（`draft:true`）先成為 **草稿**：學生的列表看不到、直接取回 410、不能存檔交卷。
+- 編修：改名；**換一題**（同範圍同題型、不在卷子裡、不呼叫模型；`ext-model` 只能刪）；**刪一題**（`rescore` 依各題型題數重新分配，滿分維持 100，至少 10 題）。閱讀、克漏字、文意選填的題目跟文章綁在一起，不能單題編修。
+- 發佈 → `open`；已發佈但學生還沒作答可「收回」；交卷後不能收回或改題。
+- 老師取卷子帶 `admin=1` 得到含答案與解說的版本；交卷後看得到學生每題的作答、對錯、參考答案，也能自評。
+- 清理：草稿不算進「最近 20 份」，不會因份數被清掉（過期才清，預設 90 天）。
+
 ### 5.6 弱點統計（`routes/practice.mjs`、`js/weakness.js`）
 
-四組維度：五大句型、必學 6 時態、詞性、題型（含測驗卷）。長條依正確率著色（紅／琥珀／綠）並同時顯示百分比與分數，不單靠顏色；作答數 <2 標「資料不足」；沒作答過的仍列出標「無資料」；超綱時態另列。
+- 作答紀錄標有**來源**（practice／quiz／exam，v5），弱點頁可切換 **全部、單字測驗、句子練習、測驗卷**，來源之間不混。
+- 句子面向：五大句型、必學 6 時態、詞性、代名詞格位、題型；**單字面向**：各題型、最弱的單字（至少 2 次）、各字表；**測驗卷**：最近 10 份的分數、各題型累計得分率（卷子是快取，所以是近期）。
+- 長條依正確率著色並同時顯示百分比與分數，不單靠顏色；作答數 <2 標「資料不足」。
+- 句子練習出題依句型、時態等正確率加權（`0.25 + (1 − 正確率) × 2.25`）；單字靠 Leitner。
+- 老師在後台「學生紀錄」用 `as=student` 看學生的（只有老師有效）。
 
 ### 5.7 朗讀（`prototype/speech.js`、`js/speak.js`）
 
@@ -341,59 +375,101 @@ flowchart TD
 
 ### 5.8 登入與驗證（`auth.mjs`、`http.mjs`）
 
-- 一組帳密（`AUTH_USER/AUTH_PASS`，只放在專案外的 `start.ps1`）。登入成功發隨機 32 位元組 session 碼，放 **HttpOnly、SameSite=Lax** cookie（`sp_session`，預設 90 天）；**資料庫只存其 SHA-256**，資料庫外流也拿不到可用碼。
+- **兩組帳密**：老師 `AUTH_USER/AUTH_PASS`、學生 `STUDENT_USER/STUDENT_PASS`（選填，不能和老師同名；沒設就和以前一樣只有一組＝老師），都只放在專案外的 `start.ps1`。登入成功發隨機 32 位元組 session 碼，放 **HttpOnly、SameSite=Lax** cookie（`sp_session`，預設 90 天）；**資料庫只存其 SHA-256**，並記下角色。
 - 比對先各自雜湊再 `timingSafeEqual`，帳號與密碼兩個都比，不因帳號錯提早結束。
 - **鎖定**：同一來源連續 5 次錯 → 鎖 5 分鐘。
-- 舊的 `AUTH_TOKEN`（`x-auth-token` 或 `?token=`）仍可用，給腳本與測試。
+- 舊的 `AUTH_TOKEN`（`x-auth-token` 或 `?token=`）仍可用，給腳本與測試，**等於老師**。沒設任何驗證（本機單人使用）一律當老師。
 - **公開端點只有**：`/api/health`、`/api/samples`、`/api/login`、`/api/logout`；其餘（含唯讀的歷史、統計、字表、弱點）都要驗證。沒設任何驗證時一律放行（僅適合 127.0.0.1）。
 - 前端：`window.fetch` 包裝在 401 時自動顯示登入表單（或存取碼輸入框）；有登出鈕。
+
+### 5.9 花費關卡：申請單（`jobs.mjs`、`internal.mjs`、`routes/jobs.mjs`）
+
+```mermaid
+sequenceDiagram
+  participant S as 學生
+  participant API as 後端
+  participant T as 老師後台
+  participant W as 背景執行（一次一張）
+  S->>API: 分析新句子／辨識超過免審張數／建字表／AI 批改
+  API->>API: 快取命中的照常即時回；其餘開申請單（同內容沿用同一張）
+  API-->>S: approval 事件／202（沒有費用資訊）
+  T->>API: 核准（看報價）
+  API->>W: 排隊
+  W->>API: internalCall：以老師身分重送同一個請求
+  API-->>S: 結果進快取，學生再看就是瞬間且免費
+```
+
+- **只有 5 個花錢點被攔**：分析（含 `saveAs` 存成文章）、句子照片辨識、單字表照片辨識、建單字表、AI 批改；其餘（單字測驗、句子練習、看分析）不花額度。
+- **重用現有流程**：`internalCall` 用假的 req/res 把請求交給同一份路由表（`req.internal` 視為老師），行為與老師自己按完全一致；不另外維護「背景版」。
+- 學生拍照辨識**每天有免審張數**（`STUDENT_OCR_PER_DAY`，句子與單字表合計，用 `requests.by_role` 計數），超過才開申請單。辨識完後面的分析、建字表仍要核准。
+- 學生看到的報價只有句數，API 與畫面都沒有費用；老師的 `quote` 有句數、預估費用區間、時間。
+- 狀態機：pending → approved → running → done／failed；pending 可 rejected（附理由）或學生 cancelled；failed 可 retry。伺服器重啟時 running／approved 的會接著做。照片在辨識完（或被拒絕、撤回）後從 payload 清掉。
+
+### 5.10 老師後台（`/admin`、`routes/admin.mjs`）
+
+- **入口**：`GET /admin`（同一份 `index.html`，前端依網址設 `body[data-app]`）；學生登入時伺服器回 403 頁面，沒登入照送（頁面自己跳出登入框）。老師從 `/` 用連結進去，不自動導。
+- **句子管理**：`GET /api/admin/sentences`（搜尋、篩選：issue／excluded／outscope／unused、分頁）、`sentence`（完整分析與用在哪些文章）、`sentence-exclude`（`sentences.excluded`，練習 `pickSentences` 與測驗卷 `buildPool` 都略過）、`sentence-reanalyze`（先報價；先移除舊的，失敗用 `restoreSentenceRow` 放回，排除標記保留）、DELETE（被文章表用到的 409）。
+- **整理學生紀錄**：`records-preview` / `records-delete`。條件：類別、日期起迄（本機時間，迄含當天）、單字表、是否連熟練度；只動 `user_token != 'teacher'`。刪除前 `VACUUM INTO` 備份（`backups/`，留 10 份）、單一交易、寫 `audit_log`；沒有符合條件時不備份。
+- **學生紀錄**：同「弱點」的資料（`as=student`）但沒有練習用的按鈕。
+
+---
 
 ---
 
 ## 6. 介面設計（HTTP API）
 
-「驗證」欄：公＝公開；驗＝需登入或存取碼（`AUTH_ON` 為真時）。
+「驗證」欄：公＝公開；驗＝需登入或存取碼；**師＝只有老師**（學生 403）。
 
 | 方法 路徑 | 驗證 | 說明 |
 |---|---|---|
-| GET `/api/health` | 公 | 模型、上限、`authRequired / loginAvailable / loggedIn`、快取數 |
+| GET `/api/health` | 公 | 模型、上限、`authRequired / loginAvailable / loggedIn`、`role`、`studentAccount`、快取數 |
+| GET `/api/wordsearch` | 驗 | 單字搜尋（中英文、跨全部字表） |
+| GET `/api/jobs` · `/api/jobs-count` | 驗 | 申請單列表／徽章數字（老師看全部含報價與花費；學生只看自己的、沒有費用） |
+| POST `/api/job-decide` | 師 | 核准、拒絕（附理由）、重新執行 |
+| POST `/api/job-cancel` | 驗 | 學生撤回自己還沒審的申請 |
+| GET `/api/admin/sentences` · `/api/admin/sentence` | 師 | 句子列表（搜尋、篩選、分頁）、完整分析與使用情形 |
+| POST `/api/admin/sentence-exclude` · `sentence-reanalyze` · DELETE `/api/admin/sentence` | 師 | 排除出題、重新分析（先報價）、刪除（被文章用到的 409） |
+| POST `/api/admin/records-preview` · `records-delete` | 師 | 整理學生紀錄：預覽、確認後備份並刪除 |
+| POST `/api/paper-edit` | 師 | 卷子改名、換題、刪題、發佈、收回 |
 | POST `/api/login` `/api/logout` | 公 | 帳密登入／登出 |
 | GET `/api/samples` | 公 | 範例句分類（從快取取真實句子） |
-| POST `/api/analyze` | 驗 | SSE；`{text, article?, dryRun?}` |
-| POST `/api/analyze-ocr` | 驗 | 圖片 → 英文文字（不分析） |
-| GET `/api/history` `/api/stats` | 驗 | 請求紀錄、用量統計 |
-| GET/POST/DELETE `/api/wordsets` | 驗 | 列表／建立（整理或附加）／刪除 |
-| POST `/api/wordset-ocr` | 驗 | 單字表照片 → 文字 |
+| POST `/api/analyze` | 驗 | SSE；`{text, article?, dryRun?, saveAs?}`。學生：快取命中的照常出，其餘開申請單（`approval` 事件）；dryRun 報價不含費用 |
+| POST `/api/analyze-ocr` | 驗 | 圖片 → 英文文字。學生每天有免審張數，超過回 202 申請 |
+| GET `/api/history` `/api/stats` | 師 | 請求紀錄、用量統計 |
+| GET/POST/DELETE `/api/wordsets` | 驗 | 列表／建立（學生 POST 回 202 申請）／刪除（只有老師） |
+| POST `/api/wordset-ocr` | 驗 | 單字表照片 → 文字（學生同上） |
 | GET `/api/wordset` | 驗 | 單一字表內容 |
-| POST `/api/wordset-analyze` | 驗 | 批次分析字表例句（串流、可續跑） |
+| POST `/api/wordset-analyze` | 師 | 批次分析字表例句（串流、每 8 句一批、可續跑） |
 | POST `/api/wordquiz` | 驗 | 單字測驗：出題／交卷批改 |
 | POST `/api/wordattempts` | 驗 | 單字作答（Leitner 更新） |
 | POST `/api/exercises` | 驗 | 句子練習出題 |
 | POST `/api/attempts` | 驗 | 句子練習交卷批改 |
-| GET `/api/weakness` | 驗 | 弱點統計 |
+| GET `/api/weakness` | 驗 | 弱點統計；`source`（all／practice／quiz／exam）；老師可帶 `as=student` |
 | GET/POST/DELETE `/api/articles` | 驗 | 文章表清單／附加／刪除 |
 | GET `/api/article` · POST `/api/article-rename` | 驗 | 內容、改名 |
-| POST `/api/paper-preview` | 驗 | 配題、分數、素材、報價（不花錢） |
-| GET/POST/DELETE `/api/papers` | 驗 | 歷史清單／出卷（`confirm`）／刪除 |
-| GET `/api/paper` | 驗 | 取一份卷子（作答中或結果） |
+| POST `/api/paper-preview` | 師 | 配題、分數、素材、報價（不花錢） |
+| GET/POST/DELETE `/api/papers` | 驗 | 歷史清單（學生看不到草稿）／出卷（只有老師；`draft`、`confirm`）／刪除（只有老師） |
+| GET `/api/paper` | 驗 | 取一份卷子；老師帶 `admin=1` 得到含答案的版本 |
 | POST `/api/paper-save` `paper-submit` `paper-self` | 驗 | 存檔、交卷、自評 |
-| POST `/api/paper-ai-grade` | 驗 | AI 批改（含報價） |
+| POST `/api/paper-ai-grade` | 驗 | AI 批改（含報價）；學生回 202 申請 |
 | POST `/api/paper-redo` | 驗 | 訂正卷 |
 
-通用約定：錯誤回 `{error, message?}`；`410` 表示題目已失效；`409` 表示狀態不符（例如已交卷）；`401 {error:'unauthorized'}`；`413` 超過字數或圖片大小；額度用盡以 `rate-limit` 類型回報。
+通用約定：錯誤回 `{error, message?}`；`410` 表示題目已失效；`409` 表示狀態不符（例如已交卷、草稿不能交卷、被文章用到的句子不能刪）；`401 {error:'unauthorized'}`；`403 {error:'forbidden'}`（學生打老師的功能）；`413` 超過字數或圖片大小；`202 {pending, jobId}`（學生的花錢操作已開申請單）；額度用盡以 `rate-limit` 類型回報。
 
-靜態檔：`GET /` 送 `prototype/index.html`（補 doctype、charset、viewport 骨架，`cache-control: no-cache`，因前端是多個獨立檔案，不能讓瀏覽器拿到新舊混搭）。
+靜態檔：`GET /` 與 `GET /admin`（及 `/admin/`）送同一份 `prototype/index.html`（學生登入時 `/admin` 回 403 頁面）（補 doctype、charset、viewport 骨架，`cache-control: no-cache`，因前端是多個獨立檔案，不能讓瀏覽器拿到新舊混搭）。
 
 ---
 
 ## 7. 前端設計（`prototype/`）
 
 - **載入順序**：`index.html` 依序載入 `core.js`（共用工具、渲染句子、詞性標籤排版、圖例抽屜）→ `analyze.js` / `articles.js` / `words.js` / `practice.js` / `papers.js` / `weakness.js` / `history.js` …→ `init.js`。全部是 classic script 共用全域，不用 bundler。
-- **分頁**：單字、分析、句子練習、測驗卷、弱點、歷史為同層頂部分頁；分析下分「即時分析／文章表」，單字下分「清單／測驗」，測驗卷下分「出卷／歷史」。
+- **前台與後台共用一份頁面**：`body[data-app]`（`front`／`admin`，由網址決定，index.html 開頭的小腳本設定）與 `body[data-role]`（`teacher`／`student`，來自 `/api/health`）決定顯示什麼：`.front-only`／`.admin-only`／`.student-only` 三個 class 加上少數 CSS 規則；分頁標籤用 `.front-lbl`／`.admin-lbl` 兩個 span 切換（「單字」↔「單字表」）。**這只是不顯示按了會失敗的按鈕，真正的擋是後端**。
+- **導覽**（`js/nav.js`）：頂層 `showView`；`jumpTo` 從單字、歷史、弱點等跳去別處時記下來源，目的地出現「← 返回○○」；「句子分析」與「新增文章」共用同一塊輸入與結果區（`#an-live`），切換時整塊搬到對應子頁，所以拍照、串流、朗讀、提示便條不用寫兩份。
+- **前台頂層**：單字、句子（句子分析／句子練習）、文章（文章表／新增文章）、測驗卷、弱點、我的申請（學生）；**後台頂層**：待審、測驗卷、單字表、文章表、句子、學生紀錄、費用與用量。
 - **句子呈現**：成分色線浮在句子上方、詞性標在下方；`layoutPosLabels()` 讓相鄰詞性標籤至少留 6px，行距視需要加大。單字提示便條（詞性、成分、三態）以 `pointerover/focusin` 觸發，電腦與手機（按住）都可用；即時分析與文章表展開卡各自掛處理。
 - **手機**（≤560px）：分頁可橫向捲、按鈕與選項 ≥40px、輸入框字級 16px（避免 iOS 放大）、圖例收到左右邊緣可滑出。
 - **對話顯示（方案 A）**：同一人的連續句框成一組（說話者、整段原文與翻譯、各句分析卡）。整段發言併成一張卡的做法（方案 B）決定不做。
-- **本機儲存**：使用者代碼、語音與速度、未完成的文章分析、作答中的卷子 id；一律包 try/catch，缺了也能正常運作。
+- **本機儲存**：朗讀語音與速度、未完成的文章分析、作答中的卷子 id（只是裝置上的便利，缺了也能運作）。學習紀錄的身分**不再**存在瀏覽器，由伺服器決定。一律包 try/catch。
 - **登入**：`window.fetch` 包裝＋`showTokenBanner`（有帳密則顯示登入表單，否則存取碼輸入）。
 
 ---
@@ -434,7 +510,9 @@ flowchart TD
 | 風險 | 對策 |
 |---|---|
 | 區網任何人花你的額度 | 預設 127.0.0.1；對外需 `HOST` 明確設定並建議帳密；啟動時對「對外且無驗證」顯示警告 |
+| 學生花你的額度 | 後端強制：學生呼叫分析／辨識／建字表／AI 批改只會開申請單；老師核准才執行。學生拿不到費用資訊；管理類 API（刪除、出卷、用量）對學生回 403 |
 | 暴力猜密碼 | 5 次錯鎖 5 分鐘（以來源位址計）；常數時間比對 |
+| 學生進後台 | `/admin` 對學生回 403；`/api/admin/*` 與管理類 API 一律先驗角色 |
 | session 外流 | HttpOnly、SameSite=Lax；資料庫存雜湊；可登出（刪除 session）；到期自動清 |
 | 憑證進版控 | 帳密只在專案外 `start.ps1`，程式與 git 不含；印出啟動腳本時要遮蔽 |
 | 命令注入 | `spawn` 不經 shell（`shell:true` 會讓使用者貼上的文字進命令列）；`CLAUDE_BIN` 可指定完整路徑 |
@@ -443,8 +521,9 @@ flowchart TD
 | 作弊／答案外洩 | 答案不隨題目下發，伺服端批改；聽考鈕整份測驗不提前唸答案 |
 | 輸入過大 | 字數、句數、本文大小上限；`readBody` 超限中斷 |
 | 資料外流 | 歷史原文 30 天後清除；圖片不落地保存 |
+| 誤刪學生紀錄 | 預覽→確認（前端兩次、後端 `confirm:true`）；刪前 `VACUUM INTO` 備份整個資料庫、單一交易、寫 `audit_log`；只動非 `teacher` 的紀錄 |
 
-已知限制：單一帳號；沒有 CSRF token（以 SameSite=Lax 與區網情境為前提）；未提供 HTTPS，若跨網路使用需自行放在反向代理後。
+已知限制：各只有一組老師與學生帳號；沒有 CSRF token（以 SameSite=Lax 與區網情境為前提）；未提供 HTTPS，若跨網路使用需自行放在反向代理後。
 
 ---
 
@@ -463,6 +542,8 @@ flowchart TD
 | `PORT` / `HOST` | 8787 / 127.0.0.1 | 監聽位址 |
 | `AUTH_USER` / `AUTH_PASS` | 空 | 帳密登入 |
 | `AUTH_TOKEN` | 空 | 舊式存取碼（腳本用） |
+| `STUDENT_USER` / `STUDENT_PASS` | 空 | 學生帳密（選填；沒設就只有老師一組）。不能和老師同名 |
+| `STUDENT_OCR_PER_DAY` | 10 | 學生每天免審直接辨識的照片張數（句子與單字表合計）；0＝一律申請 |
 | `SESSION_DAYS` | 90 | 登入有效天數 |
 | `ANALYZER_MODEL` | opus | 分析、讀圖用模型 |
 | `EXAM_MODEL` | sonnet | 測驗卷出題與批改用模型 |
@@ -479,12 +560,14 @@ flowchart TD
 
 ## 12. 測試設計
 
-`npm test` 串接約 14 組腳本，**全程不呼叫真模型**：
+`npm test` 串接約 24 組腳本（另有 `npm run test:browser` 約 12 組瀏覽器測試），**全程不呼叫真模型**：
 
 - **假 Claude CLI**（`test/fake-claude.mjs`）：依輸入產生合法輸出，並以環境變數注入故障——`FAKE_FAIL_AFTER`、`FAKE_FAIL_MATCH`、`FAKE_BAD_TEXT_FIRST`、`FAKE_EMPTY_FIRST`、`FAKE_EXAM_BAD_FIRST`、`FAKE_DELAY_MS`、`FAKE_GRADE_*`。
 - **API 測試**（`test/api/`）：以暫存資料庫起真伺服器，涵蓋合約、驗證與鎖定、文章表、批次與退回、對話、測驗卷（含模型出題、報價確認、省錢模式、重用題庫、AI 批改）。
 - **單元測試**：遷移、字數提示、JSON 解析、斷句、句子練習品質、配題計分、題目生成、單字同義字。
+- **角色與花費關卡**：`test/api/roles.mjs`（兩組帳號、學生 403、紀錄身分）、`jobs.mjs`（申請、核准、拒絕、撤回、存成文章、辨識與免審張數、建字表、AI 批改、失敗重試）、`admin.mjs`（`/admin` 入口、句子管理）、`paper-edit.mjs`（草稿、換題、刪題、發佈）、`records.mjs`（整理學生紀錄）、`weakness.mjs`（來源綜合）。
 - **瀏覽器測試**（`test/browser/`）：CDP 驅動無頭 Chrome——文章表 UI、測驗卷 UI（出卷→作答→交卷→訂正→自評→AI→歷史→列印）、多份並存、詞性標籤排版（360/390/430px）、朗讀結束保險。
+- **畫面掃描**：`student-sweep.mjs` 走過學生的每個分頁，檢查看得到的文字（含 title、placeholder）沒有費用、額度、模型等字眼、沒有任何 4xx／5xx 請求；`nav-ui.mjs` 檢查頁面上沒有重複的 id。測試要檢查「看得到」（`offsetParent`），不能只檢查元素存在。
 - **評估**（`eval/`）：黃金句子集與腳本，用於改提示詞後檢查分析品質（真模型，手動執行、需花額度）。
 
 已知不穩或過時：`mobile-audit.mjs`、`reorder2.mjs` 先前就失敗；直接打正式 8787 的舊瀏覽器測試在需要登入後會失敗；「辨識暫存圖片已清掉」偶發競態，重跑即過。
@@ -503,7 +586,15 @@ flowchart TD
 | 測驗卷不做「份數」，改為多份並存 | 三份的難度各自不同，一次設定不符需求 |
 | 對話顯示採分組（方案 A） | 對既有卡片結構影響小；整段發言一張卡（方案 B）決定不做 |
 | 朗讀不加中文 highlight | 評估過整句與逐成分兩種做法，使用者決定不做 |
-| 登入只做單一帳號 | 僅在自家區網使用，不做帳號管理 |
+| 登入只做兩組帳號（老師、學生），不做帳號管理 | 僅在自家區網使用；有需要多位學生再擴充 |
+| 學生要花額度的操作先申請、老師核准 | 家長要控管額度；學生還不會主動大量使用，所以不做自動核准額度（只對照片辨識設每天免審張數） |
+| 背景執行重用現有路由（`internalCall`） | 不維護兩套流程；結果和老師自己按完全一致 |
+| 前台與後台同一份頁面、不同網址 | 零依賴、不用雙份前端；真正的權限在後端 |
+| 老師登入 `/` 不自動導到 `/admin` | 老師想試用學生畫面時不會被帶走，用連結進後台 |
+| 紀錄身分由伺服器決定 | 手機、筆電、換瀏覽器都是同一份；舊的隨機代碼用命令列合併，由人決定併哪些 |
+| 句子分析有誤 → 排除出題，不刪 | 畫面照常顯示，只是不再出題；被文章用到的也不能刪 |
+| 卷子草稿 → 發佈；刪題維持滿分 100 | 老師先整理再給學生；分數規則不變 |
+| 刪學生紀錄：預覽、兩段確認、先備份、留紀錄 | 不可復原的操作要有退路 |
 | 不輸出音標 | 學習者學自然拼音，提供音節與拼字提醒 |
 
 ---
@@ -512,7 +603,10 @@ flowchart TD
 
 1. **品質**：分析仰賴模型，超綱語法與少見口語仍可能不準；情境應答的干擾選項只能靠提示詞約束，可能出現第二個合理答案。
 2. **範圍**：以國中課綱為準；不處理非英文與長篇學術文。
-3. **安全**：單帳號、無 CSRF token、無 HTTPS；僅適合家用區網。
-4. **規模**：單行程單資料庫，適合個人／家教少量使用。
+3. **安全**：老師與學生各一組帳號、無 CSRF token、無 HTTPS；僅適合家用區網。
+4. **規模**：單行程單資料庫，適合個人／家教少量使用；申請單一次只執行一張。學生目前視為單一身分（`student`）。
 5. **前端**：全域 script 無模組化；日後功能增加時建議逐步改成 ES modules。
 6. **詞性標籤**：iPhone 上極端換行的標籤碰撞未完全重現，只做了間距改善。
+7. **審核通知**：老師要自己開後台看「待審」徽章（每 30 秒更新），沒有推播。
+8. **卷子編修**：只能換題、刪題、改名；手動修改題目文字沒有做。閱讀、克漏字、文意選填不能單題編修。
+9. **課本單字表格式**：括號可省略字（`(be) going to`）、省略號搭配（`be good at…`）照原樣當一個詞條。

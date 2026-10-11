@@ -121,8 +121,8 @@ function wordCardHtml(w, multi){
     ${(w.senses||[]).map(sn => `<div class="wsense"><b>${esc(sn.pos)}</b>${esc(sn.zh)}
       ${sn.example ? `<span class="ex"><span class="extxt">${esc(sn.example)}</span>${sayBtn(sn.example, '朗讀例句')}` +
         `<button class="exan${sn.analyzed ? ' done' : ''}" data-an="${esc(sn.example)}"
-           title="${sn.analyzed ? '已分析過，點了馬上看句型與詞性，不花額度'
-                                : '還沒分析，點了會花一次額度'}">分析</button></span>` : ''}
+           title="${sn.analyzed ? (isStudentRole() ? '已分析過，點了馬上看句型與詞性' : '已分析過，點了馬上看句型與詞性，不花額度')
+                                : (isStudentRole() ? '還沒分析，點了會送出申請，等老師核准' : '還沒分析，點了會花一次額度')}">分析</button></span>` : ''}
       ${sn.exampleZh ? `<span class="exz">${esc(sn.exampleZh)}</span>` : ''}</div>`).join('')}
     ${w.spellTip ? `<div class="wtip">拼字：${esc(w.spellTip)}</div>` : ''}
     ${(w.confusable||[]).length ? `<div class="wextra">易混淆：${w.confusable.map(c=>`${esc(c.word)}（${esc(c.zh)}）`).join('、')}</div>` : ''}

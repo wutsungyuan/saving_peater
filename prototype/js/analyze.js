@@ -79,7 +79,9 @@ fetch('/api/health').then(r => r.ok ? r.json() : Promise.reject()).then(h => {
   el('frontLink').hidden = h.role !== 'teacher' || !isAdminApp();
   hintEl.textContent = needLogin
     ? '請先登入才能使用。'
-    : `已連上分析後端（${h.model}）。可貼上一句話或一段文章，上限 ${h.maxChars} 字 / ${h.maxSentences} 句。`;
+    : h.role === 'student'
+      ? `可以貼上一句話或一段文章，一次最多 ${h.maxSentences} 句。分析過的句子馬上就能看，新的句子會送給老師核准。`
+      : `已連上分析後端（${h.model}）。可貼上一句話或一段文章，上限 ${h.maxChars} 字 / ${h.maxSentences} 句。`;
 }).catch(() => {
   API = false;
   // 文章表要存在後端，展示模式用不到：藏起來，不要讓人以為可以用

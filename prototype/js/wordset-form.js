@@ -42,9 +42,14 @@ el('wsAnalyze').addEventListener('click', async () => {
   b.disabled = true;
   // 改用串流：每 8 句一批，跑完就存檔並回報進度。
   // 幾十句要跑好幾分鐘，沒有進度的話看起來就像當掉了。
-  let done = 0, cost = 0;
-  const show = () => { b.textContent = `分析中…${done} / ${left} 句（${money(cost)}）`; };
+  let done = 0, cost = 0, gotDone = false;
+  const t0 = Date.now();
+  // 批次是一批（8 句）一批做，做完一批才會更新數字；真的呼叫模型時一批約一分鐘。
+  // 所以按鈕上一直顯示已經過幾秒，並明講在等什麼，不然前幾十秒看起來像沒有反應。
+  const show = () => { b.textContent = `分析中…${done} / ${left} 句（已 ${Math.round((Date.now() - t0) / 1000)} 秒）${isStudentRole() ? '' : `（${money(cost)}）`}`; };
   show();
+  el('wsHint').textContent = `批次分析中：每 8 句一批，每批約一分鐘，做完一批才會更新上面的數字。請不要離開這個畫面；中途斷了也沒關係，做完的句子都已存起來，再按一次會接著跑。`;
+  const tick = setInterval(show, 1000);
   try {
     const res = await fetch('/api/wordset-analyze', {
       method:'POST', headers:{ 'content-type':'application/json', ...(TOKEN?{'x-auth-token':TOKEN}:{}) },
@@ -69,18 +74,21 @@ el('wsAnalyze').addEventListener('click', async () => {
         let d; try { d = JSON.parse(dataLine); } catch { continue; }
         if (ev === 'progress'){ done = d.done; cost = d.costUsd ?? cost; show(); }
         else if (ev === 'failed') failed = d;
-        else if (ev === 'done'){ done = d.analyzed; cost = d.usage?.costUsd ?? cost; }
+        else if (ev === 'done'){ done = d.analyzed; cost = d.usage?.costUsd ?? cost; gotDone = true; }
       }
     }
     await refreshExamples();
     loadHistory?.();
+    // 串流沒有收到「完成」就結束了：伺服器中途重新啟動、或連線被切斷。不要說「分析完」。
     el('wsHint').textContent = failed
       ? `${failed.message}（已完成的 ${failed.analyzed} 句已經存起來，再按一次會從沒分析的接著跑）`
-      : `分析完 ${done} 句（參考費用 ${money(cost)}）。現在點任何例句的「分析」都是瞬間的。`;
+      : !gotDone
+        ? `連線中斷了（可能是伺服器重新啟動），這次沒有跑完。已經存起來的 ${done} 句不會白費，再按一次會從沒分析的接著跑。`
+        : `分析完 ${done} 句${isStudentRole() ? '' : `（參考費用 ${money(cost)}）`}。現在點任何例句的「分析」都是瞬間的。`;
   } catch (e){
     el('wsHint').textContent = '連線中斷：' + e.message + '（已完成的部分已經存起來，再按一次會接著跑）';
     await refreshExamples();
-  } finally { b.disabled = false; renderAnalyzeBtn(); }
+  } finally { clearInterval(tick); b.disabled = false; renderAnalyzeBtn(); }
 });
 
 // 點例句的「分析」：切到分析頁，命中快取的話瞬間出結果
@@ -126,7 +134,7 @@ function syncDest(){
   if (d.setId){
     hint.className = 'desthint';
     hint.innerHTML = `會加進既有的 <b>${esc(d.set.name)}</b>（目前 ${d.set.word_count} 字）。` +
-      `那份已經有的字會自動略過，不會重複，也不會重複花額度。`;
+      (isStudentRole() ? `那份已經有的字會自動略過，不會重複。` : `那份已經有的字會自動略過，不會重複，也不會重複花額度。`);
     el('wsCreate').textContent = '加進這份字表';
   } else {
     hint.className = 'desthint new';
@@ -135,9 +143,12 @@ function syncDest(){
       : `沒有輸入名稱就會建立一份新字表。`;
     el('wsCreate').textContent = '建立新字表';
   }
-  el('wsHint').textContent = d.setId
-    ? '只有新字會送去整理，之後測驗都不再花費。'
-    : '建立時花一次額度整理詞性、意思、例句與音節；之後測驗都不再花費。';
+  // 學生看不到費用：只說明流程（要老師核准）
+  el('wsHint').textContent = isStudentRole()
+    ? (d.setId ? '送出申請，老師核准後，只有新字會被整理進去。' : '送出申請，老師核准後會整理詞性、意思、例句與音節並建立字表；之後的測驗就都能用了。')
+    : d.setId
+      ? '只有新字會送去整理，之後測驗都不再花費。'
+      : '建立時花一次額度整理詞性、意思、例句與音節；之後測驗都不再花費。';
 }
 
 /** 建立或加入。appendTo 有值就是加進既有字表。 */
