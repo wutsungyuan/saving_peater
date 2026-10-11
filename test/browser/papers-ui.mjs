@@ -7,11 +7,12 @@ import { openPage, checker } from './_cdp.mjs';
 
 const { chk, section, done } = checker();
 const fx = makeFixture('peater-ui-');
-let page, code = 1;
+let page, adminPage, fpage, code = 1;
 try {
   const S = await start('ui-papers', {}, { dbFile: fx.dbFile });
   page = await openPage(S.base + '/admin', { width: 900, height: 1200, settle: 2500 });
-  const { evl, until, click, type, wait } = page;
+  let { evl, until, click, type, wait } = page;
+  adminPage = page;
   const set = (sel, v) => evl(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); e.value = ${JSON.stringify(v)}; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   const text = sel => evl(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ''`);
 
@@ -44,6 +45,15 @@ try {
 
   section('出卷與作答');
   await click('#pStart');
+  chk('出卷 → 草稿編輯畫面：30 題都附答案、有「換一題」「刪除」、狀態是草稿', await until(`document.querySelectorAll('#pr-paper .pa-q').length === 30 && document.querySelectorAll('.pa-ans').length === 30 && !!document.querySelector('[data-ped="swap"]') && /草稿/.test(document.querySelector('.pa-head').textContent)`, 15000));
+  chk('滿分 100、每題標示分數', await evl(`/滿分 100 分/.test(document.querySelector('.pa-head').textContent) && document.querySelectorAll('.pa-q .p-pts').length === 30`));
+  await click('[data-ped="publish"]');
+  chk('發佈：出現「收回成草稿」，編修鈕消失', await until(`!!document.querySelector('[data-ped="unpublish"]') && !document.querySelector('[data-ped="swap"]')`));
+  const fp = fpage = await openPage(S.base + '/', { width: 900, height: 1200, settle: 2500 });          // 前台（學生看到的）
+  page = fp; ({ evl, until, click, type, wait } = fp);
+  await click('.tabs button[data-view="exam"]');
+  chk('前台：卷子列表有一份「作答中」，沒有「出卷」', await until(`document.querySelectorAll('#pr-paper tbody tr').length >= 1 && /作答中/.test(document.getElementById('pr-paper').textContent) && getComputedStyle(document.querySelector('#pr-paper [data-pt="setup"]')).display === 'none'`, 8000));
+  await click('[data-open]');
   chk('開始出卷 → 進入作答畫面，有 30 題', await until(`document.querySelectorAll('#pr-paper [data-qcard]').length === 30`) && await evl(`/已作答 0 \\/ 30/.test(document.getElementById('pProgress').textContent)`));
   chk('每題標示分數、分區有標題', await evl(`document.querySelectorAll('.p-pts').length === 30 && document.querySelectorAll('.p-sec h3').length >= 3`));
   chk('克漏字或文意選填有文章與空格', await evl(`!!document.querySelector('.p-passage .p-blank')`));
@@ -60,9 +70,9 @@ try {
 
   section('重新整理 → 續做');
   await page.send('Page.reload'); await wait(2500);
-  await click('.tabs button[data-view="sentence"]'); await click('.tabs button[data-view="exam"]');
-  chk('出現「繼續作答」', await until(`!!document.querySelector('[data-act="resume"]')`));
-  await click('[data-act="resume"]');
+  await click('.tabs button[data-view="exam"]');
+  chk('卷子列表裡那份還是「作答中」，按「繼續」', await until(`!!document.querySelector('[data-open]') && /作答中/.test(document.getElementById('pr-paper').textContent)`));
+  await click('[data-open]');
   chk('回到作答畫面、之前的作答都還在', await until(`document.querySelectorAll('#pr-paper [data-qcard]').length === 30`) && await evl(`/已作答 [123] \\/ 30/.test(document.getElementById('pProgress').textContent)`), await text('#pProgress'));
 
   section('交卷（留白很多）');
@@ -129,7 +139,10 @@ try {
   chk('列印答案卷：產生印出用的版面（含答案）', await until(`!!document.getElementById('p-print') && window.__printed === true`) && await evl(`/答案卷/.test(document.getElementById('p-print').textContent) && /答案：/.test(document.getElementById('p-print').textContent)`));
   await evl(`document.getElementById('p-print')?.remove(); document.body.classList.remove('p-printing')`);
 
-  section('刪除歷史');
+  section('刪除歷史（後台）');
+  page = adminPage; ({ evl, until, click, type, wait } = adminPage);
+  await click('.tabs button[data-view="exam"]');
+  await until(`!!document.getElementById('pStart')`, 8000);          // 出卷設定頁載入完才有「歷史」鈕
   await click('#pr-paper [data-pt="history"]');
   await until(`document.querySelectorAll('#pr-paper tbody tr').length >= 3`);
   const n0 = await evl(`document.querySelectorAll('#pr-paper tbody tr').length`);
@@ -140,13 +153,16 @@ try {
 
   section('其他');
   chk('弱點統計沒有被訂正改動（訂正前後相同的使用者）', JSON.stringify((await S.j('/api/weakness?user=x')).json).length > 0 && weak0.length > 0);
-  chk('沒有 JS 錯誤', page.errors.length === 0, page.errors.join(' | '));
+  chk('後台沒有 JS 錯誤', adminPage.errors.length === 0, adminPage.errors.join(' | '));
+  chk('前台沒有 JS 錯誤', fp.errors.length === 0, fp.errors.join(' | '));
   await page.shot('papers-ui.png');
   code = done();
 } catch (e) {
   console.log('ERR', e.stack || e.message); code = 1;
 } finally {
   try { page?.close(); } catch {}
+  try { adminPage?.close(); } catch {}
+  try { fpage?.close(); } catch {}
   process.exitCode = code;
   await shutdown().catch(() => {});
   try { rmSync(fx.dir, { recursive: true, force: true }); } catch {}

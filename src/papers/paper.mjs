@@ -25,6 +25,8 @@ export function normalizeSettings(b = {}){
     saver: b.saver === true,                    // 省錢模式：不呼叫模型，只用程式出題與題庫現成的題
     preferModel: b.preferModel === true,        // 延伸題偏好模型
     userToken: String(b.userToken || 'anon').slice(0, 64),
+    draft: b.draft === true,                    // 老師出卷：先存成草稿，編修後再發佈給學生
+    title: String(b.title ?? '').trim().slice(0, 60) || undefined,
     seed: Number.isFinite(Number(b.seed)) ? Number(b.seed) : undefined,
     confirm: b.confirm === true,                // 使用者看過報價、同意花額度
   };
@@ -137,7 +139,7 @@ export async function createPaper(cache, rawSettings, { ttlDays = 30 } = {}){
   const total = questions.reduce((s, q) => s + q.pts, 0);
   const id = newId();
   const data = { sections, questions, answers: {}, self: {}, plan: { seed, total, rows: plan.rows.map(r => [r.id, r.n, r.ext]), ext: { target: plan.ext.target, actual: built.reduce((a, b) => a + b.ext, 0), free: built.reduce((a, b) => a + b.extFree, 0) }, relax: plan.relax } };
-  cache.putPaper({ id, n: questions.length, settings: { ...settings, confirm: undefined, seed }, data, ttlDays });
+  cache.putPaper({ id, n: questions.length, settings: { ...settings, confirm: undefined, draft: undefined, seed }, data, ttlDays: settings.draft ? ttlDays * 3 : ttlDays, status: settings.draft ? 'draft' : 'open' });
   cache.bumpQuestions(questions.map(q => q.meta?.bankId).filter(Boolean));          // 用過次數：下一份卷子優先用沒用過的題
   return { id, paper: paperView(cache.getPaper(id)), total, model, quote: tasks.length ? quote : null };
 }
@@ -161,6 +163,7 @@ export function saveAnswers(cache, id, answers){
   const p = cache.getPaper(id);
   if (!p) return { error: 'expired', message: '這份卷子已經過期或不存在。' };
   if (p.status === 'submitted') return { error: 'submitted', message: '這份卷子已經交卷了。' };
+  if (p.status === 'draft') return { error: 'draft', message: '這份卷子還沒發佈。' };
   p.data.answers = { ...p.data.answers, ...(answers && typeof answers === 'object' ? answers : {}) };
   cache.savePaperData(id, p.data);
   return { ok: true };
@@ -204,6 +207,7 @@ export function submitPaper(cache, id, { answers, userToken = 'anon' } = {}){
   const p = cache.getPaper(id);
   if (!p) return { error: 'expired', message: '這份卷子已經過期或不存在。' };
   if (p.status === 'submitted') return { ok: true, already: true, paper: paperView(p) };
+  if (p.status === 'draft') return { error: 'draft', message: '這份卷子還沒發佈。' };
   p.data.answers = { ...p.data.answers, ...(answers && typeof answers === 'object' ? answers : {}) };
   const grades = new Map(p.data.questions.map(q => [q.id, gradeQuestion(q, p.data.answers[q.id])]));
   if (p.settings.kind !== 'fix') recordStats(cache, p, grades, userToken);
@@ -272,8 +276,8 @@ export function createFixPaper(cache, id, { ids, ttlDays = 30 } = {}){
 }
 
 /** 歷史列表 */
-export function historyList(cache){
-  return cache.papers(50).map(r => ({ id: r.id, createdAt: r.created_at, expiresAt: r.expires_at, n: r.n, status: r.status,
+export function historyList(cache, { includeDrafts = true } = {}){
+  return cache.papers(50).filter(r => includeDrafts || r.status !== 'draft').map(r => ({ id: r.id, title: r.settings.title ?? null, createdAt: r.created_at, expiresAt: r.expires_at, n: r.n, status: r.status,
     score: r.score, submittedAt: r.submitted_at, kind: r.settings.kind ?? 'normal', from: r.settings.from ?? null,
     difficulty: r.settings.difficulty, difficultyName: DIFFICULTY_NAME[r.settings.difficulty], setIds: r.settings.setIds, articleIds: r.settings.articleIds }));
 }

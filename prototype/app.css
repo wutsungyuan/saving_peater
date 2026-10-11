@@ -822,3 +822,16 @@ body[data-app="front"][data-role="teacher"] #wsNew{display:none}
 .srow-acts{margin-top:8px;align-items:center;gap:14px}
 .srow-detail{margin-top:10px;border-top:1px solid var(--rule);padding-top:10px}
 #snQ{flex:1;min-width:12em;font:inherit;padding:8px 10px;border:1px solid var(--rule);border-radius:3px;background:var(--surface);color:var(--fg)}
+
+/* 後台編修卷子 */
+.pa-head .row{align-items:center;gap:10px;margin:6px 0}
+.pa-head input[type=text]{flex:1;min-width:10em;max-width:24em;font:inherit;padding:7px 9px;border:1px solid var(--rule);border-radius:3px;background:var(--surface);color:var(--fg)}
+.pa-q .p-pts{margin-left:auto;font-size:.8rem;color:var(--muted);font-family:var(--font-mono)}
+.pa-choices{margin:8px 0 0;padding-left:1.6em}
+.pa-choices li{margin:2px 0}
+.pa-choices li.ok{font-weight:700;color:#0f6637}
+.pa-choices li.ok::after{content:" ✓"}
+.pa-ans{margin:8px 0 0;font-size:.9rem;color:#0f6637}
+.pa-exp{margin-top:6px;font-size:.85rem;color:var(--muted)}
+.pa-exp pre{white-space:pre-wrap;font-family:inherit;margin:4px 0 0}
+.pa-acts{margin-top:8px;gap:14px}

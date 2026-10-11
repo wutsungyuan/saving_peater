@@ -3,6 +3,7 @@ import { cache } from '../context.mjs';
 import { PAPER_DAYS } from '../config.mjs';
 import { readBody, authed, roleOf, denyStudent, userOf, sendJson } from '../http.mjs';
 import { submitJob } from '../jobs.mjs';
+import { editPaper, paperAdminView } from '../papers/edit.mjs';
 import { aiGradePaper, previewPaper, createPaper, paperView, saveAnswers, submitPaper, markSelf, createFixPaper, historyList } from '../papers/paper.mjs';
 
 const body = async req => { try { return JSON.parse(await readBody(req, 2e6)) || {}; } catch { return {}; } };
@@ -22,7 +23,8 @@ export const routes = [
     }, 'POST') },
 
   { match: (req, url) => url.pathname === '/api/papers', handler: guard(async (req, res, url) => {
-      if (req.method === 'GET') return sendJson(res, 200, { papers: historyList(cache), keepDays: PAPER_DAYS });
+      // 草稿是老師還在整理的，學生看不到
+      if (req.method === 'GET') return sendJson(res, 200, { papers: historyList(cache, { includeDrafts: roleOf(req, url) !== 'student' }), keepDays: PAPER_DAYS });
       if (req.method === 'DELETE'){ if (denyStudent(req, res, url)) return; const n = cache.deletePaper(url.searchParams.get('id')); return sendJson(res, 200, { ok: true, deleted: n }); }
       if (req.method === 'POST'){
         if (denyStudent(req, res, url)) return;
@@ -35,8 +37,18 @@ export const routes = [
 
   { match: (req, url) => url.pathname === '/api/paper' && req.method === 'GET', handler: guard(async (req, res, url) => {
       const p = cache.getPaper(url.searchParams.get('id'));
-      return p ? sendJson(res, 200, paperView(p)) : sendJson(res, 410, { error: 'expired', message: '這份卷子已經過期或不存在。' });
+      const teacher = roleOf(req, url) === 'teacher';
+      if (!p || (p.status === 'draft' && !teacher)) return sendJson(res, 410, { error: 'expired', message: '這份卷子已經過期或不存在。' });
+      // 老師帶 admin=1：題目含答案與解說（編修、檢視學生的作答用）
+      return sendJson(res, 200, teacher && url.searchParams.get('admin') === '1' ? paperAdminView(p) : paperView(p));
     }) },
+
+  // 老師編修：改名、換題、刪題、發佈、收回
+  { match: (req, url) => url.pathname === '/api/paper-edit', handler: guard(async (req, res, url) => {
+      if (denyStudent(req, res, url)) return;
+      const b = await body(req); const r = editPaper(cache, b.id, b, { ttlDays: PAPER_DAYS });
+      return r.error ? fail(res, r, r.error === 'expired' ? 410 : 409) : sendJson(res, 200, r);
+    }, 'POST') },
 
   { match: (req, url) => url.pathname === '/api/paper-save', handler: guard(async (req, res) => {
       const b = await body(req); const r = saveAnswers(cache, b.id, b.answers);
@@ -45,7 +57,7 @@ export const routes = [
 
   { match: (req, url) => url.pathname === '/api/paper-submit', handler: guard(async (req, res, url) => {
       const b = await body(req); const r = submitPaper(cache, b.id, { answers: b.answers, userToken: userOf(req, url, b.userToken) });
-      return r.error ? fail(res, r) : sendJson(res, 200, r);
+      return r.error ? fail(res, r, r.error === 'draft' ? 409 : 400) : sendJson(res, 200, r);
     }, 'POST') },
 
   { match: (req, url) => url.pathname === '/api/paper-self', handler: guard(async (req, res) => {

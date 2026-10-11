@@ -103,6 +103,16 @@ function patch(rows){
   return rows;
 }
 
+/** 已經出好的卷子刪掉幾題之後，依各題型的題數重新分配分數，總分維持剛好 100。counts：[{ id, n }]（和區塊同順序）。
+ *  回傳 [{ id, pts, extra }]（extra：前幾題各加或減 0.5 分），分不出剛好 100 分時回 null。 */
+export function rescore(counts){
+  const rows = counts.map(c => ({ t: TYPE_BY_ID[c.id], n: c.n }));
+  if (!rows.length || rows.some(r => !r.t || !(r.n >= 1))) return null;
+  patch(rows);
+  const total = rows.reduce((a, r) => a + r.sub, 0);
+  return total === 100 ? rows.map(r => ({ id: r.t.id, pts: r.pts, extra: r.extra })) : null;
+}
+
 function autoPick(have, supply, allowOpen, N, rng){
   const core = TYPES.filter(t => t.core && usable(t, have, supply));
   const opts = TYPES.filter(t => !t.core && usable(t, have, supply) && (allowOpen || !t.open));

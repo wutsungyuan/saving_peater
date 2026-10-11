@@ -31,6 +31,7 @@ async function loadPaperHome(){
   if (P.tab === 'result' && P.paper) return renderResult();
   if (P.tab === 'history') return loadHistory2();
   if (!isAdminApp()){ P.tab = 'history'; return loadHistory2(); }      // 前台只看卷子（學生與老師都一樣）；出卷在後台
+  P.tab = 'setup';                                   // 走到這裡就是要顯示出卷設定頁（載入完成時若使用者已切去別頁就不重畫，見下面）
   pBox().innerHTML = '<p class="msg">讀取中…</p>';
   const [s, a, ol] = await Promise.all([
     fetch(`/api/wordsets?user=${encodeURIComponent(USER)}`).then(r => r.json()).catch(() => ({ sets: [] })),
@@ -38,6 +39,7 @@ async function loadPaperHome(){
     artApi('/api/papers').then(r => (r.json?.papers ?? []).filter(p => p.status === 'open' && p.kind !== 'fix').reverse()).catch(() => null),
   ]);
   P.sets = s.sets ?? []; P.articles = a; P.openList = ol;
+  if (P.tab !== 'setup') return;               // 載入的空檔裡使用者已經切去別頁（例如歷史），不要把設定頁蓋回去
   // 範圍預設選目前單字頁選的字表（沒有就不預選，讓使用者自己選）
   P.cfg.setIds = P.cfg.setIds.filter(id => P.sets.some(x => x.id === id));
   P.cfg.articleIds = P.cfg.articleIds.filter(id => P.articles.some(x => x.id === id));
@@ -51,8 +53,6 @@ function renderSetup(){
   const c = P.cfg, resume = rememberedOpen(), ol = P.openList;
   const chip = (kind, id, label) => `<button type="button" class="tchip" data-scope="${kind}" data-id="${id}" aria-pressed="${(kind === 'set' ? c.setIds : c.articleIds).includes(id)}">${esc(label)}</button>`;
   pBox().innerHTML = `${pNav()}
-  ${ol?.length ? `<div class="box p-resume" id="pResume">有 ${ol.length} 份還沒交卷的卷子：${ol.map((p, i) => `<button class="linky" type="button" data-act="resume" data-id="${esc(p.id)}">第 ${i + 1} 份（${esc(p.difficultyName || '')}・${p.n} 題）繼續作答</button>`).join(' ')}</div>`
-    : ol === null && resume ? `<div class="box p-resume" id="pResume">有一份還沒交卷的卷子。<button class="linky" type="button" data-act="resume">繼續作答</button></div>` : ''}
   <div class="box p-setup">
     <label>① 範圍（單字表、文章表各自勾選）</label>
     <div class="p-scope"><b>單字表</b><div class="row">${P.sets.length ? P.sets.map(s => chip('set', s.id, `${s.name}（${s.word_count} 字）`)).join('') : '<span class="hint">還沒有單字表，到「單字」建立。</span>'}</div></div>
@@ -173,7 +173,7 @@ async function startPaper(){
   P.busy = true; el('pStart').disabled = true;
   const q = P.preview.quote, c = P.cfg;
   el('pMsg').textContent = q?.calls ? `請模型出題中…約 ${q.estimate.seconds} 秒，請不要關閉頁面` : '出卷中…';
-  const r = await artApi('/api/papers', { method: 'POST', body: { ...c, userToken: USER, seed: P.preview.seed, confirm: Boolean(q?.calls) } });
+  const r = await artApi('/api/papers', { method: 'POST', body: { ...c, userToken: USER, seed: P.preview.seed, confirm: Boolean(q?.calls), draft: isAdminApp() } });      // 老師出卷先存成草稿，編修後再發佈
   P.busy = false;
   if (!r.ok){ el('pStart').disabled = false; el('pMsg').textContent = r.json.message || ('出卷失敗：' + (r.json.error || r.status)); return; }
   const m = r.json.model;
@@ -181,6 +181,7 @@ async function startPaper(){
   openPaper(r.json.paper);
 }
 function openPaper(paper){
+  if (isAdminApp() && paper.status !== 'submitted') return loadAdminPaper(paper.id);        // 後台：草稿與已發佈的是編修／預覽，不是作答
   P.paper = paper; P.answers = { ...(paper.answers || {}) }; P.orderIdx = {}; P.saveState = '';
   P.tab = paper.status === 'submitted' ? 'result' : 'run';
   rememberOpen(paper.status === 'open' ? paper.id : null);
@@ -250,7 +251,7 @@ function renderRun(){
   pBox().innerHTML = `${pNav()}
   <div class="box p-head"><div><b>${fix ? '訂正' : `${esc(paper.settings.difficultyName || '')}・${paper.n} 題・滿分 100 分`}</b>
     <span class="hint" id="pProgress"></span><span class="hint" id="pSave"></span></div>
-    <div class="row"><button class="linky" type="button" data-act2="print">列印試卷</button>${fix ? '' : '<button class="linky" type="button" data-act2="newpaper">先放著，再出一份新卷</button>'}</div></div>
+    <div class="row"><button class="linky" type="button" data-act2="print">列印試卷</button></div></div>
   ${fix ? '<p class="hint">訂正不影響統計，也不改變原卷的分數。</p>' : ''}
   ${paper.sections.map((s, si) => `<section class="p-sec"><h3>${fix ? '' : `第 ${['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][si] ?? si + 1} 部分　`}${esc(s.name)}${s.pts ? `<small>　每題 ${fmtPts(s.pts)} 分</small>` : ''}</h3>
     ${s.passages.filter(p => s.questions.some(q => q.passageId === p.id)).map(p => `<div class="p-passage"><b>${esc(p.title ?? '')}</b><p>${inlinePassage(p.text)}</p>${p.bank ? `<p class="hint">字庫：${p.bank.map(esc).join('、')}</p>` : ''}</div>`).join('')}
@@ -416,13 +417,15 @@ async function loadHistory2(){
   const list = r.json.papers;
   pBox().innerHTML = `${pNav()}${list.length ? `<div class="scroll"><table class="p-table"><thead><tr><th>時間</th><th>內容</th><th>狀態</th><th></th></tr></thead><tbody>${list.map(p => `<tr>
     <td>${new Date(p.createdAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-    <td>${p.kind === 'fix' ? '<span class="tag t-model">訂正</span> ' : ''}${p.n} 題${p.kind === 'fix' ? '' : `・${esc(p.difficultyName || '')}`}<br><small>${esc(names([...(p.setIds || []), ...(p.articleIds || [])]))}</small></td>
-    <td>${p.status === 'submitted' ? (p.kind === 'fix' ? '已完成' : `<b>${fmtPts(p.score)}</b> 分`) : '作答中'}</td>
-    <td><button class="linky" data-open="${p.id}">${p.status === 'submitted' ? '看結果' : '繼續'}</button> <button class="linky danger admin-only" data-del="${p.id}">刪除</button></td></tr>`).join('')}</tbody></table></div>`
+    <td>${p.kind === 'fix' ? '<span class="tag t-model">訂正</span> ' : ''}${p.title ? `<b>${esc(p.title)}</b> <small>（${p.n} 題・${esc(p.difficultyName || '')}）</small>` : `${p.n} 題${p.kind === 'fix' ? '' : `・${esc(p.difficultyName || '')}`}`}<br><small>${esc(names([...(p.setIds || []), ...(p.articleIds || [])]))}</small></td>
+    <td>${p.status === 'draft' ? '<span class="tag t-prog">草稿</span>' : p.status === 'submitted' ? (p.kind === 'fix' ? '已完成' : `<b>${fmtPts(p.score)}</b> 分`) : (isAdminApp() ? '已發佈・作答中' : '作答中')}</td>
+    <td><button class="linky" data-open="${p.id}">${p.status === 'draft' ? '編輯' : p.status === 'submitted' ? (isAdminApp() ? '看作答' : '看結果') : isAdminApp() ? '預覽' : '繼續'}</button>${p.status === 'draft' ? ` <button class="linky admin-only" data-pub="${p.id}">發佈</button>` : ''} <button class="linky danger admin-only" data-del="${p.id}">刪除</button></td></tr>`).join('')}</tbody></table></div>`
     : '<div class="box"><p style="margin:0">還沒有出過卷子。</p></div>'}
   <p class="hint">歷史只用快取存放：保留 ${r.json.keepDays} 天、最近 20 份，到期自動清除。答題統計（弱點）另外保存，不會跟著清除。</p>`;
 }
 pBox().addEventListener('click', async e => {
+  const pub = e.target.closest('[data-pub]');
+  if (pub){ const r = await artApi('/api/paper-edit', { method: 'POST', body: { id: pub.dataset.pub, action: 'publish' } }); if (!r.ok) alert(r.json.message || '發佈失敗'); return loadHistory2(); }
   const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]');
   if (o){ const r = await artApi(`/api/paper?id=${o.dataset.open}`); if (r.ok) openPaper(r.json); else loadHistory2(); }
   if (d){

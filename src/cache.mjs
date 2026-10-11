@@ -750,10 +750,21 @@ export function openCache(file = 'data/cache.db'){
     },
 
     // ---------- 測驗卷（快取性質，到期自動清除）----------
-    putPaper({ id, n, settings, data, ttlDays = 30 }){
+    putPaper({ id, n, settings, data, ttlDays = 30, status = 'open' }){
       const now = Date.now();
       db.prepare(`INSERT OR REPLACE INTO papers (id, created_at, expires_at, n, settings, data, status)
-        VALUES (?,?,?,?,?,?, 'open')`).run(id, now, now + ttlDays * 86400_000, n, JSON.stringify(settings), JSON.stringify(data));
+        VALUES (?,?,?,?,?,?,?)`).run(id, now, now + ttlDays * 86400_000, n, JSON.stringify(settings), JSON.stringify(data), status);
+    },
+    /** 更新卷子的部分欄位：settings、data、n、status、expiresAt */
+    updatePaper(id, f){
+      const sets = [], p = [];
+      if ('settings' in f){ sets.push('settings = ?'); p.push(JSON.stringify(f.settings)); }
+      if ('data' in f){ sets.push('data = ?'); p.push(JSON.stringify(f.data)); }
+      if ('n' in f){ sets.push('n = ?'); p.push(f.n); }
+      if ('status' in f){ sets.push('status = ?'); p.push(f.status); }
+      if ('expiresAt' in f){ sets.push('expires_at = ?'); p.push(f.expiresAt); }
+      if (!sets.length) return 0;
+      return Number(db.prepare(`UPDATE papers SET ${sets.join(', ')} WHERE id = ?`).run(...p, String(id)).changes);
     },
     getPaper(id){
       const r = db.prepare('SELECT * FROM papers WHERE id = ? AND expires_at > ?').get(String(id), Date.now());
@@ -774,7 +785,8 @@ export function openCache(file = 'data/cache.db'){
     /** 清掉過期的，以及超過最近 keep 份的 */
     prunePapers({ keep = 20 } = {}){
       const a = db.prepare('DELETE FROM papers WHERE expires_at <= ?').run(Date.now()).changes;
-      const b = db.prepare('DELETE FROM papers WHERE id NOT IN (SELECT id FROM papers ORDER BY created_at DESC LIMIT ?)').run(keep).changes;
+      // 草稿是老師還在整理的卷子，不算進「最近 keep 份」，也不會因為份數被清掉（過期才清）
+      const b = db.prepare("DELETE FROM papers WHERE status != 'draft' AND id NOT IN (SELECT id FROM papers WHERE status != 'draft' ORDER BY created_at DESC LIMIT ?)").run(keep).changes;
       return Number(a) + Number(b);
     },
 
