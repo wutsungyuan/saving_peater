@@ -182,7 +182,7 @@ el('artBack').addEventListener('click', () => { artCurrent = null; el('artView')
 
 // ---- 改名與刪除（頁內操作，不用瀏覽器的對話框）----
 el('artRename').addEventListener('click', () => {
-  const c = el('artConfirm');
+  const c = el('artRenameBox');
   c.hidden = false;
   c.innerHTML = `<div class="row"><input type="text" id="artNewName" maxlength="60" value="${esc(el('artTitle').textContent)}" aria-label="新的文章名稱">
     <button class="primary" type="button" id="artRenameOk">改名</button><button class="linky" type="button" id="artRenameNo">取消</button>

@@ -89,6 +89,7 @@ try {
 
   section('改名與刪除');
   await click('#artRename');
+  chk('按「改名」：輸入框真的出現在畫面上（不只是存在於網頁裡）', await evl(`(() => { const e = document.getElementById('artNewName'); return !!e && e.offsetParent !== null && e.getBoundingClientRect().height > 0; })()`));
   await type('#artNewName', '第一課');
   await click('#artRenameOk');
   chk('改名後標題更新', await until(`document.getElementById('artTitle').textContent === '第一課'`));

@@ -37,6 +37,8 @@ try {
   await click('.tabs button[data-view="sentence"]');
   chk('回到句子分析：輸入框搬回句子頁', await until(`!!document.querySelector('#view-sentence #inp') && document.getElementById('artNameRow').hidden`));
 
+  chk('頁面上沒有重複的 id', await evl(`(() => { const seen = new Set(), dup = []; for (const e of document.querySelectorAll('[id]')) { if (seen.has(e.id)) dup.push(e.id); seen.add(e.id); } return dup.length === 0 ? true : dup.join(','); })()`) === true, await evl(`(() => { const seen = new Set(), dup = []; for (const e of document.querySelectorAll('[id]')) { if (seen.has(e.id)) dup.push(e.id); seen.add(e.id); } return dup.join(','); })()`));
+
   section('單字搜尋');
   await click('.tabs button[data-view="words"]');
   await until(`document.querySelectorAll('#wsWords .wcard').length > 0`, 8000);

@@ -44,6 +44,15 @@ try {
   await a.click('.tabs button[data-view="article"]');
   chk('文章表：沒有「新增文章」', await a.until(`!document.getElementById('an-articles').hidden`) && !(await shown(a, '#arTabs button[data-ap="new"]')));
 
+  await a.until(`document.querySelectorAll('#artList .art-card').length >= 1`, 8000);
+  await a.click('#artList .art-card');
+  chk('後台文章表：點進一份，有「改名」「刪除」', await a.until(`!document.getElementById('artView').hidden`, 5000) && await shown(a, '#artRename') && await shown(a, '#artDelete'));
+  await a.click('#artRename');
+  chk('按「改名」：輸入框真的出現在畫面上', await a.evl(`(() => { const e = document.getElementById('artNewName'); return !!e && e.offsetParent !== null && e.getBoundingClientRect().height > 0; })()`));
+  await a.type('#artNewName', '後台改的名字');
+  await a.click('#artRenameOk');
+  chk('改名成功：標題更新', await a.until(`document.getElementById('artTitle').textContent === '後台改的名字'`, 5000));
+
   section('句子管理');
   await a.click('.tabs button[data-view="sentences"]');
   chk('列出已分析的句子，顯示總數', await a.until(`document.querySelectorAll('#snList .srow').length >= 20 && /共 \\d+ 句/.test(document.getElementById('snCount').textContent)`, 8000));
