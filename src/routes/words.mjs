@@ -8,7 +8,8 @@ import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { ROOT } from '../config.mjs';
 import { cache } from '../context.mjs';
-import { readBody, authed, denyStudent, userOf, decodeImage } from '../http.mjs';
+import { readBody, authed, roleOf, denyStudent, userOf, decodeImage } from '../http.mjs';
+import { submitJob } from '../jobs.mjs';
 import { setIdList, redoQuestions, exampleSentences } from './shared.mjs';
 
 export const routes = [
@@ -24,7 +25,6 @@ export const routes = [
       }
       if (req.method === 'POST'){
         if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
-        if (denyStudent(req, res, url)) return;
         let b = {};
         try { b = JSON.parse(await readBody(req)) || {}; } catch {}
         const items = parseWordList(b.text || '');
@@ -35,6 +35,16 @@ export const routes = [
         if (items.length > 60){
           res.writeHead(413, { 'content-type':'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ error:'too-many', message:`一次最多 60 個字，這次有 ${items.length} 個。` }));
+        }
+        // 學生：整理單字要呼叫模型，開申請單，老師核准後才建立
+        if (roleOf(req, url) === 'student'){
+          const appendTo0 = Number(b.appendTo) || 0;
+          const target = appendTo0 ? (cache.wordsets('anon').find(x => x.id === appendTo0)?.name ?? '字表') : (b.name || '單字');
+          const job = submitJob(cache, { kind: 'wordset', by: 'student', payload: { name: b.name || '單字', text: b.text || '', appendTo: appendTo0 || undefined, note: b.note || undefined },
+            quote: { words: items.length },
+            summary: `${appendTo0 ? '加到字表' : '新增字表'}「${target}」：${items.length} 個字` });
+          res.writeHead(202, { 'content-type':'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ pending: true, jobId: job.id, reused: job.reused, words: items.length }));
         }
         // 加進既有字表：先濾掉那份已經有的字，不用重複花額度充實
         const appendTo = Number(b.appendTo) || 0;

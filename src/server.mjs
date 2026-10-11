@@ -13,8 +13,12 @@ import { routes as wordRoutes } from './routes/words.mjs';
 import { routes as articleRoutes } from './routes/articles.mjs';
 import { routes as paperRoutes } from './routes/papers.mjs';
 import { routes as authRoutes } from './routes/auth.mjs';
+import { routes as jobRoutes } from './routes/jobs.mjs';
+import { setRoutes } from './internal.mjs';
+import { resumeJobs } from './jobs.mjs';
 
-const ROUTES = [...authRoutes, ...analyzeRoutes, ...practiceRoutes, ...wordRoutes, ...articleRoutes, ...paperRoutes];
+const ROUTES = [...authRoutes, ...analyzeRoutes, ...practiceRoutes, ...wordRoutes, ...articleRoutes, ...paperRoutes, ...jobRoutes];
+setRoutes(ROUTES);                  // 申請單核准後的背景執行，要能把請求交給同一份路由表
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -45,7 +49,9 @@ server.listen(PORT, HOST, () => {
   prunePapers();
   if (purged) console.log(`已清掉 ${purged} 筆超過 ${HISTORY_DAYS} 天的歷史原文`);
   cache.pruneSessions();
-  setInterval(() => { cache.pruneSessions(); cache.pruneHistory(HISTORY_DAYS); cache.pruneQuizzes(7); prunePapers(); }, 6 * 3600_000).unref();
+  cache.pruneJobs(60);
+  resumeJobs(cache);                           // 上次沒做完的申請單接著做
+  setInterval(() => { cache.pruneSessions(); cache.pruneJobs(60); cache.pruneHistory(HISTORY_DAYS); cache.pruneQuizzes(7); prunePapers(); }, 6 * 3600_000).unref();
   console.log(`分析由本機 claude CLI 執行，額度計入這台機器登入的 Claude 帳號。`);
   console.log(`歷史原文保留 ${HISTORY_DAYS} 天後自動清除（分析快取不受影響）。`);
   console.log(`訂閱額度請在 Claude app → Settings → Usage 查看（CLI 沒有提供查詢介面）。`);

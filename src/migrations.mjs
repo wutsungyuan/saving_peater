@@ -179,6 +179,32 @@ function sessionRoles(db){
   db.exec(`ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'teacher';`);
 }
 
+/** 第 7 版：申請單（花費關卡）。學生要花額度的操作先開一張申請單，老師核准後才在背景執行。
+ *  status：pending 待審 | approved 已核准等待執行 | running 執行中 | done 完成 | failed 失敗 | rejected 被拒絕 | cancelled 學生撤回 */
+function jobs(db){
+  db.exec(`
+    CREATE TABLE jobs (
+      id           TEXT PRIMARY KEY,
+      kind         TEXT NOT NULL,             -- analyze | ocr | wordset | ai-grade
+      status       TEXT NOT NULL,
+      dedup        TEXT,                      -- 同一件事重複送出時合併成一張（kind + 內容的雜湊）
+      payload      TEXT NOT NULL,             -- 執行時要重送的請求內容（JSON）
+      quote        TEXT,                      -- 報價（只有老師看得到）
+      summary      TEXT,                      -- 列表上看的一行說明
+      requested_by TEXT NOT NULL,
+      note         TEXT,                      -- 老師的備註（拒絕理由）
+      result       TEXT,                      -- 執行結果（JSON）
+      cost_usd     REAL DEFAULT 0,
+      created_at   INTEGER NOT NULL,
+      decided_at   INTEGER,
+      started_at   INTEGER,
+      finished_at  INTEGER
+    );
+    CREATE INDEX idx_jobs_status ON jobs(status, created_at);
+    CREATE INDEX idx_jobs_dedup ON jobs(dedup, status);
+  `);
+}
+
 export const MIGRATIONS = [
   { version: 1, name: 'baseline', up: baseline },
   { version: 2, name: 'articles', up: articles },
@@ -186,4 +212,5 @@ export const MIGRATIONS = [
   { version: 4, name: 'sessions', up: sessions },
   { version: 5, name: 'attempt-sources', up: sources },
   { version: 6, name: 'session-roles', up: sessionRoles },
+  { version: 7, name: 'jobs', up: jobs },
 ];

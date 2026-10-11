@@ -10,6 +10,20 @@ import { ROOT, MAX_CHARS, MAX_SENTENCES, MAX_ARTICLE_CHARS, MAX_ARTICLE_SENTENCE
 import { cache } from '../context.mjs';
 import { readBody, pool, authed, roleOf, denyStudent, decodeImage } from '../http.mjs';
 import { loginAvailable, studentAccount } from '../auth.mjs';
+import { submitJob } from '../jobs.mjs';
+
+const r3 = n => Math.round(n * 1000) / 1000;
+/** 報價：不呼叫模型。用最近的分析紀錄估每句花費；要呼叫模型時再加上冷快取的暖機成本。 */
+function quoteOf(segs){
+  const cachedN = segs.filter(seg => cache.has(seg.text)).length;
+  const toAnalyze = segs.length - cachedN;
+  const unit = cache.analysisUnitCost();
+  const base = unit.perSentence * toAnalyze;
+  return { cached: cachedN, toAnalyze,
+    unitCost: { perSentence: r3(unit.perSentence), samples: unit.samples, source: unit.source },
+    estimate: { low: r3(base * 0.8), high: r3(base * 1.3 + (toAnalyze ? COLD_START_USD : 0)),
+                seconds: Math.round(toAnalyze * unit.msPerSentence / 1000) } };
+}
 
 async function handleAnalyze(req, res, url){
   if (!authed(req, url)){
@@ -47,19 +61,11 @@ async function handleAnalyze(req, res, url){
   // 報價：不呼叫模型，也不算快取命中。用最近的分析紀錄估每句花費；
   // 要呼叫模型時再加上冷快取的暖機成本（上限才加，下限假設快取是熱的）。
   if (dryRun){
-    const cachedN = segs.filter(seg => cache.has(seg.text)).length;
-    const toAnalyze = segs.length - cachedN;
-    const unit = cache.analysisUnitCost();
-    const base = unit.perSentence * toAnalyze;
-    const r3 = n => Math.round(n * 1000) / 1000;
+    const q = quoteOf(segs);
     res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({
-      total: segs.length, cached: cachedN, toAnalyze, truncated, article,
-      limits: { maxChars, maxSentences },
-      unitCost: { perSentence: r3(unit.perSentence), samples: unit.samples, source: unit.source },
-      estimate: { low: r3(base * 0.8), high: r3(base * 1.3 + (toAnalyze ? COLD_START_USD : 0)),
-                  seconds: Math.round(toAnalyze * unit.msPerSentence / 1000) },
-    }));
+    // 學生看不到費用，只知道有幾句要送老師核准
+    const view = roleOf(req, url) === 'student' ? { cached: q.cached, toAnalyze: q.toAnalyze } : q;
+    return res.end(JSON.stringify({ total: segs.length, truncated, article, limits: { maxChars, maxSentences }, ...view }));
   }
 
   res.writeHead(200, {
@@ -100,6 +106,21 @@ async function handleAnalyze(req, res, url){
     else misses.push({ seg, i });
   });
   send('progress', { done: cached, total: segs.length });
+
+  // 學生：沒分析過的句子要老師核准才會呼叫模型。快取命中的上面已經推出去了，其餘開一張申請單就結束。
+  if (misses.length && roleOf(req, url) === 'student'){
+    const first = misses[0].seg.text;
+    const job = submitJob(cache, { kind: 'analyze', by: 'student',
+      payload: { text, article, saveAs: body.saveAs ? String(body.saveAs).trim().slice(0, 60) : null },
+      dedupOn: JSON.stringify([text, body.saveAs || null]),
+      quote: { total: segs.length, ...quoteOf(segs) },
+      summary: `${body.saveAs ? '存成文章「' + String(body.saveAs).trim().slice(0, 30) + '」・' : ''}分析 ${misses.length} 句：${first.length > 40 ? first.slice(0, 40) + '…' : first}` });
+    send('approval', { jobId: job.id, toAnalyze: misses.length, total: segs.length, status: job.status, reused: job.reused });
+    stopBeat();
+    send('done', { ms: Date.now() - t0, total: segs.length, cached, analyzed: 0, failed: 0, usage, model: MODEL, halted: null, pendingApproval: job.id });
+    res.end();
+    return;
+  }
 
   // ---- 一句分析完成後的收尾：核對原句、存快取、推給前端 ----
   const toUsage = (u = {}, costUsd = 0) => ({
@@ -235,6 +256,13 @@ export const routes = [
       if (img.error){
         res.writeHead(img.code, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error: img.error, message: img.message }));
+      }
+      // 學生：辨識要呼叫模型，開申請單（照片先存在申請單裡，核准後才辨識，辨識完就清掉）
+      if (roleOf(req, url) === 'student'){
+        const job = submitJob(cache, { kind: 'ocr', by: 'student', payload: { image: b.image, mode: b.mode === 'article' ? 'article' : 'sentence' },
+          summary: `辨識課本照片（${Math.round(img.buf.length / 1024)} KB）` });
+        res.writeHead(202, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ pending: true, jobId: job.id, reused: job.reused }));
       }
       const dir = join(ROOT, 'data', 'tmp');
       const file = join(dir, `ocr-${randomBytes(8).toString('hex')}.${img.ext}`);

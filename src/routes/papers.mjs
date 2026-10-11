@@ -1,7 +1,8 @@
 // 路由：測驗卷。預覽、出卷、作答存檔、交卷、自評、訂正、歷史。全部要驗證。
 import { cache } from '../context.mjs';
 import { PAPER_DAYS } from '../config.mjs';
-import { readBody, authed, denyStudent, userOf, sendJson } from '../http.mjs';
+import { readBody, authed, roleOf, denyStudent, userOf, sendJson } from '../http.mjs';
+import { submitJob } from '../jobs.mjs';
 import { aiGradePaper, previewPaper, createPaper, paperView, saveAnswers, submitPaper, markSelf, createFixPaper, historyList } from '../papers/paper.mjs';
 
 const body = async req => { try { return JSON.parse(await readBody(req, 2e6)) || {}; } catch { return {}; } };
@@ -53,8 +54,14 @@ export const routes = [
     }, 'POST') },
 
   { match: (req, url) => url.pathname === '/api/paper-ai-grade', handler: guard(async (req, res, url) => {
-      if (denyStudent(req, res, url)) return;
-      const b = await body(req); const r = await aiGradePaper(cache, b.id, { confirm: b.confirm === true });
+      const b = await body(req);
+      if (roleOf(req, url) === 'student'){          // 學生：先算報價，開申請單，老師核准後才呼叫模型
+        const q = await aiGradePaper(cache, b.id, { confirm: false });
+        if (q.error !== 'confirm-required') return fail(res, q);
+        const job = submitJob(cache, { kind: 'ai-grade', by: 'student', payload: { id: String(b.id) }, quote: q.quote,
+          summary: `AI 批改測驗卷（造句與翻譯 ${q.quote.count} 題）` });
+        return sendJson(res, 202, { pending: true, jobId: job.id, reused: job.reused });
+      } const r = await aiGradePaper(cache, b.id, { confirm: b.confirm === true });
       return r.error ? fail(res, r, r.error === 'confirm-required' ? 409 : r.error === 'grade-failed' ? 502 : 400) : sendJson(res, 200, r);
     }, 'POST') },
 

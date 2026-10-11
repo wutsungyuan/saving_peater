@@ -35,14 +35,20 @@ try {
   section('學生：花錢與管理的功能 → 403');
   for (const [m, p, body] of [
     ['GET', '/api/history'], ['GET', '/api/stats'],
-    ['POST', '/api/wordsets', { name: 'x', text: 'a' }], ['DELETE', '/api/wordsets?id=1'],
+    ['DELETE', '/api/wordsets?id=1'],
     ['POST', '/api/wordset-ocr', {}], ['POST', '/api/wordset-analyze', { setId: 1 }],
     ['DELETE', '/api/articles?ids=1'],
-    ['POST', '/api/paper-preview', {}], ['POST', '/api/papers', {}], ['DELETE', '/api/papers?id=x'], ['POST', '/api/paper-ai-grade', { id: 'x' }],
+    ['POST', '/api/paper-preview', {}], ['POST', '/api/papers', {}], ['DELETE', '/api/papers?id=x'],
   ]) {
     r = await J(B, p, { method: m, ...withCookie(sk), ...(body ? { body } : {}) });
     chk(`${m} ${p} → 403`, r.status === 403 && r.json.error === 'forbidden', `${r.status} ${r.text.slice(0, 80)}`);
   }
+
+  section('學生：要花額度的改成申請（細節見 jobs.mjs）');
+  r = await J(B, '/api/wordsets', { method: 'POST', ...withCookie(sk), body: { name: 'x', text: 'apple' } });
+  chk('建字表 → 202 申請單，不是 403 也不是直接建', r.status === 202 && r.json.pending === true, r.text.slice(0, 100));
+  r = await J(B, '/api/job-decide', { method: 'POST', ...withCookie(sk), body: { id: r.json.jobId, action: 'approve' } });
+  chk('學生不能核准 → 403', r.status === 403);
 
   section('學生：前台功能照常');
   for (const p of ['/api/wordsets?user=x', '/api/wordsearch?q=a&user=x', '/api/weakness?user=x', '/api/articles', '/api/papers'])

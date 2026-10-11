@@ -161,6 +161,49 @@ export function openCache(file = 'data/cache.db'){
         a.correct ? 1 : 0, a.isFix ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now(), a.source ?? 'practice');
     },
 
+    // ---------- 申請單（花費關卡）----------
+    createJob(j){
+      db.prepare(`INSERT INTO jobs (id, kind, status, dedup, payload, quote, summary, requested_by, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(j.id, j.kind, 'pending', j.dedup ?? null, JSON.stringify(j.payload ?? {}),
+        j.quote ? JSON.stringify(j.quote) : null, j.summary ?? null, j.by, Date.now());
+    },
+    getJob(id){
+      const r = db.prepare('SELECT * FROM jobs WHERE id = ?').get(String(id));
+      return r ? this._job(r) : null;
+    },
+    _job(r){
+      return { id: r.id, kind: r.kind, status: r.status, dedup: r.dedup, payload: JSON.parse(r.payload), quote: r.quote ? JSON.parse(r.quote) : null,
+        summary: r.summary, by: r.requested_by, note: r.note, result: r.result ? JSON.parse(r.result) : null, costUsd: r.cost_usd,
+        createdAt: r.created_at, decidedAt: r.decided_at, startedAt: r.started_at, finishedAt: r.finished_at };
+    },
+    /** 列出申請單。statuses：只看這些狀態；by：只看某人的；新的在前 */
+    jobs({ statuses = null, by = null, limit = 50 } = {}){
+      const where = [], p = [];
+      if (statuses?.length){ where.push(`status IN (${statuses.map(() => '?').join(',')})`); p.push(...statuses); }
+      if (by){ where.push('requested_by = ?'); p.push(by); }
+      return db.prepare(`SELECT * FROM jobs ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC LIMIT ?`)
+        .all(...p, limit).map(r => this._job(r));
+    },
+    pendingJobByDedup(dedup){
+      const r = db.prepare("SELECT * FROM jobs WHERE dedup = ? AND status IN ('pending','approved','running') ORDER BY created_at DESC LIMIT 1").get(dedup);
+      return r ? this._job(r) : null;
+    },
+    countJobs(status){ return Number(db.prepare('SELECT COUNT(*) n FROM jobs WHERE status = ?').get(status).n); },
+    /** 更新欄位（只允許這幾個）：status note result costUsd decidedAt startedAt finishedAt payload */
+    updateJob(id, f){
+      const map = { status: 'status', note: 'note', costUsd: 'cost_usd', decidedAt: 'decided_at', startedAt: 'started_at', finishedAt: 'finished_at' };
+      const sets = [], p = [];
+      for (const [k, col] of Object.entries(map)) if (k in f){ sets.push(`${col} = ?`); p.push(f[k]); }
+      if ('result' in f){ sets.push('result = ?'); p.push(f.result == null ? null : JSON.stringify(f.result)); }
+      if ('payload' in f){ sets.push('payload = ?'); p.push(JSON.stringify(f.payload)); }
+      if (!sets.length) return 0;
+      return Number(db.prepare(`UPDATE jobs SET ${sets.join(', ')} WHERE id = ?`).run(...p, String(id)).changes);
+    },
+    /** 太舊的、已經結束的申請單清掉（保留天數內的都留著給老師回頭看） */
+    pruneJobs(days = 60){
+      return Number(db.prepare("DELETE FROM jobs WHERE status IN ('done','failed','rejected','cancelled') AND created_at < ?").run(Date.now() - days * 86400_000).changes);
+    },
+
     /** 作答紀錄用過哪些使用者代碼、各有多少作答、最早與最近一筆。合併舊代碼前先看這個。 */
     userTokens(){
       const m = new Map();

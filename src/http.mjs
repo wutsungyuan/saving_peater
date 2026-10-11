@@ -36,6 +36,7 @@ export async function pool(items, n, fn){
  *  登入後的 cookie 帶著角色；舊的存取碼（x-auth-token 標頭或 ?token=，給腳本與測試）等於老師。
  *  沒設任何驗證（本機單人使用）一律當老師。 */
 export function roleOf(req, url){
+  if (req.internal) return 'teacher';          // 內部呼叫（核准後的背景執行，見 internal.mjs）
   if (!AUTH_ON) return 'teacher';
   const r = sessionRole(req);
   if (r) return r;
