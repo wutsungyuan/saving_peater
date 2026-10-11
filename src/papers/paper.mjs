@@ -192,10 +192,10 @@ function recordStats(cache, p, grades, userToken){
     const g = grades.get(q.id), st = q.meta?.stat;
     if (!st || g.correct == null) continue;                                    // 沒有統計對象、或要自評的題不計入
     const answer = g.given.join(' | '), expected = (g.expected ?? []).join(' | ');
-    if (st.kind === 'word') cache.recordWordAttempt({ userToken, wordId: st.wordId, wordIds: st.wordIds, senseIdx: st.senseIdx, mode: st.mode, correct: g.correct, isFix: false, answer, expected });
+    if (st.kind === 'word') cache.recordWordAttempt({ userToken, wordId: st.wordId, wordIds: st.wordIds, senseIdx: st.senseIdx, mode: st.mode, correct: g.correct, isFix: false, answer, expected, source: 'exam' });
     else if (st.kind === 'sentence') cache.recordAttempt({ userToken, qtype: st.qtype, sentenceHash: st.hash ?? null, patternId: st.patternId, tenseTime: st.tenseTime,
-      tenseAspect: st.tenseAspect, pos: st.pos, pronCase: st.pronCase, correct: g.correct, isFix: false, answer, expected });
-    else if (st.kind === 'paper') cache.recordAttempt({ userToken, qtype: st.qtype, sentenceHash: st.hash ?? null, correct: g.correct, isFix: false, answer, expected });
+      tenseAspect: st.tenseAspect, pos: st.pos, pronCase: st.pronCase, correct: g.correct, isFix: false, answer, expected, source: 'exam' });
+    else if (st.kind === 'paper') cache.recordAttempt({ userToken, qtype: st.qtype, sentenceHash: st.hash ?? null, correct: g.correct, isFix: false, answer, expected, source: 'exam' });
   }
 }
 

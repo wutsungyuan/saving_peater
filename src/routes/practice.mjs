@@ -91,7 +91,7 @@ export const routes = [
       if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
       const userToken = url.searchParams.get('user') || 'anon';
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
-      return res.end(JSON.stringify(cache.weakness(userToken), null, 2));
+      return res.end(JSON.stringify(cache.weakness(userToken, url.searchParams.get('source') || 'all'), null, 2));
     },
   },
 ];

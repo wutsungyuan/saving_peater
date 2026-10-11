@@ -152,37 +152,84 @@ export function openCache(file = 'data/cache.db'){
 
     recordAttempt(a){
       db.prepare(`INSERT INTO attempts
-        (user_token,qtype,sentence_hash,pattern_id,tense_time,tense_aspect,pos,pron_case,correct,is_fix,answer,expected,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        (user_token,qtype,sentence_hash,pattern_id,tense_time,tense_aspect,pos,pron_case,correct,is_fix,answer,expected,created_at,source)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         a.userToken, a.qtype, a.sentenceHash ?? null, a.patternId ?? null,
         a.tenseTime ?? null, a.tenseAspect ?? null, a.pos ?? null, a.pronCase ?? null,
-        a.correct ? 1 : 0, a.isFix ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now());
+        a.correct ? 1 : 0, a.isFix ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now(), a.source ?? 'practice');
     },
 
-    /** 弱點統計：11 個維度（5 句型 + 6 必學時態）＋ 詞性與題型 */
-    weakness(userToken){
-      const q = (sql, ...p) => db.prepare(sql).all(userToken, ...p);
-      const overall = db.prepare(
-        `SELECT COUNT(*) total, COALESCE(SUM(correct),0) correct FROM attempts
-          WHERE user_token = ? AND COALESCE(is_fix,0) = 0`).get(userToken);
+    /** 弱點統計：11 個維度（5 句型 + 6 必學時態）＋ 詞性與題型，加上單字面向與測驗卷成績。
+     *  source：all | practice（句子練習）| quiz（單字測驗）| exam（測驗卷）。句子面向只看 attempts，單字面向只看 word_attempts。 */
+    weakness(userToken, source = 'all'){
+      const src = ['practice', 'quiz', 'exam'].includes(source) ? source : 'all';
+      const C = src === 'all' ? '' : ' AND source = ?', P = src === 'all' ? [] : [src];
+      const q = (sql, ...p) => db.prepare(sql).all(userToken, ...p, ...P);
+      const one = sql => db.prepare(sql).get(userToken, ...P);
+      const sent = one(`SELECT COUNT(*) total, COALESCE(SUM(correct),0) correct FROM attempts
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0${C}`);
+      const word = one(`SELECT COUNT(*) total, COALESCE(SUM(correct),0) correct FROM word_attempts
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0${C}`);
+      // 三個來源各自的作答數與正確率（不受篩選影響，總覽用）。測驗卷＝句子與單字兩邊 source='exam' 的加總。
+      const cnt = (table, s) => db.prepare(`SELECT COUNT(*) total, COALESCE(SUM(correct),0) correct FROM ${table}
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND source = ?`).get(userToken, s);
+      const ex = [cnt('attempts', 'exam'), cnt('word_attempts', 'exam')];
+      const sources = { practice: cnt('attempts', 'practice'), quiz: cnt('word_attempts', 'quiz'),
+        exam: { total: ex[0].total + ex[1].total, correct: ex[0].correct + ex[1].correct } };
       return {
-        overall,
+        source: src,
+        overall: { total: sent.total + word.total, correct: sent.correct + word.correct },
+        sources,
         byType: q(`SELECT qtype, COUNT(*) total, SUM(correct) correct FROM attempts
-          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 GROUP BY qtype ORDER BY qtype`),
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0${C} GROUP BY qtype ORDER BY qtype`),
         byPattern: q(`SELECT pattern_id, COUNT(*) total, SUM(correct) correct FROM attempts
-          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND pattern_id IS NOT NULL
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0${C} AND pattern_id IS NOT NULL
                       GROUP BY pattern_id ORDER BY pattern_id`),
         byTense: q(`SELECT tense_time, tense_aspect, COUNT(*) total, SUM(correct) correct FROM attempts
-          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND tense_time IS NOT NULL
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0${C} AND tense_time IS NOT NULL
                     GROUP BY tense_time, tense_aspect`),
         byPos: q(`SELECT pos, COUNT(*) total, SUM(correct) correct FROM attempts
-          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND pos IS NOT NULL GROUP BY pos ORDER BY pos`),
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0${C} AND pos IS NOT NULL GROUP BY pos ORDER BY pos`),
         byCase: q(`SELECT pron_case, COUNT(*) total, SUM(correct) correct FROM attempts
-          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND pron_case IS NOT NULL GROUP BY pron_case`),
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0${C} AND pron_case IS NOT NULL GROUP BY pron_case`),
         recent: q(`SELECT qtype, correct, answer, expected,
                      datetime(created_at/1000,'unixepoch','localtime') t
                    FROM attempts
-          WHERE user_token = ? AND COALESCE(is_fix,0) = 0 ORDER BY created_at DESC LIMIT 20`),
+          WHERE user_token = ? AND COALESCE(is_fix,0) = 0${C} ORDER BY created_at DESC LIMIT 20`),
+        words: {
+          ...word,
+          byMode: q(`SELECT mode, COUNT(*) total, SUM(correct) correct FROM word_attempts
+            WHERE user_token = ? AND COALESCE(is_fix,0) = 0${C} GROUP BY mode ORDER BY mode`),
+          // 同一個字出現在多份字表時合併計算；至少作答 2 次才排進最弱的字
+          weakest: q(`SELECT lower(w.term) term, COUNT(*) total, SUM(a.correct) correct
+            FROM word_attempts a JOIN words w ON w.id = a.word_id
+            WHERE a.user_token = ? AND COALESCE(a.is_fix,0) = 0${C.replace('source', 'a.source')}
+            GROUP BY lower(w.term) HAVING COUNT(*) >= 2
+            ORDER BY CAST(SUM(a.correct) AS REAL) / COUNT(*), COUNT(*) DESC, lower(w.term) LIMIT 10`),
+          bySet: q(`SELECT s.name, COUNT(*) total, SUM(a.correct) correct
+            FROM word_attempts a JOIN words w ON w.id = a.word_id JOIN wordsets s ON s.id = w.set_id
+            WHERE a.user_token = ? AND COALESCE(a.is_fix,0) = 0${C.replace('source', 'a.source')}
+            GROUP BY s.id ORDER BY s.created_at DESC`),
+        },
+        papers: src === 'all' || src === 'exam' ? this.paperSummary() : null,
+      };
+    },
+
+    /** 測驗卷成績：最近幾份的分數，以及各題型累計得分率。卷子是快取（預設保留 30 天、最近 20 份），所以是「近期」。 */
+    paperSummary(limit = 10){
+      const rows = db.prepare(`SELECT id, score, submitted_at, n, settings, data FROM papers
+          WHERE status = 'submitted' ORDER BY submitted_at DESC LIMIT ?`).all(limit)
+        .map(r => ({ ...r, settings: JSON.parse(r.settings), data: JSON.parse(r.data) }))
+        .filter(r => r.settings.kind !== 'fix');                 // 訂正卷不算成績
+      const bySection = new Map();
+      for (const r of rows)
+        for (const s of r.data.result?.bySection ?? []){
+          const x = bySection.get(s.name) ?? { name: s.name, score: 0, total: 0 };
+          x.score += s.score; x.total += s.total; bySection.set(s.name, x);
+        }
+      return {
+        trend: rows.map(r => ({ id: r.id, at: r.submitted_at, score: r.score, n: r.n, difficulty: r.settings.difficultyName ?? '' })).reverse(),
+        bySection: [...bySection.values()],
       };
     },
 
@@ -344,10 +391,10 @@ export function openCache(file = 'data/cache.db'){
     /** 記錄單字作答並更新 Leitner 盒子 */
     recordWordAttempt(a){
       db.prepare(`INSERT INTO word_attempts
-        (user_token, word_id, sense_idx, mode, correct, is_fix, answer, expected, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?)`).run(
+        (user_token, word_id, sense_idx, mode, correct, is_fix, answer, expected, created_at, source)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
         a.userToken, a.wordId, a.senseIdx ?? null, a.mode,
-        a.correct ? 1 : 0, a.isFix ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now());
+        a.correct ? 1 : 0, a.isFix ? 1 : 0, a.answer ?? null, a.expected ?? null, Date.now(), a.source ?? 'quiz');
 
       // 訂正是「把剛才那題做對」，答案都看過了，不該推進 Leitner 的盒子，
       // 也不該算進正確率 —— 否則答錯反而讓那個字更晚才再出現，整個反了。

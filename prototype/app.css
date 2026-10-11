@@ -769,3 +769,8 @@ header{position:relative}
 .backbar .linky{font-weight:700}
 .wsearch{display:flex;align-items:center;gap:10px;margin:0 0 12px}
 .wsearch input[type=search]{flex:1;min-width:0;font:inherit;font-size:1rem;padding:9px 12px;border:1px solid var(--rule);border-radius:3px;background:var(--surface);color:var(--fg)}
+
+/* 弱點頁：來源切換、右上角按鈕群 */
+#weakHead .subrow{margin:0 0 12px}
+.subtabs button small{font-weight:400;opacity:.75;margin-left:4px;font-family:var(--font-mono)}
+.wk-hero .cta{display:flex;gap:8px;flex-wrap:wrap}

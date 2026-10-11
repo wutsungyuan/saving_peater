@@ -161,9 +161,23 @@ function sessions(db){
   `);
 }
 
+/** 第 5 版：作答紀錄標出「來源」，弱點頁才能分開看單字測驗、句子練習、測驗卷。
+ *  舊紀錄：句子作答 qtype 是 paper-* 的來自測驗卷，其餘當成句子練習；單字作答當成單字測驗（舊資料分不出測驗卷裡的單字題）。 */
+function sources(db){
+  db.exec(`
+    ALTER TABLE attempts ADD COLUMN source TEXT;
+    ALTER TABLE word_attempts ADD COLUMN source TEXT;
+    UPDATE attempts SET source = CASE WHEN qtype LIKE 'paper-%' THEN 'exam' ELSE 'practice' END;
+    UPDATE word_attempts SET source = 'quiz';
+    CREATE INDEX idx_attempts_source ON attempts(user_token, source);
+    CREATE INDEX idx_wattempts_source ON word_attempts(user_token, source);
+  `);
+}
+
 export const MIGRATIONS = [
   { version: 1, name: 'baseline', up: baseline },
   { version: 2, name: 'articles', up: articles },
   { version: 3, name: 'papers-and-questions', up: papers },
   { version: 4, name: 'sessions', up: sessions },
+  { version: 5, name: 'attempt-sources', up: sources },
 ];
