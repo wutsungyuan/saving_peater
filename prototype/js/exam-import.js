@@ -65,7 +65,7 @@ async function exRun(){
     }
     msg.textContent = `辨識中…每張大約 20–60 秒，請不要關閉頁面。`;
     const r = await artApi('/api/exam-import', { method: 'POST', body: { images, title } });
-    if (!r.ok){ EX.done = { error: true, message: r.json.message || '辨識失敗', skipped: r.json.skipped }; }
+    if (!r.ok){ EX.done = { error: true, message: r.json.message || `辨識失敗（伺服器回應 ${r.status || '無回應'}${r.status === 404 || r.status === 405 ? '，伺服器可能還是舊版，需要重新啟動' : ''}）`, skipped: r.json.skipped }; }
     else { EX.done = r.json; EX.files = []; }
   } catch (err){ EX.done = { error: true, message: '辨識失敗：' + err.message }; }
   finally { EX.busy = false; }
