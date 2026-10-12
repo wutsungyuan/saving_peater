@@ -90,6 +90,14 @@ Zac: It was good. I visited my aunt in India.
   它們是一組對照（例如 `make ... for` 和 `made ... some cards` 的句型差異），
   分開才分析得出來，相鄰才看得出關係。
 
+**考卷常把兩個人的話印在同一行，而且標點後面直接接 `B:`、沒有空格**（`...with me?B: Sorry...`）。
+照樣拆成兩行、拿掉 `A:` `B:`，**不要把 `B:` 留在句子裡、也不要把兩個人的話抄在同一行**：
+
+```
+( ) 9. A: Do you have time to play soccer with me?B: Sorry, I am not free now. I need to _____ my piano lesson first. (A) wrong; start (B) free; finish
+```
+輸出兩行：`Do you have time to play soccer with me?` 與 `Sorry, I am not free now. I need to finish my piano lesson first.`
+
 例：
 ```
 13.A: What did you make _____ your classmates? B: I made _____ them some cards. (A) X/ to (B) for/ X

@@ -2,7 +2,7 @@
 // 每條路由是 { match, handler }。handler 沒有送出回應時，server 會繼續比對下一條（和原本的 if 串列一致）。
 import { join } from 'node:path';
 import { analyze, extractProse, fixPronounCase, MODEL } from '../analyzer.mjs';
-import { splitSentences, splitDialogue, dialogueUnits } from '../segment.mjs';
+import { splitSentences, splitDialogue, dialogueUnits, splitInlineSpeakers } from '../segment.mjs';
 import { hasBlank } from '../exercises.mjs';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -38,7 +38,7 @@ async function handleAnalyze(req, res, url){
   const maxChars = article ? MAX_ARTICLE_CHARS : MAX_CHARS;
   const maxSentences = article ? MAX_ARTICLE_SENTENCES : MAX_SENTENCES;
 
-  const text = String(body.text ?? '').trim();
+  const text = splitInlineSpeakers(String(body.text ?? '').trim());       // 考卷的「?B:」黏在一起的對話先拆開
   if (!text){ res.writeHead(400, { 'content-type':'application/json' }); return res.end('{"error":"empty"}'); }
   if (text.length > maxChars){
     res.writeHead(413, { 'content-type':'application/json' });
@@ -271,7 +271,8 @@ export const routes = [
       try {
         await mkdir(dir, { recursive: true });
         await writeFile(file, img.buf);
-        const { text, filled, usage } = await extractProse(file);
+        const { text: rawText, filled, usage } = await extractProse(file);
+        const text = splitInlineSpeakers(rawText);                  // 模型常照印刷把「?B:」黏著抄下來，這裡拆成兩行
         // 和單字表辨識分開記 —— 兩者抄的東西不一樣，歷史上要看得出來
         cache.log({ kind:'ocr-text', chars: img.buf.length,
           sentences: text ? splitSentences(text).length : 0,

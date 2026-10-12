@@ -51,6 +51,18 @@ const SPEAKER = /^\s*([A-Z][A-Za-z]{0,9})\s*[:：]\s*/;
 const NOT_SPEAKER = new Set(['note','tip','example','answer','answers','hint','key','warning',
   'ps','ex','question','note1','attention','remember','caution','important','see','also']);
 
+/** 考卷的對話題常常把兩個人的話印在同一行，而且標點後面直接接標記：「...with me?B: Sorry, I am not free now.」
+ *  這樣沒有空白，斷句切不開，標記也會被當成句子的一部分，模型就會回「拆成了多句」。
+ *  這裡把「標點 + A:/B:」換成換行並拿掉標記；那一行開頭的 A: 也一起拿掉（兩句各自成行、不帶標記）。
+ *  只認標點後面緊接的 A/B，「Plan B: …」「Vitamin C: …」這種不會被動到。每一行的行首標記（A: … 換行 B: …）由 splitDialogue 處理，不在這裡動。 */
+const INLINE_SPEAKER = /([.!?]["”')]*)[ \t]*[AB][ \t]*[:：][ \t]*(?=\S)/;
+export function splitInlineSpeakers(input){
+  return String(input ?? '').split('\n').map(line => {
+    if (!INLINE_SPEAKER.test(line)) return line;
+    return line.replace(new RegExp(INLINE_SPEAKER.source, 'g'), '$1\n').replace(/^[ \t]*[AB][ \t]*[:：][ \t]*/, '');
+  }).join('\n');
+}
+
 /** 把帶說話者標記的文字拆成 [{ speaker, text }]，沒有標記就回 null。 */
 export function splitDialogue(input){
   const lines = String(input ?? '').split('\n').map(l => l.trim()).filter(Boolean);

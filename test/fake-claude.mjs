@@ -29,7 +29,7 @@ const kind = sys === 'analyzer-system.md' ? 'analyze'
   : sys === 'exam-gen.md' ? 'exam'
   : sys === 'exam-grade.md' ? 'grade' : 'unknown';
 
-const sentencesOf = text => text.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+const sentencesOf = text => text.split(/(?<=[.!?])(?<!\b(?:Mr|Mrs|Ms)\.)\s+/).map(s => s.trim()).filter(Boolean);      // Mr./Mrs./Ms. 後面不切；Dr. 故意照切：有些測試用它模擬「模型和斷句意見不同」
 const finish = (result, extra = {}) => {
   const n = extra.n ?? 1;
   process.stdout.write(JSON.stringify({
