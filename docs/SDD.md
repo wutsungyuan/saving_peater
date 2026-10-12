@@ -356,6 +356,9 @@ flowchart TD
 - 編修：改名；**換一題**（同範圍同題型、不在卷子裡、不呼叫模型；`ext-model` 只能刪）；**刪一題**（`rescore` 依各題型題數重新分配，滿分維持 100，至少 10 題）。閱讀、克漏字、文意選填的題目跟文章綁在一起，不能單題編修。
 - 發佈 → `open`；已發佈但學生還沒作答可「收回」；交卷後不能收回或改題。
 - 老師取卷子帶 `admin=1` 得到含答案與解說的版本；交卷後看得到學生每題的作答、對錯、參考答案，也能自評。
+- **考卷重現**（`papers/examimport.mjs`、`/api/exam-import`、後台「測驗卷 → 考卷重現」）：老師上傳學校考卷的照片，**選擇題原樣**存成草稿——題幹保留空格，選項照印刷（雙空格的選項是成對的，如 `gloves; lend`），答案由模型判斷。題型 `exam`、整份只有一區（平分 100 分，尾差每題 0.5）。名稱沒填就用「日期 考卷重現」，同一天重複加（2）（3）。這個功能和「分析」的照片辨識是**兩條路**：分析那邊把題目還原成完整句子丟掉選項，這裡要保留題目本身。
+  - 完整句子由程式把選中的選項填進題幹得到（不是模型再寫一次），放在解說裡；空格數和選項組數對不上的題標「請核對」。`analysisText` 去掉印刷的中文註解與 A:／B: 標記，後台可以一鍵把這些句子帶到分析頁（不自動分析）。
+  - 草稿裡老師可以逐題改題幹、選項、答案（`edit-q`），最少留 5 題；發佈後學生像一般測驗卷作答，記進弱點的題型是 `paper-exam`。
 - 清理：草稿不算進「最近 20 份」，不會因份數被清掉（過期才清，預設 90 天）。
 
 ### 5.6 弱點統計（`routes/practice.mjs`、`js/weakness.js`）
@@ -430,7 +433,8 @@ sequenceDiagram
 | GET `/api/admin/sentences` · `/api/admin/sentence` | 師 | 句子列表（搜尋、篩選、分頁）、完整分析與使用情形 |
 | POST `/api/admin/sentence-exclude` · `sentence-reanalyze` · DELETE `/api/admin/sentence` | 師 | 排除出題、重新分析（先報價）、刪除（被文章用到的 409） |
 | POST `/api/admin/records-preview` · `records-delete` | 師 | 整理學生紀錄：預覽、確認後備份並刪除 |
-| POST `/api/paper-edit` | 師 | 卷子改名、換題、刪題、發佈、收回 |
+| POST `/api/paper-edit` | 師 | 卷子改名、換題、刪題、改題（考卷重現的題）、發佈、收回 |
+| POST `/api/exam-import` | 師 | 考卷重現：上傳考卷照片（最多 6 張）→ 選擇題存成草稿；回傳草稿 id、名稱、略過的題、完整句子 |
 | POST `/api/login` `/api/logout` | 公 | 帳密登入／登出 |
 | GET `/api/samples` | 公 | 範例句分類（從快取取真實句子） |
 | POST `/api/analyze` | 驗 | SSE；`{text, article?, dryRun?, saveAs?}`。學生：快取命中的照常出，其餘開申請單（`approval` 事件）；dryRun 報價不含費用 |
@@ -481,6 +485,7 @@ sequenceDiagram
 | `analyzer-system.md`（約 570 行） | 句子分析 | 知識庫 A–J（五大句型判別流程、16 時態、易錯 12 類、語序口訣、國中範圍判定、詞性、三態、`issue`、疑問／被動／比較、代名詞格位）＋輸出 Schema＋範例；要求只輸出 minified JSON；口語應答、省略句、直述疑問不算錯 |
 | `analyze-ocr.md` / `wordset-ocr.md` | 讀圖 | 句子／單字表抄錄規則；課本對話保留人名說話者；考卷 A/B 去除；選擇填空還原 |
 | `wordset-system.md` | 建字表 | 每詞性意思、例句、音節、拼字提醒、易混淆、衍生字；不輸出音標 |
+| `exam-import.md` | 考卷重現 | 只抄考卷的選擇題：題幹（空格一律 `______`）、選項（成對選項保留 `;`）、模型判斷的答案；不看手寫答案；沒有選項的題整題略過 |
 | `exam-gen.md` | 測驗卷出題 | 任務：`read`、`cloze`、`reply`、`ext`；對話說明；只回 JSON，程式再驗證 |
 | `exam-grade.md` | AI 批改 | 造句／翻譯評分規格 |
 
@@ -565,7 +570,7 @@ sequenceDiagram
 - **假 Claude CLI**（`test/fake-claude.mjs`）：依輸入產生合法輸出，並以環境變數注入故障——`FAKE_FAIL_AFTER`、`FAKE_FAIL_MATCH`、`FAKE_BAD_TEXT_FIRST`、`FAKE_EMPTY_FIRST`、`FAKE_EXAM_BAD_FIRST`、`FAKE_DELAY_MS`、`FAKE_GRADE_*`。
 - **API 測試**（`test/api/`）：以暫存資料庫起真伺服器，涵蓋合約、驗證與鎖定、文章表、批次與退回、對話、測驗卷（含模型出題、報價確認、省錢模式、重用題庫、AI 批改）。
 - **單元測試**：遷移、字數提示、JSON 解析、斷句、句子練習品質、配題計分、題目生成、單字同義字。
-- **角色與花費關卡**：`test/api/roles.mjs`（兩組帳號、學生 403、紀錄身分）、`jobs.mjs`（申請、核准、拒絕、撤回、存成文章、辨識與免審張數、建字表、AI 批改、失敗重試）、`admin.mjs`（`/admin` 入口、句子管理）、`paper-edit.mjs`（草稿、換題、刪題、發佈）、`records.mjs`（整理學生紀錄）、`weakness.mjs`（來源綜合）。
+- **角色與花費關卡**：`test/api/roles.mjs`（兩組帳號、學生 403、紀錄身分）、`jobs.mjs`（申請、核准、拒絕、撤回、存成文章、辨識與免審張數、建字表、AI 批改、失敗重試）、`admin.mjs`（`/admin` 入口、句子管理）、`paper-edit.mjs`（草稿、換題、刪題、發佈）、`exam-import.mjs`（考卷重現：匯入、命名、核對、發佈、作答）、`records.mjs`（整理學生紀錄）、`weakness.mjs`（來源綜合）。
 - **瀏覽器測試**（`test/browser/`）：CDP 驅動無頭 Chrome——文章表 UI、測驗卷 UI（出卷→作答→交卷→訂正→自評→AI→歷史→列印）、多份並存、詞性標籤排版（360/390/430px）、朗讀結束保險。
 - **畫面掃描**：`student-sweep.mjs` 走過學生的每個分頁，檢查看得到的文字（含 title、placeholder）沒有費用、額度、模型等字眼、沒有任何 4xx／5xx 請求；`nav-ui.mjs` 檢查頁面上沒有重複的 id。測試要檢查「看得到」（`offsetParent`），不能只檢查元素存在。
 - **評估**（`eval/`）：黃金句子集與腳本，用於改提示詞後檢查分析品質（真模型，手動執行、需花額度）。

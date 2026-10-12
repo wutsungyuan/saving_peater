@@ -29,12 +29,14 @@ function adminQCard(q, n, editable){
   const chunks = q.inputMode === 'order' ? `<p class="hint">詞組：${(q.chunks || []).map(esc).join(' ／ ')}</p>` : '';
   const bound = Boolean(q.passageId);
   const canSwap = editable && !bound && ['mc', 'reorder', 'fix', 'fill', 'match', 'trans', 'make'].includes(q.section) && q.src !== 'ext-model';
+  const isExam = q.type === 'exam', warn = (q.meta?.check || []).join('；');
   const acts = editable ? `<div class="row pa-acts">
-      <button type="button" class="linky" data-ped="swap" data-qid="${q.id}" ${canSwap ? '' : `disabled title="${bound ? '和文章綁在一起，不能單題編修' : '模型出的延伸題只能刪掉'}"`}>換一題</button>
+      ${isExam ? `<button type="button" class="linky" data-ped="edit-open" data-qid="${q.id}">編輯題目與答案</button>` : ''}
+      <button type="button" class="linky" data-ped="swap" data-qid="${q.id}" ${canSwap || isExam ? (isExam ? 'hidden' : '') : `disabled title="${bound ? '和文章綁在一起，不能單題編修' : '模型出的延伸題只能刪掉'}"`}>換一題</button>
       <button type="button" class="linky danger" data-ped="remove" data-qid="${q.id}" ${bound ? 'disabled title="和文章綁在一起，不能單題編修"' : ''}>刪除</button></div>` : '';
   return `<article class="q p-q pa-q" id="pq-${q.id}">
-    <div class="q-head"><span class="q-no">${n}</span><span class="q-prompt">${esc(q.prompt ?? '')}</span>${q.src && q.src !== 'scope' ? '<span class="tag t-prog">延伸</span>' : ''}<span class="p-pts">${fmtPts(q.pts)} 分</span></div>
-    ${q.context ? `<div class="q-ctx"><span class="who">${esc(q.context.speaker || '對方')}</span>${esc(q.context.text)}</div>` : ''}
+    <div class="q-head"><span class="q-no">${n}</span><span class="q-prompt">${esc(q.prompt ?? '')}</span>${q.src && q.src !== 'scope' ? '<span class="tag t-prog">延伸</span>' : ''}${isExam && q.meta?.examNo != null ? `<span class="tag t-model">原卷第 ${q.meta.examNo} 題</span>` : ''}<span class="p-pts">${fmtPts(q.pts)} 分</span></div>
+    ${warn ? `<p class="msg">⚠ 請核對：${esc(warn)}</p>` : ''}${q.context ? `<div class="q-ctx"><span class="who">${esc(q.context.speaker || '對方')}</span>${esc(q.context.text)}</div>` : ''}
     ${q.type === 'trans' ? `<div class="q-zh">${esc(q.question ?? '')}</div>` : stem ? `<div class="q-sent">${stem}</div>` : ''}
     ${q.hint ? `<div class="q-hint">（${esc(q.hint)}）</div>` : ''}${choices}${chunks}
     <p class="pa-ans"><b>答案</b>　${esc(adminAnswer(q))}</p>
@@ -62,8 +64,43 @@ function renderAdminPaper(){
     ${s.questions.map(q => adminQCard(q, ++n, draft)).join('')}</section>`).join('')}`;
 }
 
+/** 考卷重現的題目編輯表單：改題幹、選項、正確答案 */
+function adminQEditor(q){
+  const ans = String((q.answer || [])[0] ?? '');
+  const rows = (q.choices || []).map((c, i) => {
+    const l = String.fromCharCode(65 + i) + ' ';
+    return `<div class="row pe-row"><label class="p-radio"><input type="radio" name="peAns" value="${i}"${String(c.value) === ans ? ' checked' : ''} aria-label="正確答案：選項 ${l.trim()}"> ${l}</label>
+      <input type="text" class="pe-opt" value="${esc(c.label)}" aria-label="選項 ${l.trim()}"></div>`;
+  }).join('');
+  return `<article class="q p-q pa-q pa-edit" id="pq-${q.id}" data-qedit="${q.id}">
+    <label for="peStem">題幹（空格用 ______ 表示）</label>
+    <textarea id="peStem" rows="3" spellcheck="false">${esc(q.question ?? '')}</textarea>
+    <label>選項（點左邊的圓點選正確答案；兩個空格的選項寫成「free; poor」；清空的選項會被刪掉）</label>
+    ${rows}
+    <div class="row"><button type="button" class="primary" data-ped="edit-save" data-qid="${q.id}">儲存這題</button>
+      <button type="button" class="linky" data-ped="edit-cancel">取消</button><span class="hint" id="peMsg"></span></div></article>`;
+}
+
 pBox().addEventListener('click', async e => {
   const b = e.target.closest('[data-ped]'); if (!b || !PA.paper) return;
+  if (b.dataset.ped === 'edit-open'){
+    const q = PA.paper.sections.flatMap(x => x.questions).find(x => x.id === b.dataset.qid), card = document.getElementById('pq-' + b.dataset.qid);
+    if (q && card) card.outerHTML = adminQEditor(q);
+    return;
+  }
+  if (b.dataset.ped === 'edit-cancel'){ renderAdminPaper(); return; }
+  if (b.dataset.ped === 'edit-save'){
+    const card = b.closest('[data-qedit]'), picked = Number(card.querySelector('input[name="peAns"]:checked')?.value ?? 0);
+    const all = [...card.querySelectorAll('.pe-opt')].map(i => i.value.trim()), options = all.filter(Boolean);
+    const answerIndex = options.indexOf(all[picked]);
+    b.disabled = true;
+    const r = await artApi('/api/paper-edit', { method: 'POST', body: { id: PA.paper.id, action: 'edit-q', questionId: b.dataset.qid, question: card.querySelector('#peStem').value, options, answerIndex } });
+    if (!r.ok){ b.disabled = false; el('peMsg').textContent = r.json.message || '儲存失敗'; return; }
+    PA.paper = r.json.paper; renderAdminPaper();
+    el('paMsg').textContent = '已儲存這一題。';
+    document.getElementById('pq-' + b.dataset.qid)?.scrollIntoView({ block: 'nearest' });
+    return;
+  }
   const act = b.dataset.ped, msg = el('paMsg'), id = PA.paper.id;
   if (act === 'back'){ P.tab = 'history'; return loadHistory2(); }
   if (act === 'print'){ P.paper = PA.paper; printPaper(false); return; }

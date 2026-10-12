@@ -300,12 +300,12 @@ export async function analyzeMany(sentences, { groupSize = 8, onDone, onGroup, .
 
 const PROSE_PROMPT = join(__dirname, '..', 'prompts', 'analyze-ocr.md');
 
-/** 從圖片抄出英文句子。回傳 { text, usage } */
-export function extractProse(imagePath, { model = MODEL, timeoutMs = 180_000 } = {}){
+/** 請模型讀一張圖，依指定的系統提示回 JSON。回傳 { data, usage }（照片辨識共用） */
+function readImageJson(imagePath, promptFile, instruction, { model = MODEL, timeoutMs = 180_000 } = {}){
   return new Promise((resolve, reject) => {
     const args = [
-      '-p', `Read the image at ${imagePath} and transcribe the English sentences.`,
-      '--system-prompt-file', PROSE_PROMPT,
+      '-p', `Read the image at ${imagePath} and ${instruction}`,
+      '--system-prompt-file', promptFile,
       '--allowedTools', 'Read',
       '--exclude-dynamic-system-prompt-sections',
       '--model', model,
@@ -336,7 +336,7 @@ export function extractProse(imagePath, { model = MODEL, timeoutMs = 180_000 } =
       try { data = parseModelJson(env.result); }
       catch (e){ return reject(new Error('辨識結果無法解析：' + e.message)); }
       const u = env.usage ?? {};
-      resolve({ text: String(data.text ?? '').trim(), filled: Number(data.filled) || 0, usage: {
+      resolve({ data, usage: {
         inputTokens: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
         outputTokens: u.output_tokens ?? 0,
         cacheReadTokens: u.cache_read_input_tokens ?? 0,
@@ -344,4 +344,18 @@ export function extractProse(imagePath, { model = MODEL, timeoutMs = 180_000 } =
       } });
     });
   });
+}
+
+/** 從圖片抄出英文句子。回傳 { text, filled, usage } */
+export async function extractProse(imagePath, opts){
+  const { data, usage } = await readImageJson(imagePath, PROSE_PROMPT, 'transcribe the English sentences.', opts);
+  return { text: String(data.text ?? '').trim(), filled: Number(data.filled) || 0, usage };
+}
+
+const EXAM_PROMPT = join(__dirname, '..', 'prompts', 'exam-import.md');
+
+/** 從考卷照片抄出選擇題（題幹、選項、模型判斷的答案）。回傳 { questions, usage }；題目的整理與檢查在 papers/examimport.mjs */
+export async function extractExam(imagePath, opts){
+  const { data, usage } = await readImageJson(imagePath, EXAM_PROMPT, 'transcribe the multiple-choice questions as JSON.', opts);
+  return { questions: Array.isArray(data.questions) ? data.questions : [], usage };
 }

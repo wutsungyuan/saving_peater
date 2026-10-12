@@ -5,15 +5,17 @@
 //  - 刪題後每題分數重新分配，滿分一定維持 100；至少要留 10 題。
 //  - 換題從同一個範圍裡抽同題型、沒出現在這份卷子的題，不呼叫模型、不花額度。
 
-import { DIFFICULTY_NAME, rescore, seededRng } from './plan.mjs';
+import { rescore, seededRng } from './plan.mjs';
 import { buildPool } from './pool.mjs';
 import { generateType } from './gen.mjs';
-import { paperView } from './paper.mjs';
+import { paperView, diffNameOf } from './paper.mjs';
+import { examPoints, examQuestion } from './examimport.mjs';
 
 const MIN_QUESTIONS = 10;
+const MIN_EXAM_QUESTIONS = 5;         // 考卷重現的卷子：學校的考卷題數不一定到 10 題
 const SWAPPABLE = new Set(['mc', 'reorder', 'fix', 'fill', 'match', 'trans', 'make']);
 
-export const titleOf = p => p.settings.title || `${DIFFICULTY_NAME[p.settings.difficulty] ?? ''}・${p.n} 題`;
+export const titleOf = p => p.settings.title || `${diffNameOf(p.settings) ?? ''}・${p.n} 題`;
 
 /** 老師看的卷子：題目帶答案與解說（學生版會拿掉）。 */
 export function paperAdminView(p){
@@ -24,6 +26,12 @@ export function paperAdminView(p){
 
 /** 依各區塊的題數重新分配分數（總分維持 100）。回傳 false 表示分不出剛好 100 分。 */
 function reassign(data){
+  if (data.sections.every(s => s.id === 'exam')){          // 考卷重現：全部是同一區，平分 100 分
+    const pts = examPoints(data.questions.length), byQ = new Map(data.questions.map(q => [q.id, q]));
+    data.sections[0].questionIds.forEach((id, i) => { byQ.get(id).pts = pts[i]; });
+    data.sections[0].n = pts.length; data.sections[0].pts = pts[0];
+    return true;
+  }
   const rows = rescore(data.sections.map(s => ({ id: s.id, n: s.questionIds.length })));
   if (!rows) return false;
   const byId = new Map(data.questions.map(q => [q.id, q]));
@@ -39,8 +47,8 @@ function reassign(data){
   return true;
 }
 
-/** action：rename | publish | unpublish | remove | swap。成功回 { ok, paper }，失敗回 { error, message }。 */
-export function editPaper(cache, id, { action, title, questionId } = {}, { ttlDays = 30 } = {}){
+/** action：rename | publish | unpublish | remove | swap | edit-q（考卷重現的題目：改題幹、選項、答案）。成功回 { ok, paper }，失敗回 { error, message }。 */
+export function editPaper(cache, id, { action, title, questionId, question, options, answerIndex } = {}, { ttlDays = 30 } = {}){
   const p = cache.getPaper(id);
   if (!p) return { error: 'expired', message: '這份卷子已經過期或不存在。' };
   if (p.settings.kind === 'fix') return { error: 'fix-paper', message: '訂正卷不能編修。' };
@@ -63,15 +71,27 @@ export function editPaper(cache, id, { action, title, questionId } = {}, { ttlDa
     return done();
   }
 
-  if (action !== 'remove' && action !== 'swap') return { error: 'bad-action', message: '不認得這個動作。' };
+  if (!['remove', 'swap', 'edit-q'].includes(action)) return { error: 'bad-action', message: '不認得這個動作。' };
   if (p.status !== 'draft') return { error: 'not-draft', message: '已發佈的卷子不能改題目。先「收回」變成草稿再改（學生還沒開始作答才能收回）。' };
   const data = p.data, q = data.questions.find(x => x.id === questionId);
   if (!q) return { error: 'no-question', message: '找不到這一題。' };
   if (q.passageId) return { error: 'passage', message: '這題和文章綁在一起（閱讀測驗、克漏字、文意選填），不能單題編修。' };
   const sec = data.sections.find(s => s.id === q.section);
 
+  if (action === 'edit-q'){
+    if (q.type !== 'exam') return { error: 'not-exam', message: '只有「考卷重現」的題目能直接改內容。' };
+    const x = examQuestion({ no: q.meta?.examNo, stem: question, options, answer: answerIndex });
+    if (x.skip) return { error: 'bad-question', message: x.skip === '題幹裡沒有空格' ? '題幹裡要有空格（用 ______ 表示）。' : x.skip === '找不到選項' ? '至少要有 2 個選項。' : x.skip };
+    const next = structuredClone(data), i = next.questions.findIndex(z => z.id === questionId);
+    delete next.answers?.[questionId];
+    next.questions[i] = { ...x.q, id: q.id, section: q.section, pts: q.pts };
+    cache.updatePaper(id, { data: next });
+    return done();
+  }
+
   if (action === 'remove'){
-    if (data.questions.length <= MIN_QUESTIONS) return { error: 'too-few', message: `卷子至少要留 ${MIN_QUESTIONS} 題。` };
+    const min = data.sections.every(s => s.id === 'exam') ? MIN_EXAM_QUESTIONS : MIN_QUESTIONS;
+    if (data.questions.length <= min) return { error: 'too-few', message: `卷子至少要留 ${min} 題。` };
     const next = structuredClone(data);
     const ns = next.sections.find(s => s.id === q.section);
     ns.questionIds = ns.questionIds.filter(x => x !== questionId);

@@ -22,7 +22,7 @@ const QTYPE_NAMES = { 'pattern':'句型判斷', 'tense':'時態填空', 'pos':'�
   'verb-forms':'動詞三態', 'error-fix':'改錯',
   'pronoun-case':'代名詞格位', 'pronoun-fill':'代名詞填空',
   'paper-reorder':'句子重組（測驗卷）', 'paper-fix':'改錯（測驗卷）', 'paper-cloze':'克漏字（測驗卷）',
-  'paper-wbank':'文意選填（測驗卷）', 'paper-reply':'情境應答（測驗卷）' };
+  'paper-wbank':'文意選填（測驗卷）', 'paper-reply':'情境應答（測驗卷）', 'paper-exam':'考卷重現（測驗卷）' };
 const MIN_N = 2;   // 少於這個作答數就標為資料不足，不下判斷
 
 /** 一列：名稱、長條、百分比、分數、狀態標籤。數字與標籤都在，不靠顏色辨識 */

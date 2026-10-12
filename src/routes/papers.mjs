@@ -1,7 +1,12 @@
 // 路由：測驗卷。預覽、出卷、作答存檔、交卷、自評、訂正、歷史。全部要驗證。
+import { join } from 'node:path';
+import { writeFile, unlink, mkdir } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { cache } from '../context.mjs';
-import { PAPER_DAYS } from '../config.mjs';
-import { readBody, authed, roleOf, denyStudent, userOf, sendJson } from '../http.mjs';
+import { PAPER_DAYS, ROOT } from '../config.mjs';
+import { readBody, authed, roleOf, denyStudent, userOf, sendJson, decodeImage } from '../http.mjs';
+import { extractExam } from '../analyzer.mjs';
+import { buildExamQuestions, saveExamDraft, analysisText } from '../papers/examimport.mjs';
 import { submitJob } from '../jobs.mjs';
 import { editPaper, paperAdminView } from '../papers/edit.mjs';
 import { aiGradePaper, previewPaper, createPaper, paperView, saveAnswers, submitPaper, markSelf, createFixPaper, historyList } from '../papers/paper.mjs';
@@ -15,6 +20,43 @@ const guard = (handler, method) => async (req, res, url) => {
 const fail = (res, r, status = 400) => sendJson(res, r.error === 'expired' ? 410 : status, r);
 
 export const routes = [
+
+  // 考卷重現：老師上傳學校考卷的照片（可多張），選擇題原樣存成草稿。只有老師能用（要花辨識額度）。
+  { match: (req, url) => url.pathname === '/api/exam-import', handler: guard(async (req, res, url) => {
+      if (denyStudent(req, res, url)) return;
+      let b = {};
+      try { b = JSON.parse(await readBody(req, 40e6)) || {}; } catch { return sendJson(res, 413, { error: 'too-large', message: '圖片太大，請少選幾張或壓縮後再試。' }); }
+      const images = (Array.isArray(b.images) ? b.images : []).slice(0, 6);
+      if (!images.length) return sendJson(res, 400, { error: 'no-image', message: '請選一張考卷的照片。' });
+      const decoded = images.map(decodeImage), bad = decoded.find(d => d.error);
+      if (bad) return sendJson(res, bad.code, { error: bad.error, message: bad.message });
+
+      const dir = join(ROOT, 'data', 'tmp'), t0 = Date.now();
+      const raw = [], failed = []; let cost = 0, inTok = 0, outTok = 0;
+      await mkdir(dir, { recursive: true });
+      for (let i = 0; i < decoded.length; i++){
+        const file = join(dir, 'exam-' + randomBytes(8).toString('hex') + '.' + decoded[i].ext);
+        try {
+          await writeFile(file, decoded[i].buf);
+          const r = await extractExam(file);
+          raw.push(...r.questions); cost += r.usage.costUsd || 0; inTok += r.usage.inputTokens || 0; outTok += r.usage.outputTokens || 0;
+        } catch (e){
+          if (e.kind === 'rate-limit' || e.kind === 'auth')
+            return sendJson(res, e.kind === 'rate-limit' ? 429 : 500, { error: e.kind, message: e.kind === 'rate-limit' ? 'Claude 訂閱額度似乎已用盡，等額度重置後再試。' : 'Claude 認證失效，請在終端機執行 claude 重新登入。' });
+          failed.push('第 ' + (i + 1) + ' 張：' + String(e.message).slice(0, 120));
+        } finally { await unlink(file).catch(() => {}); }
+      }
+      const { questions, skipped } = buildExamQuestions(raw);
+      cache.log({ kind: 'exam-ocr', chars: decoded.reduce((a, d) => a + d.buf.length, 0), sentences: questions.length, cached: 0, analyzed: 0, ms: Date.now() - t0,
+        text: '考卷重現：' + questions.length + ' 題', inputTokens: inTok, outputTokens: outTok, costUsd: cost });
+      if (!questions.length)
+        return sendJson(res, 422, { error: 'no-questions', message: failed.length ? '辨識失敗：' + failed.join('；') : '照片裡沒有找到有選項的選擇題。請確認照片清楚、整張考卷都拍進來了。', skipped });
+      const saved = saveExamDraft(cache, questions, { title: b.title, ttlDays: PAPER_DAYS });
+      const sentences = questions.map(q => q.meta.filled && analysisText(q.meta.filled)).filter(Boolean).join('\n');
+      return sendJson(res, 200, { ok: true, id: saved.id, title: saved.title, n: questions.length, flagged: questions.filter(q => q.meta.check.length).length,
+        skipped, failed, sentences, usage: { costUsd: cost } });
+    }, 'POST') },
+
   { match: (req, url) => url.pathname === '/api/paper-preview', handler: guard(async (req, res, url) => {
       if (denyStudent(req, res, url)) return;
       const pb = await body(req); pb.userToken = userOf(req, url, pb.userToken);

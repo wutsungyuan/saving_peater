@@ -23,6 +23,7 @@ const rememberedOpen = () => { try { return localStorage.getItem(pOpenKey); } ca
 // ---- 導覽列：出卷／歷史 ----
 const pNav = () => `<div class="subrow"><div class="subtabs" role="group" aria-label="測驗卷">
   <button data-pt="setup" class="admin-only" aria-pressed="${P.tab === 'setup' || P.tab === 'run' || P.tab === 'result'}">出卷</button>
+  <button data-pt="exam" class="admin-only" aria-pressed="${P.tab === 'exam'}">考卷重現</button>
   <button data-pt="history" aria-pressed="${P.tab === 'history'}">歷史</button></div></div>`;
 
 async function loadPaperHome(){
@@ -30,6 +31,7 @@ async function loadPaperHome(){
   if (P.tab === 'run' && P.paper) return renderRun();
   if (P.tab === 'result' && P.paper) return renderResult();
   if (P.tab === 'history') return loadHistory2();
+  if (P.tab === 'exam' && isAdminApp()) return renderExamImport();
   if (!isAdminApp()){ P.tab = 'history'; return loadHistory2(); }      // 前台只看卷子（學生與老師都一樣）；出卷在後台
   P.tab = 'setup';                                   // 走到這裡就是要顯示出卷設定頁（載入完成時若使用者已切去別頁就不重畫，見下面）
   pBox().innerHTML = '<p class="msg">讀取中…</p>';
@@ -152,7 +154,7 @@ pBox().addEventListener('click', e => {
   const act = t.closest('[data-act]')?.dataset.act;
   if (act) handlePaperAction(act, t.closest('[data-act]'));
   const nav = t.closest('[data-pt]');
-  if (nav) { P.tab = nav.dataset.pt; nav.dataset.pt === 'history' ? loadHistory2() : (P.paper && P.paper.status === 'open' ? (P.tab = 'run', renderRun()) : (P.tab = 'setup', loadPaperHome())); }
+  if (nav) { P.tab = nav.dataset.pt; nav.dataset.pt === 'history' ? loadHistory2() : nav.dataset.pt === 'exam' ? renderExamImport() : (P.paper && P.paper.status === 'open' ? (P.tab = 'run', renderRun()) : (P.tab = 'setup', loadPaperHome())); }
   if (t.id === 'pStart') startPaper();
 });
 pBox().addEventListener('input', e => {

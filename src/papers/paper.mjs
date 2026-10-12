@@ -11,6 +11,8 @@ import { gradeQuote, runAiGrade, applyGrades } from './aigrade.mjs';
 import { planModelWork, runModelWork, readSupply, replySupply, replySection, extBankCaps, extQuestions, readSection, clozeSemantic } from './model.mjs';
 
 const newId = () => 'p' + randomBytes(5).toString('hex');
+/** 卷子的「難度」欄：一般卷子是簡單／中等／困難，考卷重現沒有難度，顯示標籤 */
+export const diffNameOf = st => st.label ?? DIFFICULTY_NAME[st.difficulty];
 
 /** 整理前端送來的出卷設定 */
 export function normalizeSettings(b = {}){
@@ -151,7 +153,7 @@ export function paperView(p){
   return {
     id: p.id, status: p.status, createdAt: p.createdAt, expiresAt: p.expiresAt, n: p.n, score: p.score, submittedAt: p.submittedAt,
     kind: p.settings.kind ?? 'normal', from: p.settings.from ?? null,
-    settings: { n: p.settings.n, difficulty: p.settings.difficulty, difficultyName: DIFFICULTY_NAME[p.settings.difficulty], mode: p.settings.mode,
+    settings: { n: p.settings.n, difficulty: p.settings.difficulty, difficultyName: diffNameOf(p.settings), mode: p.settings.mode,
       setIds: p.settings.setIds, articleIds: p.settings.articleIds },
     sections: d.sections.map(s => ({ id: s.id, name: s.name, n: s.n, pts: s.pts, ext: s.ext, extFree: s.extFree,
       passages: s.passages, questions: s.questionIds.map(id => ({ ...publicQuestion(byId.get(id)), id, pts: byId.get(id).pts, section: s.id, src: byId.get(id).src })) })),
@@ -279,5 +281,5 @@ export function createFixPaper(cache, id, { ids, ttlDays = 30 } = {}){
 export function historyList(cache, { includeDrafts = true } = {}){
   return cache.papers(50).filter(r => includeDrafts || r.status !== 'draft').map(r => ({ id: r.id, title: r.settings.title ?? null, createdAt: r.created_at, expiresAt: r.expires_at, n: r.n, status: r.status,
     score: r.score, submittedAt: r.submitted_at, kind: r.settings.kind ?? 'normal', from: r.settings.from ?? null,
-    difficulty: r.settings.difficulty, difficultyName: DIFFICULTY_NAME[r.settings.difficulty], setIds: r.settings.setIds, articleIds: r.settings.articleIds }));
+    difficulty: r.settings.difficulty, difficultyName: diffNameOf(r.settings), setIds: r.settings.setIds, articleIds: r.settings.articleIds }));
 }

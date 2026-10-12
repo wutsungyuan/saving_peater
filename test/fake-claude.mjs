@@ -23,6 +23,7 @@ const env = process.env;
 
 const kind = sys === 'analyzer-system.md' ? 'analyze'
   : sys === 'analyze-ocr.md' ? 'prose-ocr'
+  : sys === 'exam-import.md' ? 'exam-import'
   : sys === 'wordset-system.md' ? 'enrich'
   : sys === 'wordset-ocr.md' ? 'wordset-ocr'
   : sys === 'exam-gen.md' ? 'exam'
@@ -86,6 +87,14 @@ if (kind === 'analyze' && env.FAKE_EMPTY_FIRST === '1' && count === 1) finish({ 
 if (kind === 'analyze') finish({ sentences: sentences.map(analysis) }, { n: sentences.length });
 
 if (kind === 'prose-ocr') finish({ text: env.FAKE_OCR_TEXT ?? 'I like cats.\nShe runs fast.', filled: 0 });
+
+// 考卷重現：預設回 4 題（單空格、雙空格、X 選項、沒有空格的壞題）；FAKE_EXAM_JSON 可以換成別的
+if (kind === 'exam-import') finish(env.FAKE_EXAM_JSON ? JSON.parse(env.FAKE_EXAM_JSON) : { questions: [
+  { no: 1, stem: 'In _____, the weather is usually very cold and it often snows.', options: ['spring', 'summer', 'autumn', 'winter'], answer: 3 },
+  { no: 18, stem: 'Oh no, I forgot my _____. Can you _____ me one? My hands are so cold.', options: ['jacket; borrow', 'gloves; lend', 'camera; send', 'violin; teach'], answer: 1 },
+  { no: 5, stem: 'A: I won the lottery(中樂透) yesterday! B: Really? Or are you _____?', options: ['(A) making up my mind', '(B) signing up', '(C) missing out', '(D) pulling my leg'], answer: 3 },
+  { no: 99, stem: 'This one has no blank at all.', options: ['a', 'b', 'c', 'd'], answer: 0 },
+] });
 
 if (kind === 'wordset-ocr') finish({ words: [{ term: 'apple', zh: '蘋果' }, { term: 'banana', zh: '香蕉' }, { term: 'cherry', zh: null }] });
 
