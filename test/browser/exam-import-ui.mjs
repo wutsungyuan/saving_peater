@@ -90,7 +90,19 @@ try {
   chk('學生的測驗卷：看得到發佈的卷子與名稱', await st.until(`/第三次段考 Unit1-3/.test(document.getElementById('pr-paper').textContent)`, 8000));
   chk('學生看不到「考卷重現」入口（沒有這個按鈕，或按鈕是隱藏的）', await st.evl(`(() => { const b = document.querySelector('#pr-paper [data-pt="exam"]'); return !b || b.offsetParent === null; })()`));
   chk('學生的歷史只有發佈的 1 份，沒有草稿', await st.evl(`fetch('/api/papers').then(r => r.json()).then(j => j.papers.length === 1 && j.papers[0].status === 'open')`));
-  chk('沒有 JS 錯誤', page.errors.length === 0 && st.errors.length === 0, [...page.errors, ...st.errors].join(' | '));
+
+  section('老師登入前台：草稿不能在前台作答（不然交卷會被擋、顯示「還沒發佈」）');
+  const tf = await openPage(S.base + '/', { width: 420, height: 800, settle: 2500 }); pages.push(tf);
+  await login(tf, 't1', 'tpass-1');
+  chk('老師登入前台', await tf.until(`document.body.dataset.role === 'teacher' && document.body.dataset.app !== 'admin'`, 10000));
+  const png = 'data:image/png;base64,' + Buffer.concat([Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]), Buffer.alloc(200)]).toString('base64');
+  chk('先用 API 再存一份草稿', await tf.evl(`fetch('/api/exam-import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ images: [${JSON.stringify(png)}] }) }).then(r => r.json()).then(j => j.ok === true)`));
+  chk('伺服器那邊確實有草稿', await tf.evl(`fetch('/api/papers').then(r => r.json()).then(j => j.papers.some(p => p.status === 'draft'))`));
+  await tf.click('.tabs button[data-view="exam"]');
+  await tf.until(`!!document.querySelector('#pr-paper [data-pt="history"]')`, 8000);
+  await tf.click('#pr-paper [data-pt="history"]');
+  chk('前台歷史：看得到發佈的卷子，沒有草稿、沒有「編輯／發佈」', await tf.until(`/第三次段考 Unit1-3/.test(document.getElementById('pr-paper').textContent) && !/草稿/.test(document.getElementById('pr-paper').textContent) && !document.querySelector('[data-pub]')`, 8000));
+  chk('沒有 JS 錯誤', page.errors.length === 0 && st.errors.length === 0 && tf.errors.length === 0, [...page.errors, ...st.errors, ...tf.errors].join(' | '));
   code = done();
 } catch (e) {
   console.log('ERR', e.stack || e.message); code = 1;

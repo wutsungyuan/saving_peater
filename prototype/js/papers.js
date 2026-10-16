@@ -183,6 +183,7 @@ async function startPaper(){
   openPaper(r.json.paper);
 }
 function openPaper(paper){
+  if (!isAdminApp() && paper.status === 'draft') return loadHistory2();                      // 草稿不能在前台作答
   if (isAdminApp() && paper.status !== 'submitted') return loadAdminPaper(paper.id);        // 後台：草稿與已發佈的是編修／預覽，不是作答
   P.paper = paper; P.answers = { ...(paper.answers || {}) }; P.orderIdx = {}; P.saveState = '';
   P.tab = paper.status === 'submitted' ? 'result' : 'run';
@@ -416,7 +417,7 @@ async function loadHistory2(){
   const r = await artApi('/api/papers');
   if (!r.ok){ pBox().innerHTML = `${pNav()}<p class="msg">讀不到歷史。</p>`; return; }
   const names = ids => ids?.length ? ids.map(id => P.sets.find(s => s.id === id)?.name ?? P.articles.find(a => a.id === id)?.name ?? `#${id}`).join('、') : '';
-  const list = r.json.papers;
+  const list = isAdminApp() ? r.json.papers : r.json.papers.filter(p => p.status !== 'draft');       // 草稿還沒發佈，前台（連老師登入也一樣）不列、不能作答；要到後台編修、發佈
   pBox().innerHTML = `${pNav()}${list.length ? `<div class="scroll"><table class="p-table"><thead><tr><th>時間</th><th>內容</th><th>狀態</th><th></th></tr></thead><tbody>${list.map(p => `<tr>
     <td>${new Date(p.createdAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
     <td>${p.kind === 'fix' ? '<span class="tag t-model">訂正</span> ' : ''}${p.title ? `<b>${esc(p.title)}</b> <small>（${p.n} 題・${esc(p.difficultyName || '')}）</small>` : `${p.n} 題${p.kind === 'fix' ? '' : `・${esc(p.difficultyName || '')}`}`}<br><small>${esc(names([...(p.setIds || []), ...(p.articleIds || [])]))}</small></td>
