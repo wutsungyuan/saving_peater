@@ -98,12 +98,15 @@ try {
   const r2 = await S.j('/api/papers', { method: 'POST', body: { setIds: [fx.setId], articleIds: [fx.artId], n: 25, mode: 'custom', types: ['mc', 'make', 'trans', 'fill'] } });
   const pid2 = r2.json.id;
   await S.j('/api/paper-submit', { method: 'POST', body: { id: pid2, answers: perfectAnswers(readPaper(fx.dbFile, pid2).data), userToken: 'x' } });
+  // 訂正再訂正：第二份訂正卷的 from 是第一份訂正卷（不是原卷），歷史仍要歸在同一份原卷底下，一共 2 筆
+  const redo2 = await S.j('/api/paper-redo', { method: 'POST', body: { id: fixPaper.id } });
+  chk('先用 API 再訂正一次（訂正卷的訂正卷）', redo2.status === 200 && redo2.json.paper?.from === fixPaper.id, redo2.text.slice(0, 200));
   await click('#pr-paper [data-pt="history"]');
   chk('歷史：列出出過的卷子、說明只保留 30 天 20 份', await until(`document.querySelectorAll('#pr-paper tbody tr').length >= 3 && /保留 30 天、最近 20 份/.test(document.getElementById('pr-paper').textContent)`));
   chk('訂正卷歸在原卷底下：預設收合（看不到、沒有獨立的主列）', await evl(`(() => { const kids = [...document.querySelectorAll('#pr-paper tr.p-child')]; return kids.length >= 1 && kids.every(r => r.hidden && r.offsetParent === null) && [...document.querySelectorAll('#pr-paper tbody tr:not(.p-child) .tag.t-model')].length === 0; })()`));
-  chk('原卷那一列有「訂正紀錄（1）」展開鈕', await evl(`(() => { const b = document.querySelector('[data-fixtoggle="${pid}"]'); return !!b && /訂正紀錄（1）/.test(b.textContent) && b.getAttribute('aria-expanded') === 'false'; })()`));
+  chk('原卷那一列有「訂正紀錄（2）」展開鈕（訂正再訂正也算在內）', await evl(`(() => { const b = document.querySelector('[data-fixtoggle="${pid}"]'); return !!b && /訂正紀錄（2）/.test(b.textContent) && b.getAttribute('aria-expanded') === 'false'; })()`));
   await click(`[data-fixtoggle="${pid}"]`);
-  chk('點展開：訂正卷出現在原卷正下方，有「訂正」標記', await evl(`(() => { const m = document.querySelector('[data-fixtoggle="${pid}"]').closest('tr'), k = m.nextElementSibling; return !!k && k.classList.contains('p-child') && !k.hidden && !!k.querySelector('.tag.t-model') && k.offsetParent !== null; })()`));
+  chk('點展開：2 筆訂正卷都出現在原卷正下方，有「訂正」標記', await evl(`(() => { const m = document.querySelector('[data-fixtoggle="${pid}"]').closest('tr'), k = m.nextElementSibling; return document.querySelectorAll('#pr-paper tr.p-child:not([hidden])').length === 2 && !!k && k.classList.contains('p-child') && !k.hidden && !!k.querySelector('.tag.t-model') && k.offsetParent !== null; })()`));
   await click(`[data-fixtoggle="${pid}"]`);
   chk('再點一次：收合回去', await evl(`[...document.querySelectorAll('#pr-paper tr.p-child')].every(r => r.hidden)`));
   await evl(`document.querySelector('[data-open="${pid2}"]').click()`);

@@ -419,21 +419,22 @@ async function loadHistory2(){
   const names = ids => ids?.length ? ids.map(id => P.sets.find(s => s.id === id)?.name ?? P.articles.find(a => a.id === id)?.name ?? `#${id}`).join('、') : '';
   const list = isAdminApp() ? r.json.papers : r.json.papers.filter(p => p.status !== 'draft');       // 草稿還沒發佈，前台（連老師登入也一樣）不列、不能作答；要到後台編修、發佈
   // 訂正卷歸在原卷底下：主列表只列主測驗，點「訂正紀錄」才展開；原卷已不在列表裡的訂正卷（過期、被刪）才單獨列出
-  const ids = new Set(list.map(p => p.id));
-  const isChild = p => p.kind === 'fix' && p.from && ids.has(p.from);
+  // 訂正卷還可以再訂正（from 指向上一份訂正卷），所以一路往上追到列表裡最上層的那份，整串都歸在它底下（由舊到新）
+  const byId = new Map(list.map(p => [p.id, p]));
+  const rootOf = p => { let c = p, hops = 0; while (c.kind === 'fix' && c.from && byId.has(c.from) && hops++ < 50) c = byId.get(c.from); return c; };
   const fixesOf = new Map();
-  for (const p of list) if (isChild(p)) fixesOf.set(p.from, [...(fixesOf.get(p.from) ?? []), p]);
-  const mains = list.filter(p => !isChild(p));
+  for (const p of [...list].reverse()) { const r = rootOf(p); if (r !== p) fixesOf.set(r.id, [...(fixesOf.get(r.id) ?? []), p]); }
+  const mains = list.filter(p => rootOf(p) === p);
   P.openFix ??= new Set();
-  const row = (p, child = false) => {
+  const row = (p, root = null) => {
     const fx = fixesOf.get(p.id) ?? [], open = P.openFix.has(p.id);
-    return `<tr${child ? ` class="p-child" data-fixof="${p.from}"${P.openFix.has(p.from) ? '' : ' hidden'}` : ''}>
+    return `<tr${root ? ` class="p-child" data-fixof="${root.id}"${P.openFix.has(root.id) ? '' : ' hidden'}` : ''}>
     <td>${new Date(p.createdAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
     <td>${p.kind === 'fix' ? '<span class="tag t-model">訂正</span> ' : ''}${p.title ? `<b>${esc(p.title)}</b> <small>（${p.n} 題・${esc(p.difficultyName || '')}）</small>` : `${p.n} 題${p.kind === 'fix' ? '' : `・${esc(p.difficultyName || '')}`}`}<br><small>${esc(names([...(p.setIds || []), ...(p.articleIds || [])]))}</small>${fx.length ? `<br><button class="linky" data-fixtoggle="${p.id}" data-n="${fx.length}" aria-expanded="${open}">${open ? '▾' : '▸'} 訂正紀錄（${fx.length}）</button>` : ''}</td>
     <td>${p.status === 'draft' ? '<span class="tag t-prog">草稿</span>' : p.status === 'submitted' ? (p.kind === 'fix' ? '已完成' : `<b>${fmtPts(p.score)}</b> 分`) : (isAdminApp() ? '已發佈・作答中' : '作答中')}</td>
     <td><button class="linky" data-open="${p.id}">${p.status === 'draft' ? '編輯' : p.status === 'submitted' ? (isAdminApp() ? '看作答' : '看結果') : isAdminApp() ? '預覽' : '繼續'}</button>${p.status === 'draft' ? ` <button class="linky admin-only" data-pub="${p.id}">發佈</button>` : ''} <button class="linky danger admin-only" data-del="${p.id}">刪除</button></td></tr>`;
   };
-  pBox().innerHTML = `${pNav()}${mains.length ? `<div class="scroll"><table class="p-table"><thead><tr><th>時間</th><th>內容</th><th>狀態</th><th></th></tr></thead><tbody>${mains.map(p => row(p) + (fixesOf.get(p.id) ?? []).map(c => row(c, true)).join('')).join('')}</tbody></table></div>`
+  pBox().innerHTML = `${pNav()}${mains.length ? `<div class="scroll"><table class="p-table"><thead><tr><th>時間</th><th>內容</th><th>狀態</th><th></th></tr></thead><tbody>${mains.map(p => row(p) + (fixesOf.get(p.id) ?? []).map(c => row(c, p)).join('')).join('')}</tbody></table></div>`
     : '<div class="box"><p style="margin:0">還沒有出過卷子。</p></div>'}
   <p class="hint">歷史只用快取存放：保留 ${r.json.keepDays} 天、最近 20 份，到期自動清除。答題統計（弱點）另外保存，不會跟著清除。</p>`;
 }
