@@ -632,6 +632,10 @@ footer code{font-family:var(--font-mono);font-size:.76rem;color:var(--accent)}
     -webkit-overflow-scrolling:touch}
   .tabs::-webkit-scrollbar{display:none}
   .tabs button{flex:1 0 auto;white-space:nowrap;padding:10px 13px;font-size:.88rem}
+  /* 子分頁（弱點的「全部／單字測驗／句子練習／測驗卷」）：不能比螢幕寬，否則整頁被撐開；放不下就左右滑 */
+  .subtabs{display:flex;max-width:100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .subtabs::-webkit-scrollbar{display:none}
+  .subtabs button{flex:0 0 auto;white-space:nowrap}
 
   .body{padding:34px 13px 16px}
   .line{font-size:1.26rem;line-height:3.2}
