@@ -688,6 +688,9 @@ mark.sw{background:var(--tip-bg);color:inherit;border-bottom:2px solid var(--acc
 .p-table th,.p-table td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--rule);vertical-align:top}
 .p-table th{font-size:.75rem;color:var(--muted);background:var(--surface-2)}
 .p-table small{color:var(--faint)}
+.p-table tr.p-child{background:var(--surface-2)}
+.p-table tr.p-child td:first-child{padding-left:22px;border-left:3px solid var(--rule)}
+.p-table tr[hidden]{display:none}
 .p-table tfoot td{border-top:2px solid var(--rule);border-bottom:0}
 .scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:4px;background:var(--surface)}
 .tag{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:99px;white-space:nowrap}

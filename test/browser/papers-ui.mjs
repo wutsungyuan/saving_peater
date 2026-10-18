@@ -99,8 +99,13 @@ try {
   const pid2 = r2.json.id;
   await S.j('/api/paper-submit', { method: 'POST', body: { id: pid2, answers: perfectAnswers(readPaper(fx.dbFile, pid2).data), userToken: 'x' } });
   await click('#pr-paper [data-pt="history"]');
-  chk('歷史：列出出過的卷子（含訂正）、說明只保留 30 天 20 份', await until(`document.querySelectorAll('#pr-paper tbody tr').length >= 3 && /保留 30 天、最近 20 份/.test(document.getElementById('pr-paper').textContent)`));
-  chk('歷史裡的訂正卷有「訂正」標記', await evl(`!!document.querySelector('#pr-paper tbody .tag.t-model')`));
+  chk('歷史：列出出過的卷子、說明只保留 30 天 20 份', await until(`document.querySelectorAll('#pr-paper tbody tr').length >= 3 && /保留 30 天、最近 20 份/.test(document.getElementById('pr-paper').textContent)`));
+  chk('訂正卷歸在原卷底下：預設收合（看不到、沒有獨立的主列）', await evl(`(() => { const kids = [...document.querySelectorAll('#pr-paper tr.p-child')]; return kids.length >= 1 && kids.every(r => r.hidden && r.offsetParent === null) && [...document.querySelectorAll('#pr-paper tbody tr:not(.p-child) .tag.t-model')].length === 0; })()`));
+  chk('原卷那一列有「訂正紀錄（1）」展開鈕', await evl(`(() => { const b = document.querySelector('[data-fixtoggle="${pid}"]'); return !!b && /訂正紀錄（1）/.test(b.textContent) && b.getAttribute('aria-expanded') === 'false'; })()`));
+  await click(`[data-fixtoggle="${pid}"]`);
+  chk('點展開：訂正卷出現在原卷正下方，有「訂正」標記', await evl(`(() => { const m = document.querySelector('[data-fixtoggle="${pid}"]').closest('tr'), k = m.nextElementSibling; return !!k && k.classList.contains('p-child') && !k.hidden && !!k.querySelector('.tag.t-model') && k.offsetParent !== null; })()`));
+  await click(`[data-fixtoggle="${pid}"]`);
+  chk('再點一次：收合回去', await evl(`[...document.querySelectorAll('#pr-paper tr.p-child')].every(r => r.hidden)`));
   await evl(`document.querySelector('[data-open="${pid2}"]').click()`);
   chk('開啟全對的卷子：造句待自評', await until(`!!document.querySelector('.p-res.pend') && /待自評/.test(document.getElementById('pr-paper').textContent)`));
   const before = await evl(`parseFloat(document.querySelector('.p-big').textContent)`);
