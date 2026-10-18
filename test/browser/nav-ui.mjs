@@ -27,6 +27,7 @@ try {
   chk('句子：預設是句子分析，有輸入框', await until(`!document.getElementById('view-sentence').hidden && !document.getElementById('an-live').hidden && document.getElementById('sn-practice').hidden`));
   await click('#snTabs button[data-sp="practice"]');
   chk('句子練習在句子底下：切過去會出題', await until(`document.getElementById('an-live').hidden && !document.getElementById('sn-practice').hidden && document.querySelectorAll('#quizOut .q').length > 0`, 8000));
+  chk('練習設定：預設題型排前面且勾選（時態填空、代名詞格位、代名詞填空），其餘排後面、不勾', await evl(`(() => { const b = [...document.querySelectorAll('#qtypes .tchip')]; return JSON.stringify(b.map(x => [x.dataset.t, x.getAttribute('aria-pressed')])) === JSON.stringify([['tense','true'],['pronoun-case','true'],['pronoun-fill','true'],['pattern','false'],['pos','false'],['error-fix','false']]); })()`));
   await click('#snTabs button[data-sp="live"]');
   chk('切回句子分析', await until(`!document.getElementById('an-live').hidden && document.getElementById('sn-practice').hidden`));
   await click('.tabs button[data-view="article"]');

@@ -2,10 +2,11 @@
 // 經典腳本（不是 ES module）：和其他 js/*.js 共用全域，由 index.html 依固定順序載入，順序不能換。
 
 // ===== 練習 =====
+// 預設勾選的題型排在前面（時態填空、代名詞格位、代名詞填空），其餘排後面、預設不勾
+const DEFAULT_QTYPES = ['tense', 'pronoun-case', 'pronoun-fill'];
 const QTYPES = [
-  ['pattern','句型判斷'], ['tense','時態填空'], ['pos','詞性判斷'],
-  ['error-fix','改錯'],
-  ['pronoun-case','代名詞格位'], ['pronoun-fill','代名詞填空'],
+  ['tense','時態填空'], ['pronoun-case','代名詞格位'], ['pronoun-fill','代名詞填空'],
+  ['pattern','句型判斷'], ['pos','詞性判斷'], ['error-fix','改錯'],
 ];
 const USER = (() => {
   try {
@@ -25,7 +26,7 @@ const quizAgain = document.getElementById('quizAgain');
 let currentQuiz = null;
 
 qtypesEl.innerHTML = QTYPES.map(([v, l]) =>
-  `<button class="tchip" data-t="${v}" aria-pressed="true">${l}</button>`).join('');
+  `<button class="tchip" data-t="${v}" aria-pressed="${DEFAULT_QTYPES.includes(v)}">${l}</button>`).join('');
 qtypesEl.addEventListener('click', e => {
   const b = e.target.closest('.tchip'); if (!b) return;
   const on = b.getAttribute('aria-pressed') !== 'true';
