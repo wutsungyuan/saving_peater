@@ -148,6 +148,9 @@ function qPos({ hash, data }){
 }
 
 
+/** 分析時標出了文法錯誤（notes 裡有 type: 'error'）的句子 */
+const hasGrammarError = data => (data?.notes ?? []).some(n => n.type === 'error');
+
 function qErrorFix({ hash, data }){
   if (hasBlank(data.original)) return null;        // 空格本身不是文法錯誤，別拿來當改錯題
   const n = (data.notes ?? []).find(x => x.type === 'error' && x.correction && x.span);
@@ -266,6 +269,9 @@ export function generate(records, { count = 10, types = TYPES, acc = null } = {}
   const candidates = [];
   for (const rec of shuffle(records.filter(r => wholeSentence(r.data))))     // 口語短句（Right. / Wow!）不出文法題
     for (const t of wanted){
+      // 本身有文法錯誤的句子（故意寫錯、或小朋友寫錯的）只拿來出「改錯」：
+      // 拿它出時態、詞性、句型題，答案會以錯的句子為準，容易誤導
+      if (t !== 'error-fix' && hasGrammarError(rec.data)) continue;
       const q = BUILDERS[t](rec);
       if (!q) continue;
       // 對話題要把對方說的話一起帶上 —— 少了它，
