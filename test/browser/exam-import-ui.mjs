@@ -91,6 +91,29 @@ try {
   chk('學生看不到「考卷重現」入口（沒有這個按鈕，或按鈕是隱藏的）', await st.evl(`(() => { const b = document.querySelector('#pr-paper [data-pt="exam"]'); return !b || b.offsetParent === null; })()`));
   chk('學生的歷史只有發佈的 1 份，沒有草稿', await st.evl(`fetch('/api/papers').then(r => r.json()).then(j => j.papers.length === 1 && j.papers[0].status === 'open')`));
 
+  section('歷史：再考一次、釘選（老師後台）');
+  const pubId = await page.evl(`fetch('/api/papers').then(r => r.json()).then(j => j.papers.find(p => p.status === 'open').id)`);
+  await page.evl(`fetch('/api/paper-submit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: ${JSON.stringify(pubId)}, answers: {} }) }).then(r => r.status)`);
+  await click('.tabs button[data-view="exam"]');
+  await until(`!!document.querySelector('#pr-paper [data-pt="history"]')`, 8000);
+  await click('#pr-paper [data-pt="history"]');
+  chk('已交卷的主測驗有「再考一次」與「釘選」；還沒交卷的沒有再考', await until(`!!document.querySelector('[data-retake="${pubId}"]') && !!document.querySelector('[data-pin="${pubId}"]') && document.querySelectorAll('[data-retake]').length === 1`, 8000));
+  await click(`[data-retake="${pubId}"]`);
+  chk('第一次按：只是要求再按一次確認，還沒發佈', await evl(`/再按一次/.test(document.querySelector('[data-retake="${pubId}"]').textContent)`) && await evl(`fetch('/api/papers').then(r => r.json()).then(j => j.papers.filter(p => p.retakeOf).length === 0)`));
+  await click(`[data-retake="${pubId}"]`);
+  chk('再按一次：發佈，出現說明訊息與「（重考 1）」那一列', await until(`/已發佈「.*（重考 1）」/.test(document.getElementById('pHistMsg').textContent) && /（重考 1）/.test(document.getElementById('pr-paper').textContent)`, 8000));
+  await click(`[data-pin="${pubId}"]`);
+  chk('釘選：出現「📌 釘選」標記，按鈕變成「取消釘選」', await until(`/📌 釘選/.test(document.getElementById('pr-paper').textContent) && /取消釘選/.test(document.querySelector('[data-pin="${pubId}"]').textContent)`, 8000));
+  await click(`[data-pin="${pubId}"]`);
+  chk('取消釘選：標記消失', await until(`!/📌 釘選/.test(document.getElementById('pr-paper').textContent)`, 8000));
+
+  section('手機尺寸：考卷重現的名稱欄不會把整頁撐寬');
+  const mb = await openPage(S.base + '/admin', { width: 390, height: 844, mobile: true, settle: 2500 }); pages.push(mb);
+  await login(mb, 't1', 'tpass-1');
+  await mb.until(`document.body.dataset.app === 'admin'`, 10000);
+  await mb.until(`(() => { if (document.body.dataset.view !== 'exam') document.querySelector('.tabs button[data-view="exam"]')?.click(); const b = document.querySelector('#pr-paper [data-pt="exam"]'); if (b) b.click(); return !!document.getElementById('exTitle'); })()`, 10000);
+  chk('名稱欄在畫面內、整頁沒有橫向撐開', await mb.until(`!!document.getElementById('exTitle') && document.getElementById('exTitle').getBoundingClientRect().right <= document.getElementById('exTitle').closest('.box').getBoundingClientRect().right + 0.5 && document.documentElement.scrollWidth <= innerWidth`, 8000), JSON.stringify(await mb.evl(`({ txt: document.getElementById('pr-paper')?.textContent.slice(0, 80), view: document.body.dataset.view, right: document.getElementById('exTitle')?.getBoundingClientRect().right, sw: document.documentElement.scrollWidth, w: innerWidth })`)));
+
   section('老師登入前台：草稿不能在前台作答（不然交卷會被擋、顯示「還沒發佈」）');
   const tf = await openPage(S.base + '/', { width: 420, height: 800, settle: 2500 }); pages.push(tf);
   await login(tf, 't1', 'tpass-1');
@@ -102,7 +125,7 @@ try {
   await tf.until(`!!document.querySelector('#pr-paper [data-pt="history"]')`, 8000);
   await tf.click('#pr-paper [data-pt="history"]');
   chk('前台歷史：看得到發佈的卷子，沒有草稿、沒有「編輯／發佈」', await tf.until(`/第三次段考 Unit1-3/.test(document.getElementById('pr-paper').textContent) && !/草稿/.test(document.getElementById('pr-paper').textContent) && !document.querySelector('[data-pub]')`, 8000));
-  chk('沒有 JS 錯誤', page.errors.length === 0 && st.errors.length === 0 && tf.errors.length === 0, [...page.errors, ...st.errors, ...tf.errors].join(' | '));
+  chk('沒有 JS 錯誤', page.errors.length === 0 && st.errors.length === 0 && tf.errors.length === 0 && mb.errors.length === 0, [...page.errors, ...st.errors, ...tf.errors, ...mb.errors].join(' | '));
   code = done();
 } catch (e) {
   console.log('ERR', e.stack || e.message); code = 1;

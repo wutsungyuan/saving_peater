@@ -861,3 +861,7 @@ body[data-app="front"][data-role="teacher"] #wsNew{display:none}
 .rec-warn{border-left:4px solid #a82a1e;background:var(--surface);padding:10px 14px;margin-top:8px}
 .rec-done{color:#0f6637;margin:8px 0 0}
 .danger-btn{background:#a82a1e;color:#fff;border-color:#a82a1e;font-weight:700}
+
+/* 考卷重現的卷子名稱欄：size=34 在手機上會比畫面寬、把整頁撐開，限制在容器內 */
+#exTitle{max-width:100%;min-width:0;box-sizing:border-box;text-overflow:ellipsis}
+@media (max-width:560px){ #exTitle{width:100%;flex:1 1 100%} }

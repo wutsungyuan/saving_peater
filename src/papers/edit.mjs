@@ -60,14 +60,14 @@ export function editPaper(cache, id, { action, title, questionId, question, opti
   }
   if (action === 'publish'){
     if (p.status !== 'draft') return { error: 'bad-state', message: '這份卷子已經發佈了。' };
-    cache.updatePaper(id, { status: 'open', expiresAt: Date.now() + ttlDays * 86400_000 });
+    cache.updatePaper(id, { status: 'open', ...(p.settings.pinned ? {} : { expiresAt: Date.now() + ttlDays * 86400_000 }) });   // 釘選的不改到期日
     return done();
   }
   if (action === 'unpublish'){
     if (p.status !== 'open') return { error: 'bad-state', message: p.status === 'submitted' ? '已經交卷的不能收回。' : '這份卷子還是草稿。' };
     if (Object.values(p.data.answers ?? {}).some(v => (Array.isArray(v) ? v : [v]).some(x => String(x ?? '').trim())))
       return { error: 'has-answers', message: '學生已經開始作答了，不能收回。' };
-    cache.updatePaper(id, { status: 'draft', expiresAt: Date.now() + ttlDays * 3 * 86400_000 });
+    cache.updatePaper(id, { status: 'draft', ...(p.settings.pinned ? {} : { expiresAt: Date.now() + ttlDays * 3 * 86400_000 }) });
     return done();
   }
 

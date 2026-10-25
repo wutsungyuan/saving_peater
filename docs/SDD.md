@@ -458,6 +458,8 @@ sequenceDiagram
 | POST `/api/paper-save` `paper-submit` `paper-self` | 驗 | 存檔、交卷、自評 |
 | POST `/api/paper-ai-grade` | 驗 | AI 批改（含報價）；學生回 202 申請 |
 | POST `/api/paper-redo` | 驗 | 訂正卷 |
+| POST `/api/paper-retake` | 師 | 整份重考：複製已交卷的卷子（題目、答案、配分沿用，選項與積木重新打亂，作答清空）、直接發佈；名稱接「（重考 N）」；訂正卷不能重考 |
+| POST `/api/paper-pin` | 師 | 釘選／取消釘選：釘選的卷子到期日設 100 年後、不算進最近 20 份、不會被清掉；取消後重新計 30 天；訂正卷與重考卷不繼承釘選 |
 
 通用約定：錯誤回 `{error, message?}`；`410` 表示題目已失效；`409` 表示狀態不符（例如已交卷、草稿不能交卷、被文章用到的句子不能刪）；`401 {error:'unauthorized'}`；`403 {error:'forbidden'}`（學生打老師的功能）；`413` 超過字數或圖片大小；`202 {pending, jobId}`（學生的花錢操作已開申請單）；額度用盡以 `rate-limit` 類型回報。
 

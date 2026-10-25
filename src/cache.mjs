@@ -823,16 +823,22 @@ export function openCache(file = 'data/cache.db'){
         .run(JSON.stringify(data), score, Date.now(), String(id));
     },
     papers(limit = 20){
+      // 最近 limit 份，加上釘選的（釘選的不受份數限制）
       return db.prepare(`SELECT id, created_at, expires_at, n, status, score, submitted_at, settings FROM papers
-          WHERE expires_at > ? ORDER BY created_at DESC LIMIT ?`).all(Date.now(), limit)
+          WHERE expires_at > ? AND (COALESCE(json_extract(settings, '$.pinned'), 0) = 1
+            OR id IN (SELECT id FROM papers WHERE expires_at > ? ORDER BY created_at DESC LIMIT ?))
+          ORDER BY created_at DESC`).all(Date.now(), Date.now(), limit)
         .map(r => ({ ...r, settings: JSON.parse(r.settings) }));
     },
     deletePaper(id){ return Number(db.prepare('DELETE FROM papers WHERE id = ?').run(String(id)).changes); },
     /** 清掉過期的，以及超過最近 keep 份的 */
     prunePapers({ keep = 20 } = {}){
       const a = db.prepare('DELETE FROM papers WHERE expires_at <= ?').run(Date.now()).changes;
-      // 草稿是老師還在整理的卷子，不算進「最近 keep 份」，也不會因為份數被清掉（過期才清）
-      const b = db.prepare("DELETE FROM papers WHERE status != 'draft' AND id NOT IN (SELECT id FROM papers WHERE status != 'draft' ORDER BY created_at DESC LIMIT ?)").run(keep).changes;
+      // 草稿是老師還在整理的卷子，不算進「最近 keep 份」，也不會因為份數被清掉（過期才清）。
+      // 釘選的卷子也一樣：不算份數、不會被清掉（到期日設得很遠）
+      const pin = "COALESCE(json_extract(settings, '$.pinned'), 0) = 1";
+      const b = db.prepare(`DELETE FROM papers WHERE status != 'draft' AND NOT (${pin})
+        AND id NOT IN (SELECT id FROM papers WHERE status != 'draft' AND NOT (${pin}) ORDER BY created_at DESC LIMIT ?)`).run(keep).changes;
       return Number(a) + Number(b);
     },
 

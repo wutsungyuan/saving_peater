@@ -634,6 +634,7 @@ PORT=8788 node --no-warnings src/server.mjs             # 開發版用 8788，�
 | `POST /api/admin/records-preview`、`records-delete` | 後台整理學生紀錄：預覽、確認後備份並刪除（只有老師） |
 | `POST /api/paper-edit`、`GET /api/paper?admin=1` | 老師編修卷子（改名、換題、刪題、改題、發佈、收回）；含答案的卷子 |
 | `POST /api/exam-import` | 老師上傳考卷照片 → 選擇題存成草稿（名稱沒填用「日期 考卷重現」） |
+| `POST /api/paper-retake`、`/api/paper-pin` | 老師：已交卷的整份卷子「再考一次」（沿用題目、打亂選項、直接發佈、不花額度；名稱自動接「（重考 N）」）、釘選不過期（不被 30 天／最近 20 份清掉） |
 | `GET /api/wordsearch` | 單字搜尋（中英文，跨全部字表） |
 | `GET /api/health` | 回報模型與上限、是否需要驗證、可否登入、目前是否已登入、角色（teacher／student）與有沒有學生帳號（公開）|
 | `POST /api/login`、`POST /api/logout` | `{user, pass}` → 設定 session cookie；登出清除（公開）|

@@ -9,7 +9,7 @@ import { extractExam } from '../analyzer.mjs';
 import { buildExamQuestions, saveExamDraft, analysisText } from '../papers/examimport.mjs';
 import { submitJob } from '../jobs.mjs';
 import { editPaper, paperAdminView } from '../papers/edit.mjs';
-import { aiGradePaper, previewPaper, createPaper, paperView, saveAnswers, submitPaper, markSelf, createFixPaper, historyList } from '../papers/paper.mjs';
+import { aiGradePaper, previewPaper, createPaper, paperView, saveAnswers, submitPaper, markSelf, createFixPaper, retakePaper, pinPaper, historyList } from '../papers/paper.mjs';
 
 const body = async req => { try { return JSON.parse(await readBody(req, 2e6)) || {}; } catch { return {}; } };
 const guard = (handler, method) => async (req, res, url) => {
@@ -117,6 +117,18 @@ export const routes = [
         return sendJson(res, 202, { pending: true, jobId: job.id, reused: job.reused });
       } const r = await aiGradePaper(cache, b.id, { confirm: b.confirm === true });
       return r.error ? fail(res, r, r.error === 'confirm-required' ? 409 : r.error === 'grade-failed' ? 502 : 400) : sendJson(res, 200, r);
+    }, 'POST') },
+
+  // 老師：整份重考（沿用題目、重新打亂選項、直接發佈）、釘選不過期
+  { match: (req, url) => url.pathname === '/api/paper-retake', handler: guard(async (req, res, url) => {
+      if (denyStudent(req, res, url)) return;
+      const b = await body(req); const r = retakePaper(cache, b.id, { title: b.title, ttlDays: PAPER_DAYS });
+      return r.error ? fail(res, r, r.error === 'expired' ? 410 : 409) : sendJson(res, 200, r);
+    }, 'POST') },
+  { match: (req, url) => url.pathname === '/api/paper-pin', handler: guard(async (req, res, url) => {
+      if (denyStudent(req, res, url)) return;
+      const b = await body(req); const r = pinPaper(cache, b.id, b.pinned === true, { ttlDays: PAPER_DAYS });
+      return r.error ? fail(res, r, 410) : sendJson(res, 200, r);
     }, 'POST') },
 
   { match: (req, url) => url.pathname === '/api/paper-redo', handler: guard(async (req, res) => {

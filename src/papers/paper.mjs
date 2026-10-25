@@ -273,13 +273,51 @@ export function createFixPaper(cache, id, { ids, ttlDays = 30 } = {}){
   const section = { id: 'fix', name: '訂正', n: qs.length, pts: 0, passages: p.data.sections.flatMap(s => s.passages), questionIds: qs.map(q => q.id) };
   const fid = newId();
   cache.putPaper({ id: fid, n: qs.length, ttlDays,
-    settings: { ...p.settings, kind: 'fix', from: id }, data: { sections: [section], questions: qs, answers: {}, self: {}, plan: null } });
+    settings: { ...p.settings, kind: 'fix', from: id, pinned: undefined, retakeOf: undefined }, data: { sections: [section], questions: qs, answers: {}, self: {}, plan: null } });
   return { id: fid, paper: paperView(cache.getPaper(fid)) };
+}
+
+const RETAKE_SUFFIX = /（重考 \d+）$/;
+/** 重考：把已經交卷的整份卷子原樣再發一次給學生（題目、答案、配分都沿用，不呼叫模型）。
+ *  作答、分數、自評、AI 批改都清掉；選項與積木順序重新打亂，免得靠位置猜答案。
+ *  名稱自動接「（重考 N）」。成績與弱點統計照常計（這是一份完整的測驗）。 */
+export function retakePaper(cache, id, { title, ttlDays = 30 } = {}){
+  const p = cache.getPaper(id);
+  if (!p) return { error: 'expired', message: '這份卷子已經過期或不存在。' };
+  if (p.settings.kind === 'fix') return { error: 'is-fix', message: '訂正卷不能重考，請從原卷重考。' };
+  if (p.status !== 'submitted') return { error: 'not-submitted', message: '要先交卷（或有人作答完）才能重考。' };
+  const rng = seededRng(Date.now() % 2 ** 31);
+  const shuffle = a => { const r = [...a]; for (let i = r.length - 1; i > 0; i--){ const j = Math.floor(rng() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
+  const questions = p.data.questions.map(q => {
+    const copy = { ...q };
+    if (Array.isArray(copy.choices) && q.type !== 'match' && q.type !== 'wbank') copy.choices = shuffle(copy.choices);
+    if (Array.isArray(copy.chunks)) copy.chunks = shuffle(copy.chunks);
+    return copy;
+  });
+  const base = String(p.settings.title ?? `${diffNameOf(p.settings) ?? ''} ${p.n} 題`.trim()).replace(RETAKE_SUFFIX, '');
+  const taken = cache.papers(200).map(r => r.settings.title).filter(t => typeof t === 'string' && t.startsWith(base + '（重考 '));
+  const name = String(title ?? '').trim().slice(0, 60) || `${base}（重考 ${taken.length + 1}）`;
+  const rid = newId();
+  cache.putPaper({ id: rid, n: p.n, ttlDays, status: 'open',
+    settings: { ...p.settings, title: name, kind: 'normal', retakeOf: p.settings.retakeOf ?? id, pinned: undefined, from: undefined },
+    data: { sections: p.data.sections, questions, answers: {}, self: {}, plan: p.data.plan ?? null } });
+  return { id: rid, title: name, paper: paperView(cache.getPaper(rid)) };
+}
+
+const PINNED_MS = 100 * 365 * 86400_000;
+/** 釘選：不會過期、不算進「最近 20 份」。取消釘選後重新計 ttlDays 天，不會馬上消失。 */
+export function pinPaper(cache, id, pinned, { ttlDays = 30 } = {}){
+  const p = cache.getPaper(id);
+  if (!p) return { error: 'expired', message: '這份卷子已經過期或不存在。' };
+  const on = pinned === true;
+  cache.updatePaper(id, { settings: { ...p.settings, pinned: on ? true : undefined }, expiresAt: Date.now() + (on ? PINNED_MS : ttlDays * 86400_000) });
+  return { ok: true, pinned: on };
 }
 
 /** 歷史列表 */
 export function historyList(cache, { includeDrafts = true } = {}){
   return cache.papers(50).filter(r => includeDrafts || r.status !== 'draft').map(r => ({ id: r.id, title: r.settings.title ?? null, createdAt: r.created_at, expiresAt: r.expires_at, n: r.n, status: r.status,
     score: r.score, submittedAt: r.submitted_at, kind: r.settings.kind ?? 'normal', from: r.settings.from ?? null,
+    pinned: r.settings.pinned === true, retakeOf: r.settings.retakeOf ?? null,
     difficulty: r.settings.difficulty, difficultyName: diffNameOf(r.settings), setIds: r.settings.setIds, articleIds: r.settings.articleIds }));
 }

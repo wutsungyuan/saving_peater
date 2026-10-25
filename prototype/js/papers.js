@@ -430,13 +430,14 @@ async function loadHistory2(){
     const fx = fixesOf.get(p.id) ?? [], open = P.openFix.has(p.id);
     return `<tr${root ? ` class="p-child" data-fixof="${root.id}"${P.openFix.has(root.id) ? '' : ' hidden'}` : ''}>
     <td>${new Date(p.createdAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-    <td>${p.kind === 'fix' ? '<span class="tag t-model">訂正</span> ' : ''}${p.title ? `<b>${esc(p.title)}</b> <small>（${p.n} 題・${esc(p.difficultyName || '')}）</small>` : `${p.n} 題${p.kind === 'fix' ? '' : `・${esc(p.difficultyName || '')}`}`}<br><small>${esc(names([...(p.setIds || []), ...(p.articleIds || [])]))}</small>${fx.length ? `<br><button class="linky" data-fixtoggle="${p.id}" data-n="${fx.length}" aria-expanded="${open}">${open ? '▾' : '▸'} 訂正紀錄（${fx.length}）</button>` : ''}</td>
+    <td>${p.kind === 'fix' ? '<span class="tag t-model">訂正</span> ' : ''}${p.pinned ? '<span class="tag t-prog" title="不會過期">📌 釘選</span> ' : ''}${p.title ? `<b>${esc(p.title)}</b> <small>（${p.n} 題・${esc(p.difficultyName || '')}）</small>` : `${p.n} 題${p.kind === 'fix' ? '' : `・${esc(p.difficultyName || '')}`}`}<br><small>${esc(names([...(p.setIds || []), ...(p.articleIds || [])]))}</small>${fx.length ? `<br><button class="linky" data-fixtoggle="${p.id}" data-n="${fx.length}" aria-expanded="${open}">${open ? '▾' : '▸'} 訂正紀錄（${fx.length}）</button>` : ''}</td>
     <td>${p.status === 'draft' ? '<span class="tag t-prog">草稿</span>' : p.status === 'submitted' ? (p.kind === 'fix' ? '已完成' : `<b>${fmtPts(p.score)}</b> 分`) : (isAdminApp() ? '已發佈・作答中' : '作答中')}</td>
-    <td><button class="linky" data-open="${p.id}">${p.status === 'draft' ? '編輯' : p.status === 'submitted' ? (isAdminApp() ? '看作答' : '看結果') : isAdminApp() ? '預覽' : '繼續'}</button>${p.status === 'draft' ? ` <button class="linky admin-only" data-pub="${p.id}">發佈</button>` : ''} <button class="linky danger admin-only" data-del="${p.id}">刪除</button></td></tr>`;
+    <td><button class="linky" data-open="${p.id}">${p.status === 'draft' ? '編輯' : p.status === 'submitted' ? (isAdminApp() ? '看作答' : '看結果') : isAdminApp() ? '預覽' : '繼續'}</button>${p.status === 'draft' ? ` <button class="linky admin-only" data-pub="${p.id}">發佈</button>` : ''} <button class="linky danger admin-only" data-del="${p.id}">刪除</button>${isAdminApp() && p.kind !== 'fix' ? `<br>${p.status === 'submitted' ? `<button class="linky" data-retake="${p.id}">再考一次</button> ` : ''}<button class="linky" data-pin="${p.id}" data-on="${p.pinned ? 1 : 0}">${p.pinned ? '取消釘選' : '釘選'}</button>` : ''}</td></tr>`;
   };
   pBox().innerHTML = `${pNav()}${mains.length ? `<div class="scroll"><table class="p-table"><thead><tr><th>時間</th><th>內容</th><th>狀態</th><th></th></tr></thead><tbody>${mains.map(p => row(p) + (fixesOf.get(p.id) ?? []).map(c => row(c, p)).join('')).join('')}</tbody></table></div>`
     : '<div class="box"><p style="margin:0">還沒有出過卷子。</p></div>'}
-  <p class="hint">歷史只用快取存放：保留 ${r.json.keepDays} 天、最近 20 份，到期自動清除。答題統計（弱點）另外保存，不會跟著清除。</p>`;
+  <p class="hint" id="pHistMsg"></p>
+  <p class="hint">歷史只用快取存放：保留 ${r.json.keepDays} 天、最近 20 份，到期自動清除（釘選的不會）。答題統計（弱點）另外保存，不會跟著清除。</p>`;
 }
 pBox().addEventListener('click', async e => {
   const pub = e.target.closest('[data-pub]');
@@ -447,6 +448,23 @@ pBox().addEventListener('click', async e => {
     (P.openFix ??= new Set())[on ? 'add' : 'delete'](id);
     pBox().querySelectorAll(`[data-fixof="${id}"]`).forEach(r => { r.hidden = !on; });
     tg.setAttribute('aria-expanded', String(on)); tg.textContent = `${on ? '▾' : '▸'} 訂正紀錄（${tg.dataset.n}）`;
+    return;
+  }
+  const pn = e.target.closest('[data-pin]');
+  if (pn){                                                                                  // 釘選／取消釘選：釘選的不會過期
+    pn.disabled = true;
+    const r = await artApi('/api/paper-pin', { method: 'POST', body: { id: pn.dataset.pin, pinned: pn.dataset.on !== '1' } });
+    if (!r.ok){ pn.disabled = false; const m = el('pHistMsg'); if (m) m.textContent = r.json.message || '釘選失敗'; return; }
+    return loadHistory2();
+  }
+  const rt = e.target.closest('[data-retake]');
+  if (rt){                                                                                  // 整份重考：沿用題目、重新打亂選項，直接發佈給學生
+    if (rt.dataset.armed !== '1'){ rt.dataset.armed = '1'; rt.textContent = '再按一次：發佈給學生'; setTimeout(() => { rt.dataset.armed = '0'; rt.textContent = '再考一次'; }, 5000); return; }
+    rt.disabled = true; rt.textContent = '發佈中…';
+    const r = await artApi('/api/paper-retake', { method: 'POST', body: { id: rt.dataset.retake } });
+    if (!r.ok){ rt.disabled = false; rt.textContent = '再考一次'; const m = el('pHistMsg'); if (m) m.textContent = r.json.message || '重考失敗'; return; }
+    await loadHistory2();
+    const m = el('pHistMsg'); if (m) m.textContent = `已發佈「${r.json.title}」，學生那邊的測驗卷就看得到了（選項順序已重新打亂）。`;
     return;
   }
   const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]');
