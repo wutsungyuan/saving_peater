@@ -37,6 +37,24 @@ qtypesEl.addEventListener('click', e => {
 const selectedTypes = () =>
   [...qtypesEl.querySelectorAll('[aria-pressed="true"]')].map(b => b.dataset.t);
 
+// 範圍：用文章表當單位（句子分析、新增文章都會把句子歸進某份文章表）。不選就是全部。
+const qscopeEl = document.getElementById('qscope');
+const selectedScope = () => [...qscopeEl.querySelectorAll('[aria-pressed="true"]')].map(b => Number(b.dataset.id));
+async function loadScope(){
+  if (API === false) return;
+  const keep = new Set(selectedScope());
+  let d;
+  try { const r = await fetch('/api/articles', { headers: TOKEN ? { 'x-auth-token': TOKEN } : {} }); if (!r.ok) return; d = await r.json(); } catch { return; }
+  const list = (d.articles || []).filter(a => a.sentences > 0);
+  qscopeEl.innerHTML = list.length
+    ? list.map(a => `<button class="tchip" data-id="${a.id}" aria-pressed="${keep.has(a.id)}" title="${a.sentences} 句">${esc(a.name)}<small> ${a.sentences}</small></button>`).join('')
+    : '<span class="hint">還沒有文章表。分析句子或新增文章後，這裡就能選範圍。</span>';
+}
+qscopeEl.addEventListener('click', e => {
+  const b = e.target.closest('.tchip'); if (!b) return;
+  b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+});
+
 document.getElementById('toWeak').addEventListener('click', () => {
   document.querySelector('.tabs button[data-view="weak"]').click();
 });
@@ -89,7 +107,7 @@ async function startQuiz(opts = {}){
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(TOKEN ? { 'x-auth-token': TOKEN } : {}) },
       body: JSON.stringify({ count: Number(document.getElementById('qcount').value),
-        types: selectedTypes(), userToken: USER,
+        types: selectedTypes(), articleIds: selectedScope(), userToken: USER,
         redoFrom: opts.redoFrom, redoIds: opts.redoIds }),
     });
     const d = await res.json();
@@ -104,7 +122,11 @@ async function startQuiz(opts = {}){
     currentQuiz = d;
     quizOut.innerHTML = d.questions.map((q, i) => renderQuestion(q, i + 1)).join('');
     hardenAnswers(quizOut);
-    quizHint.textContent = `共 ${d.questions.length} 題，題庫 ${d.pool} 句。`;
+    const asked = Number(document.getElementById('qcount').value);
+    quizHint.textContent = d.scope?.length
+      ? `共 ${d.questions.length} 題，範圍「${d.scope.join('、')}」有 ${d.pool} 句可出題。` +
+        (!opts.redoFrom && d.questions.length < asked ? `（這個範圍只夠出 ${d.questions.length} 題，想要更多可以多選幾個範圍。）` : '')
+      : `共 ${d.questions.length} 題，題庫 ${d.pool} 句。`;
     quizActions.hidden = false;
     scrollToFirstQuestion(quizOut);
   } catch (e){

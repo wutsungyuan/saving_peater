@@ -20,7 +20,7 @@ try {
   section('句子頁與文章頁');
   chk('前台的頂層分頁：單字／句子／文章／測驗卷／弱點', await evl(`[...document.querySelectorAll('.tabs button')].filter(b => getComputedStyle(b).display !== 'none').map(b => b.innerText.trim()).join() === '單字,句子,文章,測驗卷,弱點'`));
   chk('句子頁有「句子分析／句子練習」兩個子頁', await evl(`[...document.querySelectorAll('#snTabs button')].map(b => b.textContent.trim()).join() === '句子分析,句子練習'`));
-  chk('句子分析：沒有文章名稱欄，按鈕是「分析」（只分析、不存）', await evl(`document.getElementById('artNameRow').hidden && document.getElementById('go').textContent.trim() === '分析'`));
+  chk('句子分析：有「範圍（選填）」欄，按鈕仍是「分析」', await evl(`!document.getElementById('artNameRow').hidden && document.getElementById('artNameLbl').textContent.includes('範圍') && document.getElementById('go').textContent.trim() === '分析'`));
   await click('.tabs button[data-view="article"]');
   chk('文章頁有「文章表／新增文章」兩個子頁', await evl(`[...document.querySelectorAll('#arTabs button')].map(b => b.textContent.trim()).join() === '文章表,新增文章'`));
   await click('#arTabs button[data-ap="new"]');
@@ -110,6 +110,31 @@ try {
   chk('分析後出現 2 組（Jamie、Zac），每組 2 張卡', await p4.until(`document.querySelectorAll('#out .turn-group').length === 2 && [...document.querySelectorAll('#out .turn-group')].every(g => g.querySelectorAll('article.sent').length === 2)`, 20000), await p4.evl(`document.getElementById('out').innerText.slice(0, 200)`));
   chk('每組上面有說話者與整段原文', await p4.evl(`(() => { const g = document.querySelectorAll('#out .turn-group'); return g[0].querySelector('.who').textContent === 'Jamie' && g[1].querySelector('.turn-en').textContent === 'Wow! You have a snowboard?'; })()`), await p4.evl(`document.querySelector('#out .turn-group').innerText`));
   p4.close();
+
+  section('句子分析歸進範圍，句子練習可以選範圍');
+  const bucket = await evl(`dailyBucketName()`);
+  chk('剛才那次沒填範圍的分析，自動歸入當天的「句子 月/日」', /^句子 \d+\/\d+$/.test(bucket) && (await S.j('/api/articles')).json.articles.some(a => a.name === bucket && a.sentences === 4), JSON.stringify((await S.j('/api/articles')).json.articles));
+  const p7 = await openPage(S.base + '/', { width: 1000, height: 1100, settle: 2500 });
+  await p7.click('.tabs button[data-view="sentence"]'); await p7.wait(300);
+  chk('句子分析：範圍欄的提示說明不填會歸入哪一份', await p7.evl(`document.getElementById('artName').placeholder.includes('${bucket}')`));
+  await p7.type('#artName', '我的範圍');
+  await p7.type('#inp', 'The dog runs fast.');
+  await p7.click('#go');
+  chk('填了範圍：走報價確認流程（和新增文章一樣）', await p7.until(`!!document.getElementById('artGo')`, 8000));
+  await p7.click('#artGo');
+  chk('分析後存進「我的範圍」', await p7.until(`/已存成文章表「我的範圍」：新增 1 句/.test(document.getElementById('inp-hint').textContent)`, 20000), await p7.evl(`document.getElementById('inp-hint').textContent`));
+  await p7.type('#artName', '');
+  await p7.type('#inp', 'The cat sleeps all day.');
+  await p7.click('#go');
+  chk('沒填範圍：直接分析，並提示歸入當天的範圍', await p7.until(`new RegExp('已歸入範圍「${bucket}」').test(document.getElementById('inp-hint').textContent)`, 20000), await p7.evl(`document.getElementById('inp-hint').textContent`));
+  await p7.click('#snTabs button[data-sp="practice"]');
+  chk('句子練習：列出範圍（文章表）可選，預設一個都不選', await p7.until(`document.querySelectorAll('#qscope .tchip').length >= 2 && !document.querySelector('#qscope .tchip[aria-pressed="true"]')`, 8000), await p7.evl(`document.getElementById('qscope').innerText`));
+  await p7.evl(`[...document.querySelectorAll('#qscope .tchip')].find(b => b.textContent.includes('我的範圍')).click()`);
+  chk('點一下選取，再點取消', await p7.evl(`document.querySelectorAll('#qscope .tchip[aria-pressed="true"]').length === 1`));
+  await p7.click('#quizStart');
+  chk('選了範圍出題：提示寫出範圍名稱', await p7.until(`/範圍「我的範圍」有 \\d+ 句可出題/.test(document.getElementById('quizHint').textContent)`, 8000), await p7.evl(`document.getElementById('quizHint').textContent`));
+  chk('練習頁沒有 JS 錯誤', p7.errors.length === 0, p7.errors.join(' | '));
+  p7.close();
 
   section('沒帶存取碼：出現輸入框，輸入後可用');
   const S3 = await start('ui-token', { AUTH_TOKEN: 'secret123' });

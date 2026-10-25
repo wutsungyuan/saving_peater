@@ -650,6 +650,7 @@ PORT=8788 node --no-warnings src/server.mjs             # 開發版用 8788，�
 | `POST /api/wordquiz` | 依 Leitner 排程出單字測驗 |
 | `POST /api/wordattempts` | 批改並更新盒子與到期時間 |
 | `POST /api/exercises` 的 `userToken` | 帶入後出題會依該使用者的弱點加權；`focusWeak:false` 可關閉 |
+| `POST /api/exercises` 的 `articleIds` | 文章表 id 陣列，只從這些文章表的句子出題（範圍）；沒給就是整個句子庫。範圍內沒有可出題的句子回 409 `no-sentences-in-scope` |
 | `GET/POST /api/articles`、`GET /api/article`、`POST /api/article-rename` | 文章表：列出、建立或附加、檢視（`&sets=` 標出單字表的字）、改名；刪除用 `DELETE /api/articles?ids=` |
 | `POST /api/paper-preview` | 測驗卷預覽：可出的題型、配題與每題分數、延伸題分配、報價（不呼叫模型）|
 | `GET/POST/DELETE /api/papers` | 歷史、出卷（要請模型出題時沒帶 `confirm:true` 回 409 與報價）、刪除 |

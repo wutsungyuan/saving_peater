@@ -433,10 +433,13 @@ export function openCache(file = 'data/cache.db'){
     },
 
     /** 取出可出題的句子（之後 M4 可依弱點加權） */
-    pickSentences(limit = 40){
+    pickSentences(limit = 40, { articleIds } = {}){
+      // articleIds 有值：只從這些文章表的句子抽（範圍）；沒給就是整個句子庫
+      const ids = (articleIds ?? []).map(Number).filter(Number.isFinite);
+      const scope = ids.length ? `AND hash IN (SELECT hash FROM article_items WHERE article_id IN (${ids.map(() => '?').join(',')}))` : '';
       return db.prepare(`SELECT hash, result, speaker, context FROM sentences
-        WHERE issue IS NULL AND pattern_id IS NOT NULL AND excluded = 0
-        ORDER BY RANDOM() LIMIT ?`).all(limit)
+        WHERE issue IS NULL AND pattern_id IS NOT NULL AND excluded = 0 ${scope}
+        ORDER BY RANDOM() LIMIT ?`).all(...ids, limit)
         .map(r => { try {
           const data = JSON.parse(r.result);
           // 對話題要把對方說的話一起帶出去，否則出題時看不出前後情境。

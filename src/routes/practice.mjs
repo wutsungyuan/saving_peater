@@ -32,11 +32,15 @@ export const routes = [
         return res.end(JSON.stringify({ quizId, pool: questions.length, focusWeak: false, weakDims: null,
           redo: true, questions: questions.map(({ answer, alsoAccept, accept, explain, ...rest }) => rest) }));
       }
-      const records = cache.pickSentences(60);
+      // 範圍：文章表 id（複選）。沒給就是整個句子庫；給了就只從那些文章表的句子出題
+      const articleIds = Array.isArray(body.articleIds) ? [...new Set(body.articleIds.filter(x => /^\d+$/.test(String(x))).map(Number))].slice(0, 50) : [];
+      const scopeNames = articleIds.map(id => cache.getArticle(id)?.name).filter(Boolean);
+      const records = cache.pickSentences(60, { articleIds });
       if (!records.length){
         res.writeHead(409, { 'content-type':'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ error: 'no-sentences',
-          message: '還沒有分析過任何句子。先到「分析」貼一段文章，就能從那些句子出題。' }));
+        return res.end(JSON.stringify(articleIds.length
+          ? { error: 'no-sentences-in-scope', message: `你選的範圍（${scopeNames.join('、') || '已不存在'}）裡沒有可以出題的句子。請換一個範圍，或取消範圍。` }
+          : { error: 'no-sentences', message: '還沒有分析過任何句子。先到「分析」貼一段文章，就能從那些句子出題。' }));
       }
       const questions = generate(records, { count, types, acc });
       // 答案不隨題目下發，避免在開發者工具裡直接看到
@@ -44,7 +48,7 @@ export const routes = [
       cache.putQuiz(quizId, 'sentence', questions);
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify({
-        quizId, pool: records.length, focusWeak,
+        quizId, pool: records.length, focusWeak, scope: scopeNames,
         weakDims: acc ? {
           patterns: Object.entries(acc.patterns).filter(([, a]) => a < 0.7).map(([k]) => Number(k)),
           tenses: Object.entries(acc.tenses).filter(([, a]) => a < 0.7).map(([k]) => k),

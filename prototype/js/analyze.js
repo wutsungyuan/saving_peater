@@ -320,7 +320,7 @@ goBtn.addEventListener('click', () => {
     if (!name){ hintEl.textContent = '請先填文章名稱，分析完才存得進文章表。'; el('artName').focus(); return; }
     analyzeAsArticle(name, text); return;
   }
-  if (API){ analyzeLive(text); return; }
+  if (API){ analyzeSentences(text); return; }           // 句子分析：分析完歸進範圍（articles.js）
   // 展示模式：比對內建範例
   const norm = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
   const hit = Object.keys(DATA).find(k => norm(DATA[k].input) === norm(text));

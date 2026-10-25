@@ -447,7 +447,7 @@ sequenceDiagram
 | POST `/api/wordset-analyze` | 師 | 批次分析字表例句（串流、每 8 句一批、可續跑） |
 | POST `/api/wordquiz` | 驗 | 單字測驗：出題／交卷批改 |
 | POST `/api/wordattempts` | 驗 | 單字作答（Leitner 更新） |
-| POST `/api/exercises` | 驗 | 句子練習出題 |
+| POST `/api/exercises` | 驗 | 句子練習出題；`articleIds`（文章表 id 陣列）限定範圍，沒給就是整個句子庫 |
 | POST `/api/attempts` | 驗 | 句子練習交卷批改 |
 | GET `/api/weakness` | 驗 | 弱點統計；`source`（all／practice／quiz／exam）；老師可帶 `as=student` |
 | GET/POST/DELETE `/api/articles` | 驗 | 文章表清單／附加／刪除 |

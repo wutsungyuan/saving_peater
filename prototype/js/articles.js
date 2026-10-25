@@ -22,11 +22,14 @@ async function refreshArticleNames(){
   artCache = d.json.articles || [];
   el('artNames').innerHTML = artCache.map(a => `<option value="${esc(a.name)}"></option>`).join('');
   syncArticleDest();
+  if (typeof loadScope === 'function') loadScope();         // 句子練習的範圍清單跟著文章表變動
 }
+/** 句子分析沒填範圍時，自動歸進當天的範圍，例如「句子 10/25」（同一天的會接在同一份後面） */
+function dailyBucketName(){ const d = new Date(); return `句子 ${d.getMonth() + 1}/${d.getDate()}`; }
 function syncArticleDest(){
   const name = articleNameValue();
   const hit = artCache.find(a => a.name.toLowerCase() === name.toLowerCase());
-  el('artDest').textContent = anMode !== 'article' || !name ? ''
+  el('artDest').textContent = !name || el('artNameRow').hidden ? ''
     : hit ? `會附加到文章表「${hit.name}」（目前 ${hit.sentences} 句）。` : `會建立新的文章表「${name}」。`;
   goBtn.textContent = anMode === 'article' ? '分析並存成文章' : '分析';
 }
@@ -70,6 +73,24 @@ async function analyzeAsArticle(name, text){
   box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   el('artNo').onclick = () => { box.hidden = true; hintEl.textContent = '已取消，沒有呼叫模型。'; };
   el('artGo').onclick = () => { box.hidden = true; run(); };
+}
+
+// ---- 句子分析：分析完把句子歸進範圍（文章表），之後練習、出卷才有範圍可選 ----
+// 老師有填範圍 → 走和「新增文章」一樣的流程（報價、確認、存檔）。沒填 → 照舊直接分析，成功後自動歸入當天的「句子 月/日」。
+// 學生的分析要送老師核准，不在這裡歸類。
+async function analyzeSentences(text){
+  const name = articleNameValue();
+  if (isStudentRole()) return analyzeLive(text);
+  if (name) return analyzeAsArticle(name, text);
+  const s = await analyzeLive(text);
+  if (!s || s.truncated || s.error || s.halted || s.interrupted || s.failed || !s.done) return s;
+  const r = await artApi('/api/articles', { method: 'POST', body: { name: dailyBucketName(), text } });
+  if (r.ok){
+    const d = r.json;
+    hintEl.innerHTML = `已歸入範圍「${esc(d.name)}」（新增 ${d.added} 句，共 ${d.total} 句）。句子練習、測驗卷可以選這個範圍。`;
+    refreshArticleNames();
+  }
+  return s;
 }
 
 // ---- 分析到一半離開：記下來，下次進來提示可以接續 ----

@@ -192,7 +192,7 @@
           class="longonly">辨識完會填進上面的框，核對後再按分析。</span></span>
       </div>
       <div class="row" id="artNameRow" hidden>
-        <label for="artName" class="hint">文章名稱</label>
+        <label for="artName" class="hint" id="artNameLbl">文章名稱</label>
         <input type="text" id="artName" list="artNames" autocomplete="off" maxlength="60"
           placeholder="新名稱就建立文章；選既有的就接在後面">
         <datalist id="artNames"></datalist>
@@ -248,6 +248,8 @@
       <div class="box">
         <label>練習設定</label>
         <div class="row" id="qtypes"></div>
+        <label class="sub-label">範圍（可複選；不選就是全部句子）</label>
+        <div class="row" id="qscope"><span class="hint">讀取中…</span></div>
         <div class="row">
           <span class="hint">題數</span>
           <select id="qcount">

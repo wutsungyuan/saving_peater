@@ -36,7 +36,7 @@ try {
   chk('新增文章：同一個輸入框搬到這裡', await until(`!!document.querySelector('#ar-new #inp') && !document.getElementById('ar-new').hidden`));
   chk('新增文章：預設的範例句被清掉', await evl(`document.getElementById('inp').value === ''`));
   await click('.tabs button[data-view="sentence"]');
-  chk('回到句子分析：輸入框搬回句子頁', await until(`!!document.querySelector('#view-sentence #inp') && document.getElementById('artNameRow').hidden`));
+  chk('回到句子分析：輸入框搬回句子頁', await until(`!!document.querySelector('#view-sentence #inp') && document.getElementById('artNameLbl').textContent.includes('範圍')`));
 
   chk('頁面上沒有重複的 id', await evl(`(() => { const seen = new Set(), dup = []; for (const e of document.querySelectorAll('[id]')) { if (seen.has(e.id)) dup.push(e.id); seen.add(e.id); } return dup.length === 0 ? true : dup.join(','); })()`) === true, await evl(`(() => { const seen = new Set(), dup = []; for (const e of document.querySelectorAll('[id]')) { if (seen.has(e.id)) dup.push(e.id); seen.add(e.id); } return dup.join(','); })()`));
 

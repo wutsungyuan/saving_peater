@@ -48,7 +48,11 @@ function setAnMode(mode){
   const live = el('an-live');
   if (mode === 'article') el('ar-new').appendChild(live);
   else el('view-sentence').insertBefore(live, el('sn-practice'));
-  el('artNameRow').hidden = mode !== 'article' || API === false;
+  // 句子分析也能填「範圍」（選填）：老師分析的句子會歸進文章表，之後練習、出卷才選得到。學生的分析要送老師核准，不在這裡歸類。
+  el('artNameRow').hidden = (mode !== 'article' && document.body.dataset.role === 'student') || API === false;
+  el('artNameLbl').textContent = mode === 'article' ? '文章名稱' : '範圍（選填）';
+  el('artName').placeholder = mode === 'article' ? '新名稱就建立文章；選既有的就接在後面'
+    : `不填就歸入「${typeof dailyBucketName === 'function' ? dailyBucketName() : '當天'}」；填了就建立或接在同名的文章表後面`;
   const chips = live.querySelector('.chips-group'); if (chips) chips.hidden = mode === 'article';
   // 輸入框預設放著一句內建範例；新增文章用不到，清掉（自己打的內容不動）
   if (mode === 'article' && Object.values(DATA).some(d => d.input === inpEl.value)){ inpEl.value = ''; if (typeof updateCount === 'function') updateCount(); }
@@ -69,7 +73,7 @@ function showSentencePane(which, { auto = true } = {}){
   } else {
     el('an-live').hidden = true; el('sn-practice').hidden = false;
     if (API === false) quizOut.innerHTML = needApi('句子練習');
-    else if (auto && !currentQuiz) startQuiz();
+    else { loadScope(); if (auto && !currentQuiz) startQuiz(); }
   }
 }
 el('snTabs').addEventListener('click', e => { const b = e.target.closest('button[data-sp]'); if (b) showSentencePane(b.dataset.sp); });
