@@ -55,6 +55,27 @@ export const routes = [
       const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
       return sendJson(res, 200, { ...cache.sentenceList({ q, filter, limit, offset }), limit, offset });
     } },
+  // 把還沒有範圍的句子歸進文章表。mode：name（全部歸到 name 這一份，同名接在後面）| by-date（依分析日期分批，每天一份「句子 月/日」）。
+  // 先預覽（不改資料），帶 confirm:true 才真的歸。已經在文章表裡的句子不會被動到。
+  { match: (req, url) => url.pathname === '/api/admin/sentences-assign' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req);
+      const mode = b.mode === 'by-date' ? 'by-date' : 'name';
+      const name = String(b.name ?? '').trim().slice(0, 60);
+      if (mode === 'name' && !name) return sendJson(res, 400, { error: 'no-name', message: '請輸入要歸入的範圍名稱。' });
+      const list = cache.unassignedSentences(String(b.q ?? '').trim().slice(0, 80));
+      const day = t => { const d = new Date(t); return `句子 ${d.getMonth() + 1}/${d.getDate()}`; };
+      const groups = new Map();
+      for (const s of list){ const g = mode === 'name' ? name : day(s.createdAt); (groups.get(g) ?? groups.set(g, []).get(g)).push(s.hash); }
+      const preview = [...groups].map(([n, hs]) => ({ name: n, count: hs.length, exists: Boolean(cache.articleByName(n)) }));
+      if (b.confirm !== true) return sendJson(res, 200, { total: list.length, groups: preview });
+      let added = 0;
+      for (const [n, hs] of groups){
+        const hit = cache.articleByName(n);
+        added += cache.saveArticle({ name: n, appendTo: hit?.id ?? null, items: hs.map(hash => ({ para: 0, hash })) }).added;
+      }
+      return sendJson(res, 200, { ok: true, added, groups: preview });
+    } },
   // 一句的完整分析與使用情形
   { match: (req, url) => url.pathname === '/api/admin/sentence' && req.method === 'GET', handler: async (req, res, url) => {
       if (teacherOnly(req, res, url)) return;

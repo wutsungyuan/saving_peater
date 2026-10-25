@@ -234,6 +234,14 @@ export function openCache(file = 'data/cache.db'){
           excluded: Boolean(r.excluded), model: r.model, usedInArticles: Number(r.used) };
       }) };
     },
+    /** 還沒歸進任何文章表（沒有範圍）、而且分析成功的句子，依分析時間排。q 比對原文與翻譯（和 sentenceList 一樣）。 */
+    unassignedSentences(q = ''){
+      const p = [];
+      let w = 'issue IS NULL AND NOT EXISTS (SELECT 1 FROM article_items i WHERE i.hash = s.hash)';
+      if (q){ w += ' AND (s.original LIKE ? OR s.result LIKE ?)'; p.push('%' + q + '%', '%' + q + '%'); }
+      return db.prepare(`SELECT s.hash, s.created_at FROM sentences s WHERE ${w} ORDER BY s.created_at, s.hash`).all(...p)
+        .map(r => ({ hash: r.hash, createdAt: r.created_at }));
+    },
     sentenceRow(hash){ return db.prepare('SELECT * FROM sentences WHERE hash = ?').get(String(hash)) ?? null; },
     /** 這一句被哪些文章表用到 */
     sentenceUsage(hash){

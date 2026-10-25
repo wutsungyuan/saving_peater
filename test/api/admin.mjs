@@ -79,6 +79,32 @@ try {
   r = await J(B, '/api/admin/sentence?hash=' + bird.hash, { method: 'DELETE', ...withCookie(tk) });
   chk('沒被用到的可以刪', r.status === 200 && (await get('/api/admin/sentences?q=Birds%20can%20fly')).json.total === 0);
 
+  section('沒有範圍的句子：歸進文章表');
+  for (const s of ['Fish swim fast.', 'Dogs bark loudly.']) await J(B, '/api/analyze', { method: 'POST', ...withCookie(tk), body: { text: s } });
+  for (const [p, body] of [['/api/admin/sentences-assign', { mode: 'name', name: 'x' }]]) {
+    const a = await J(B, p, { method: 'POST', ...withCookie(sk), body }), n = await J(B, p, { method: 'POST', body });
+    chk('學生 403、沒登入 401', a.status === 403 && n.status === 401, `${a.status}/${n.status}`);
+  }
+  r = await post('/api/admin/sentences-assign', { mode: 'name', name: '', q: 'Fish swim' });
+  chk('歸入指定名稱但沒填名稱 → 400', r.status === 400 && r.json.error === 'no-name');
+  const arts0 = (await get('/api/articles')).json.articles.length;
+  r = await post('/api/admin/sentences-assign', { mode: 'name', name: '動物句', q: 'Fish swim' });
+  chk('預覽：1 句、新建「動物句」，不改資料', r.status === 200 && r.json.total === 1 && r.json.groups[0].name === '動物句' && r.json.groups[0].exists === false && (await get('/api/articles')).json.articles.length === arts0, r.text);
+  r = await post('/api/admin/sentences-assign', { mode: 'name', name: '動物句', q: 'Fish swim', confirm: true });
+  chk('確認：歸入 1 句', r.status === 200 && r.json.added === 1, r.text);
+  const an = (await get('/api/articles')).json.articles.find(a => a.name === '動物句');
+  chk('文章表「動物句」有 1 句', an?.sentences === 1);
+  chk('那句不再是「沒有範圍」', !(await get('/api/admin/sentences?filter=unused&q=Fish%20swim')).json.items.length);
+  r = await post('/api/admin/sentences-assign', { mode: 'name', name: '動物句', q: 'Fish swim' });
+  chk('已歸入的不會再被列出', r.json.total === 0);
+  r = await post('/api/admin/sentences-assign', { mode: 'by-date', q: 'Dogs bark' });
+  const day = `句子 ${new Date().getMonth() + 1}/${new Date().getDate()}`;
+  chk('依日期預覽：今天分析的 → 「句子 月/日」', r.json.total === 1 && r.json.groups[0].name === day, r.text);
+  r = await post('/api/admin/sentences-assign', { mode: 'by-date', q: 'Dogs bark', confirm: true });
+  chk('依日期歸入', r.status === 200 && r.json.added === 1 && (await get('/api/articles')).json.articles.find(a => a.name === day)?.sentences === 1);
+  const exA = await post('/api/exercises', { count: 5, types: ['tense'], articleIds: [an.id], userToken: 't-assign' });
+  chk('歸入後，句子練習選這個範圍抽得到', exA.status === 200 && exA.json.scope[0] === '動物句');
+
   section('重新分析：先報價、確認才呼叫、失敗保留舊的');
   await J(B, '/api/analyze', { method: 'POST', ...withCookie(tk), body: { text: 'Explode now please.' } });
   const ex = (await get('/api/admin/sentences?q=Explode')).json.items[0];

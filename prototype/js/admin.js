@@ -55,7 +55,30 @@ async function loadSentences(more = false){
 
 let snTimer = null;
 el('snQ').addEventListener('input', () => { clearTimeout(snTimer); snTimer = setTimeout(() => { snState.q = el('snQ').value.trim(); loadSentences(); }, 300); });
-el('snFilter').addEventListener('change', () => { snState.filter = el('snFilter').value; loadSentences(); });
+el('snFilter').addEventListener('change', () => { snState.filter = el('snFilter').value; el('snAssign').hidden = snState.filter !== 'unused'; el('snAssignMsg').textContent = ''; loadSentences(); });
+
+// 還沒有範圍的句子：歸進文章表。先預覽會歸到哪幾份、各幾句，按「確定」才真的歸。
+async function snAssign(mode){
+  const msg = el('snAssignMsg'), name = el('snAssignName').value.trim();
+  if (mode === 'name' && !name){ msg.textContent = '請先輸入範圍名稱。'; el('snAssignName').focus(); return; }
+  const body = { mode, name, q: snState.q };
+  const p = await artApi('/api/admin/sentences-assign', { method: 'POST', body });
+  if (!p.ok){ msg.textContent = p.json.message || '無法預覽'; return; }
+  if (!p.json.total){ msg.textContent = '沒有可以歸類的句子。'; return; }
+  const list = p.json.groups.map(g => `「${esc(g.name)}」${g.count} 句${g.exists ? '（接在既有的後面）' : '（新建）'}`).join('、');
+  msg.innerHTML = `共 ${p.json.total} 句，會歸入：${list}。 <button type="button" class="primary" id="snAssignOk">確定歸入</button> <button type="button" class="linky" id="snAssignNo">取消</button>`;
+  el('snAssignNo').onclick = () => { msg.textContent = ''; };
+  el('snAssignOk').onclick = async () => {
+    el('snAssignOk').disabled = true;
+    const r = await artApi('/api/admin/sentences-assign', { method: 'POST', body: { ...body, confirm: true } });
+    if (!r.ok){ msg.textContent = r.json.message || '歸類失敗'; return; }
+    msg.textContent = `已歸入 ${r.json.added} 句。`;
+    if (typeof refreshArticleNames === 'function') refreshArticleNames();
+    loadSentences();
+  };
+}
+el('snAssignGo').addEventListener('click', () => snAssign('name'));
+el('snAssignDate').addEventListener('click', () => snAssign('by-date'));
 el('snMore').addEventListener('click', () => loadSentences(true));
 
 el('snList').addEventListener('click', async e => {

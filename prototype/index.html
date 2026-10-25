@@ -51,6 +51,15 @@
           <span class="hint" id="snCount"></span>
         </div>
         <p class="hint" style="margin:8px 0 0">分析有誤的句子可以「排除出題」：畫面照常顯示，但練習和測驗卷不再用它出題。被文章表用到的句子不能刪。</p>
+        <div id="snAssign" hidden>
+          <p class="hint" style="margin:10px 0 6px">這些句子還沒有範圍：句子練習、測驗卷選範圍時抽不到。可以把目前列出的句子（依上面的搜尋）歸進一份文章表；無法分析的句子不會歸入。</p>
+          <div class="row">
+            <input type="text" id="snAssignName" list="artNames" class="grow" maxlength="60" autocomplete="off" placeholder="範圍名稱（新名稱就建立，選既有的就接在後面）" aria-label="範圍名稱">
+            <button type="button" id="snAssignGo">全部歸入這個範圍</button>
+            <button type="button" id="snAssignDate">依分析日期分批</button>
+          </div>
+          <p class="hint" id="snAssignMsg" style="margin:6px 0 0"></p>
+        </div>
       </div>
       <div id="snList"></div>
       <div class="row"><button type="button" id="snMore" hidden>載入更多</button></div>

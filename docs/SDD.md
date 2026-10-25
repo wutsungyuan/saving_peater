@@ -433,6 +433,7 @@ sequenceDiagram
 | POST `/api/job-cancel` | 驗 | 學生撤回自己還沒審的申請 |
 | GET `/api/admin/sentences` · `/api/admin/sentence` | 師 | 句子列表（搜尋、篩選、分頁）、完整分析與使用情形 |
 | POST `/api/admin/sentence-exclude` · `sentence-reanalyze` · DELETE `/api/admin/sentence` | 師 | 排除出題、重新分析（先報價）、刪除（被文章用到的 409） |
+| POST `/api/admin/sentences-assign` | 師 | 把還沒有範圍（沒進任何文章表）的句子歸進文章表：`mode` name（歸到 `name`）／by-date（每天一份「句子 月/日」），`q` 限縮；沒帶 `confirm:true` 只預覽 |
 | POST `/api/admin/records-preview` · `records-delete` | 師 | 整理學生紀錄：預覽、確認後備份並刪除 |
 | POST `/api/paper-edit` | 師 | 卷子改名、換題、刪題、改題（考卷重現的題）、發佈、收回 |
 | POST `/api/exam-import` | 師 | 考卷重現：上傳考卷照片（最多 6 張）→ 選擇題存成草稿；回傳草稿 id、名稱、略過的題、完整句子 |

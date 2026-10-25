@@ -87,6 +87,26 @@ try {
   chk('取消：沒有呼叫模型', S.calls().length === calls0 && await a.evl(`document.querySelector('#snList .srow .srow-msg').textContent === ''`));
   chk('被文章用到的句子：刪除鈕停用', await a.evl(`document.querySelector('#snList .srow [data-sn="delete"]').disabled === true`));
 
+  section('沒有範圍的句子：歸進文章表');
+  chk('預設（全部）看不到歸類區', !(await shown(a, '#snAssign')));
+  await a.evl(`(() => { const s = document.getElementById('snFilter'); s.value = 'unused'; s.dispatchEvent(new Event('change')); })()`);
+  chk('篩選「沒有被文章用到」：出現歸類區', await a.until(`document.querySelectorAll('#snList .srow').length > 0`, 5000) && await shown(a, '#snAssign'));
+  const nUnused = await a.evl(`snState.total`);
+  await a.click('#snAssignGo');
+  chk('沒填名稱：提示先輸入，不會往下', await a.evl(`/請先輸入範圍名稱/.test(document.getElementById('snAssignMsg').textContent)`));
+  await a.type('#snAssignName', '後台歸類');
+  await a.click('#snAssignGo');
+  chk('預覽：寫出會歸入「後台歸類」幾句、新建，還沒動資料', await a.until(`!!document.getElementById('snAssignOk') && document.getElementById('snAssignMsg').textContent.includes('後台歸類') && document.getElementById('snAssignMsg').textContent.includes('新建')`, 5000) && await a.evl(`fetch('/api/articles').then(r => r.json()).then(d => d.articles.every(x => x.name !== '後台歸類'))`), await a.evl(`document.getElementById('snAssignMsg').textContent`));
+  await a.click('#snAssignNo');
+  chk('取消：訊息收起來', await a.evl(`document.getElementById('snAssignMsg').textContent === ''`));
+  await a.click('#snAssignGo');
+  await a.until(`!!document.getElementById('snAssignOk')`, 5000);
+  await a.click('#snAssignOk');
+  chk('確定後：顯示已歸入，「沒有範圍」的清單只剩無法分析的句子', await a.until(`/已歸入 \\d+ 句/.test(document.getElementById('snAssignMsg').textContent) && document.querySelectorAll('#snList .srow').length < ${nUnused} && [...document.querySelectorAll('#snList .srow')].every(r => /無法分析/.test(r.textContent))`, 8000), await a.evl(`document.getElementById('snAssignMsg').textContent`));
+  chk('後端真的建了文章表「後台歸類」', await a.evl(`fetch('/api/articles').then(r => r.json()).then(d => d.articles.some(x => x.name === '後台歸類' && x.sentences > 0))`));
+  await a.evl(`(() => { const s = document.getElementById('snFilter'); s.value = 'all'; s.dispatchEvent(new Event('change')); })()`);
+  chk('切回全部：歸類區收起', await a.until(`document.getElementById('snAssign').hidden`, 5000));
+
   section('學生紀錄');
   await a.click('.tabs button[data-view="students"]');
   chk('看到學生的紀錄（整體 4 題對 2、句型、單字）', await a.until(`/50%/.test(document.getElementById('studHead').textContent) && /五大句型/.test(document.getElementById('studCharts').textContent) && /最弱的單字/.test(document.getElementById('studCharts').textContent)`, 8000), (await a.evl(`document.getElementById('studHead').textContent.slice(0, 120)`)));
