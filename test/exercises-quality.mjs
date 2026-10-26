@@ -29,5 +29,16 @@ chk('有錯的句子不出句型、詞性、時態題', !mixed.some(q => q.sente
 chk('有錯的句子照常出改錯題', mixed.some(q => q.sentence === bad.data.original && q.type === 'error-fix'));
 chk('沒有錯的句子不受影響', mixed.some(q => q.sentence === good.data.original && q.type !== 'error-fix'));
 chk('只選句型、詞性時，有錯的句子完全不出', !generate([good, bad], { count: 40, types: ['pattern', 'pos'] }).some(q => q.sentence === bad.data.original));
-console.log(fail ? `\n有失敗 (${fail})` : '\n全部通過 (9)');
+// 時態填空：縮寫、否定不出；現在簡單式 be 動詞降低機率
+const tenseRec = (original, lemma, time = 'present', vw = lemma === 'be' ? 'is' : lemma) => { const r = rec(original, { roles: ['S', 'V'] }); r.data.clauses[0].verb = { lemma }; r.data.clauses[0].tense.time = time;
+  const i = original.split(' ').findIndex(w => w.toLowerCase().replace(/[^a-z'’]/g, '') === vw);
+  const words = original.split(' '); let off = 0; for (let k = 0; k < i; k++) off += words[k].length + 1;
+  r.data.clauses[0].constituents = [{ text: words[0], role: 'S', start: 0, end: words[0].length }, { text: words[i], role: 'V', start: off, end: off + words[i].length }]; return r; };
+const tn = (r, n = 1) => { let c = 0; for (let k = 0; k < n; k++) c += generate([r], { count: 5, types: ['tense'] }).length; return c; };
+chk('縮寫（It\'s）不出時態題', tn(tenseRec("It's too windy to fly a kite.", 'be', 'present', "it's"), 30) === 0);
+const pool = [tenseRec('This cup is dirty today.', 'be'), tenseRec('I heard a sound last night.', 'hear', 'past', 'heard')];
+let beN = 0; for (let k = 0; k < 600; k++) if (generate(pool, { count: 1, types: ['tense'] })[0].sentence.includes('cup')) beN++;
+chk('現在簡單式 be 動詞被抽中的機會較低（約三成），但仍會出', beN > 80 && beN < 280, String(beN));
+chk('其他動詞的時態題照常出', tn(tenseRec('I heard a sound last night.', 'hear', 'past', 'heard'), 5) === 5);
+console.log(fail ? `\n有失敗 (${fail})` : '\n全部通過 (12)');
 process.exit(fail ? 1 : 0);

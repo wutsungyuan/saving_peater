@@ -97,6 +97,8 @@ function qTense({ hash, data }){
   if (!vs.length || !cl?.verb?.lemma || !cl?.tense || !wholeSentence(data)) return null;
   if (hasBlank(data.original)) return null;        // 已經有空格了，不能再挖
   const { display, blanks } = blankOut(data.original, vs);
+  // 縮寫（It's → 's）和否定（do not like）要小朋友輸入奇怪的片段，拿來考時態不友善，略過
+  if (blanks.some(b => /['’]|\bnot\b/i.test(b))) return null;
   const ev = (cl.tense.evidence ?? []).filter(e => !blanks.some(b => b.includes(e)));
   // 三種會讓人猜不到答案的情況，各補一個線索：
   // 1. 空格吃掉助動詞或否定（I do not like → 答案是三個字，提示卻只有 like）
@@ -120,7 +122,8 @@ function qTense({ hash, data }){
     explain: (ev.length ? `關鍵字 ${ev.join('、')} → ` : '') +
       `${cl.tense.label}（${cl.tense.formula}）` +
       (cl.verb.irregular ? `\n${cl.verb.lemma} 是不規則動詞：${cl.verb.forms?.base} / ${cl.verb.forms?.past} / ${cl.verb.forms?.pastParticiple}` : ''),
-    meta: { hash, tenseTime: cl.tense.time, tenseAspect: cl.tense.aspect },
+    meta: { hash, tenseTime: cl.tense.time, tenseAspect: cl.tense.aspect,
+      easyBe: cl.verb.lemma === 'be' && cl.tense.time === 'present' && cl.tense.aspect === 'simple' },   // be 動詞太容易、提示又等於答案：降低被抽中的機會
   };
 }
 
@@ -231,14 +234,15 @@ export const TYPES = Object.keys(BUILDERS);
 
 /** 這題涉及的維度目前正確率多低 → 權重多高。沒資料視為中性 */
 function weightOf(q, acc){
-  if (!acc) return 1;
+  const easy = q.meta?.easyBe ? 0.4 : 1;
+  if (!acc) return easy;
   let a = null;
   if (q.type === 'pattern' && q.meta.patternId != null) a = acc.patterns?.[q.meta.patternId];
   else if (q.type === 'tense' && q.meta.tenseTime) a = acc.tenses?.[`${q.meta.tenseTime}-${q.meta.tenseAspect}`];
   else if (q.type === 'pos' && q.meta.pos) a = acc.pos?.[q.meta.pos];
   else if (q.type.startsWith('pronoun-') && q.meta.case) a = acc.cases?.[q.meta.case];
-  if (a == null) return 1;                    // 沒作答過：中性，仍有機會出現
-  return 0.25 + (1 - a) * 2.25;               // 全錯 2.5 倍、全對 0.25 倍
+  if (a == null) return easy;                    // 沒作答過：中性，仍有機會出現
+  return easy * (0.25 + (1 - a) * 2.25);               // 全錯 2.5 倍、全對 0.25 倍
 }
 
 /** 依權重隨機抽一題，並從候選池移除 */
