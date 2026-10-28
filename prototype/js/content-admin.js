@@ -11,7 +11,7 @@ function ctRow(kind, x){
     <div class="srow-tags">${x.count} ${CT_KINDS[kind].unit}　·　建立 ${d}${x.note ? `　·　${esc(x.note)}` : ''}</div>
     <div class="row srow-acts">
       <button type="button" class="linky" data-ct="rename">改名</button>
-      ${kind === 'wordset' ? '<button type="button" class="linky" data-ct="words">單字</button><button type="button" class="linky" data-ct="merge">併入…</button>' : ''}
+      <button type="button" class="linky" data-ct="${kind === 'wordset' ? 'words' : 'sents'}">${kind === 'wordset' ? '單字' : '句子'}</button><button type="button" class="linky" data-ct="merge">併入…</button>
       <button type="button" class="linky" data-ct="hide">${x.hidden ? '對學生顯示' : '對學生隱藏'}</button>
       <button type="button" class="linky danger" data-ct="delete">刪除</button>
       <span class="hint srow-msg"></span>
@@ -37,6 +37,25 @@ async function loadContent(){
 function ctRefreshOthers(){
   if (typeof loadWordsets === 'function') loadWordsets();
   if (typeof refreshArticleNames === 'function') refreshArticleNames();
+}
+
+/** 文章表的句子清單：勾選、上下移、移動到新／既有文章表、拿掉 */
+async function ctSentPanel(id, extra, msg){
+  const r = await artApi(`/api/admin/article-sentences?id=${id}`);
+  if (!r.ok){ msg.textContent = r.json.message || '載入失敗'; return; }
+  const others = ctData.articles.filter(y => y.id !== id);
+  extra.hidden = false;
+  extra.innerHTML = `<div class="ct-words">${r.json.sentences.map(w => `<div class="ct-sent" data-hash="${esc(w.hash)}"><label><input type="checkbox" value="${esc(w.hash)}"> ${esc(w.original) || '（找不到句子）'}</label>
+      <button type="button" class="linky" data-ct="up" aria-label="上移">↑</button><button type="button" class="linky" data-ct="down" aria-label="下移">↓</button></div>`).join('') || '<p class="hint">這份沒有句子。</p>'}</div>
+    <div class="row" style="margin-top:6px"><select class="ct-to" aria-label="移到哪一份"><option value="new">移到新文章表…</option>${others.map(y => `<option value="${y.id}">移到「${esc(y.name)}」</option>`).join('')}</select>
+      <input type="text" class="ct-newname" maxlength="60" placeholder="新文章表名稱" aria-label="新文章表名稱">
+      <button type="button" class="primary" data-ct="smove-ok">移動所選</button>
+      <button type="button" class="linky danger" data-ct="sremove">拿掉所選</button>
+      <button type="button" class="linky" data-ct="cancel">關閉</button></div>
+    <p class="hint" style="margin:6px 0 0">改動後，這份文章表的閱讀測驗與回應題庫會作廢、之後重出（已出的卷子不受影響）。</p>
+    <div class="ct-confirm"></div>`;
+  const sel = extra.querySelector('.ct-to'), nn = extra.querySelector('.ct-newname');
+  sel.addEventListener('change', () => { nn.hidden = sel.value !== 'new'; });
 }
 
 async function ctAct(btn){
@@ -111,15 +130,47 @@ async function ctAct(btn){
     if (!r.ok){ msg.textContent = r.json.message || '移除失敗'; btn.disabled = false; return; }
     await loadContent(); ctRefreshOthers();
   } else if (act === 'merge'){
-    const others = ctData.wordsets.filter(y => y.id !== id);
+    const others = ctData[kind === 'wordset' ? 'wordsets' : 'articles'].filter(y => y.id !== id);
     extra.hidden = false;
     extra.innerHTML = others.length ? `<div class="row"><select class="ct-into" aria-label="併入哪一份">${others.map(y => `<option value="${y.id}">${esc(y.name)}</option>`).join('')}</select>
       <button type="button" class="primary" data-ct="merge-ok">把「${esc(x.name)}」併進去</button> <button type="button" class="linky" data-ct="cancel">取消</button></div>
-      <p class="hint" style="margin:6px 0 0">單字連同作答與熟練度一起搬過去；搬完這一份就刪掉。目標已有同字的會留在這份。</p>` : '<p class="hint">沒有別的字表可以併入。</p>';
+      <p class="hint" style="margin:6px 0 0">${kind === 'wordset' ? '單字連同作答與熟練度一起搬過去；搬完這一份就刪掉。目標已有同字的會留在這份。' : '句子接在目標後面，這一份搬完就刪掉（目標已有的句子略過）。'}</p>` : '<p class="hint">沒有別的字表可以併入。</p>';
   } else if (act === 'merge-ok'){
     const into = Number(extra.querySelector('.ct-into').value);
-    const r = await artApi('/api/admin/wordset-merge', { method: 'POST', body: { from: [id], into } });
+    const r = await artApi(`/api/admin/${kind}-merge`, { method: 'POST', body: { from: [id], into } });
     if (!r.ok){ msg.textContent = r.json.message || '合併失敗'; return; }
+    await loadContent(); ctRefreshOthers();
+  } else if (act === 'sents'){
+    await ctSentPanel(id, extra, msg);
+  } else if (act === 'up' || act === 'down'){
+    const lab = btn.closest('.ct-sent'), sib = act === 'up' ? lab.previousElementSibling : lab.nextElementSibling;
+    if (!sib) return;
+    act === 'up' ? sib.before(lab) : sib.after(lab);
+    // 換位置後，把整個順序存起來
+    const hashes = [...extra.querySelectorAll('.ct-sent')].map(l => l.dataset.hash);
+    const r = await artApi('/api/admin/article-reorder', { method: 'POST', body: { id, hashes } });
+    if (!r.ok){ msg.textContent = r.json.message || '調整失敗'; await ctSentPanel(id, extra, msg); return; }
+    msg.textContent = '已存順序';
+  } else if (act === 'smove-ok'){
+    const hashes = [...extra.querySelectorAll('.ct-sent input:checked')].map(i => i.value);
+    const to = extra.querySelector('.ct-to').value;
+    const body = { from: id, hashes, ...(to === 'new' ? { newName: extra.querySelector('.ct-newname').value } : { to: Number(to) }) };
+    const r = await artApi('/api/admin/article-move', { method: 'POST', body });
+    if (!r.ok){ msg.textContent = r.json.message || '移動失敗'; return; }
+    await loadContent(); ctRefreshOthers();
+    const m2 = document.querySelector(`#ctArticles .srow[data-id="${id}"] .srow-msg`);
+    if (m2) m2.textContent = `已移動 ${r.json.moved} 句${r.json.skipped ? `；${r.json.skipped} 句目標已有（留在原處）` : ''}`;
+  } else if (act === 'sremove'){
+    const hashes = [...extra.querySelectorAll('.ct-sent input:checked')].map(i => i.value);
+    const p = await artApi('/api/admin/article-remove', { method: 'POST', body: { from: id, hashes } });
+    if (p.status !== 409){ msg.textContent = p.json.message || '無法預覽'; return; }
+    extra.querySelector('.ct-confirm').innerHTML = `<p class="hint" style="margin:6px 0">從這份拿掉 ${p.json.sentences} 句？${p.json.orphaned ? `其中 ${p.json.orphaned} 句沒有別的文章表在用，會變成「沒有範圍」。` : ''}句子分析留著。</p>
+      <button type="button" class="primary danger" data-ct="sremove-ok">確認拿掉</button>`;
+  } else if (act === 'sremove-ok'){
+    const hashes = [...extra.querySelectorAll('.ct-sent input:checked')].map(i => i.value);
+    btn.disabled = true;
+    const r = await artApi('/api/admin/article-remove', { method: 'POST', body: { from: id, hashes, confirm: true } });
+    if (!r.ok){ msg.textContent = r.json.message || '移除失敗'; btn.disabled = false; return; }
     await loadContent(); ctRefreshOthers();
   } else if (act === 'cancel'){
     extra.hidden = true; extra.innerHTML = '';

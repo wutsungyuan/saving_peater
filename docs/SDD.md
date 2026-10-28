@@ -439,6 +439,7 @@ sequenceDiagram
 | POST `/api/admin/content-update` | 師 | 改名／備註／`hidden`（文章表名稱不可重複）。隱藏只影響學生：列表、`/api/wordset`、`/api/wordquiz`、搜尋、`/api/article`、`/api/exercises` 的範圍都濾掉 |
 | POST `/api/admin/content-delete-preview` · `content-delete` | 師 | 預覽連帶刪除的筆數；`confirm:true` 才刪，刪前 `VACUUM INTO` 備份（與整理學生紀錄共用 10 份上限）；字表連作答與熟練度一起刪，文章表只刪順序 |
 | GET `/api/admin/wordset-words` · POST `wordset-move` · `wordset-remove` · `wordset-merge` | 師 | 移動只改 `words.set_id`（`word_id` 不變，作答與進度跟著走）；`UNIQUE(set_id, term)` 衝突的字跳過並回報；移除要 `confirm:true`、刪前備份；合併後空了的來源字表才刪 |
+| GET `/api/admin/article-sentences` · POST `article-move` · `article-remove` · `article-reorder` · `article-merge` | 師 | 只動 `article_items`（重寫 idx；段落編號 `para` 留在原位置，移動的句子在目標自成新段落）；目標已有的句子略過；拿掉要 `confirm:true`、句子分析不動；有異動就刪 `questions` 中 `ref=文章表 id、src=scope` 的題庫 |
 | POST `/api/admin/records-preview` · `records-delete` | 師 | 整理學生紀錄：預覽、確認後備份並刪除 |
 | POST `/api/paper-edit` | 師 | 卷子改名、換題、刪題、改題（考卷重現的題）、發佈、收回 |
 | POST `/api/exam-import` | 師 | 考卷重現：上傳考卷照片（最多 6 張）→ 選擇題存成草稿；回傳草稿 id、名稱、略過的題、完整句子 |

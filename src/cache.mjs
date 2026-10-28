@@ -926,6 +926,75 @@ export function openCache(file = 'data/cache.db'){
       } catch (e){ db.exec('ROLLBACK'); throw e; }
       return out;
     },
+    /** 文章表的句子（依序），給老師編修用 */
+    articleSentences(id){
+      return db.prepare(`SELECT i.idx, i.para, i.hash, s.original FROM article_items i
+          LEFT JOIN sentences s ON s.hash = i.hash WHERE i.article_id = ? ORDER BY i.idx`).all(Number(id))
+        .map(r => ({ idx: r.idx, para: r.para, hash: r.hash, original: r.original ?? '' }));
+    },
+    /** 這份文章表的內容變了：以它為範圍的閱讀、回應題庫作廢（會依新內容重出）。已出的卷子是快照，不受影響。 */
+    clearArticleBank(id){
+      return Number(db.prepare("DELETE FROM questions WHERE ref = ? AND src = 'scope'").run(String(id)).changes);
+    },
+    /** 依給定順序重寫 idx（只留 rows 裡的句子）。呼叫端須在交易內。 */
+    _rewriteItems(id, rows){
+      db.prepare('DELETE FROM article_items WHERE article_id = ?').run(id);
+      const ins = db.prepare('INSERT INTO article_items (article_id, idx, para, hash) VALUES (?,?,?,?)');
+      rows.forEach((r, i) => ins.run(id, i, r.para, r.hash));
+    },
+    /** 把句子從 fromId 移到 toId（接在後面，自成新段落；目標已有的句子跳過、留在原處）。 */
+    moveArticleItems(fromId, hashes, toId){
+      const from = Number(fromId), to = Number(toId);
+      const want = new Set((Array.isArray(hashes) ? hashes : []).map(String));
+      if (!want.size || from === to) return { moved: 0, skipped: 0 };
+      db.exec('BEGIN');
+      try {
+        const src = db.prepare('SELECT para, hash FROM article_items WHERE article_id = ? ORDER BY idx').all(from);
+        const have = new Set(db.prepare('SELECT hash FROM article_items WHERE article_id = ?').all(to).map(r => r.hash));
+        const take = [], stay = []; let skipped = 0;
+        for (const r of src){
+          if (!want.has(r.hash)) stay.push(r);
+          else if (have.has(r.hash)){ stay.push(r); skipped++; }
+          else { take.push(r); have.add(r.hash); }
+        }
+        if (take.length){
+          const cur = db.prepare('SELECT para, hash FROM article_items WHERE article_id = ? ORDER BY idx').all(to);
+          const base = cur.reduce((m, r) => Math.max(m, r.para), -1) + 1;
+          const order = [...new Set(take.map(r => r.para))];
+          this._rewriteItems(to, [...cur, ...take.map(r => ({ para: base + order.indexOf(r.para), hash: r.hash }))]);
+          this._rewriteItems(from, stay);
+        }
+        db.exec('COMMIT');
+        if (take.length){ this.clearArticleBank(from); this.clearArticleBank(to); }
+        return { moved: take.length, skipped };
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
+    },
+    /** 從文章表拿掉句子（句子分析留在句子庫）。dryRun 只回傳筆數與會變成「沒有範圍」的句數。 */
+    removeArticleItems(id, hashes, { dryRun = false } = {}){
+      const aid = Number(id), want = new Set((Array.isArray(hashes) ? hashes : []).map(String));
+      const src = db.prepare('SELECT para, hash FROM article_items WHERE article_id = ? ORDER BY idx').all(aid);
+      const gone = src.filter(r => want.has(r.hash));
+      const orphaned = gone.filter(r => !db.prepare('SELECT 1 FROM article_items WHERE hash = ? AND article_id != ?').get(r.hash, aid)).length;
+      const out = { sentences: gone.length, orphaned };
+      if (dryRun || !gone.length) return out;
+      db.exec('BEGIN');
+      try { this._rewriteItems(aid, src.filter(r => !want.has(r.hash))); db.exec('COMMIT'); }
+      catch (e){ db.exec('ROLLBACK'); throw e; }
+      this.clearArticleBank(aid);
+      return out;
+    },
+    /** 調順序：hashes 是新的完整順序（必須剛好是現有的那些句子）；段落編號留在原位置，句子換到哪一段就屬於哪一段。回傳是否成功。 */
+    reorderArticle(id, hashes){
+      const aid = Number(id), list = (Array.isArray(hashes) ? hashes : []).map(String);
+      const src = db.prepare('SELECT para, hash FROM article_items WHERE article_id = ? ORDER BY idx').all(aid);
+      const by = new Map(src.map(r => [r.hash, r]));
+      if (list.length !== src.length || new Set(list).size !== list.length || !list.every(h => by.has(h))) return false;
+      db.exec('BEGIN');
+      try { this._rewriteItems(aid, list.map((h, i) => ({ para: src[i].para, hash: h }))); db.exec('COMMIT'); }
+      catch (e){ db.exec('ROLLBACK'); throw e; }
+      this.clearArticleBank(aid);
+      return true;
+    },
     deleteArticles(ids){
       const list =(Array.isArray(ids) ? ids : [ids]).map(Number).filter(Number.isFinite);
       if (!list.length) return 0;

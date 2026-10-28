@@ -121,6 +121,18 @@ try {
   await a.evl(`(() => { const i = document.querySelector('${art0} .ct-extra input'); i.value = '改過的名字'; })()`);
   await a.click(art0 + ' [data-ct="rename-ok"]');
   chk('改名：清單與後端都更新', await a.until(`/改過的名字/.test(document.getElementById('ctArticles').textContent)`, 5000) && await a.evl(`fetch('/api/articles').then(r => r.json()).then(d => d.articles.some(x => x.name === '改過的名字'))`));
+  const aN = await a.evl(`document.querySelectorAll('#ctArticles .srow').length`);
+  await a.click(art0 + ' [data-ct="sents"]');
+  chk('句子：展開勾選清單、上下移與「移動所選」', await a.until(`document.querySelectorAll('${art0} .ct-sent input').length >= 3 && !!document.querySelector('${art0} [data-ct="smove-ok"]') && !!document.querySelector('${art0} [data-ct="up"]')`, 5000));
+  const first = await a.evl(`document.querySelector('${art0} .ct-sent').dataset.hash`);
+  await a.click(art0 + ' .ct-sent:nth-child(2) [data-ct="up"]');
+  chk('上移：畫面換了', await a.until(`document.querySelector('${art0} .ct-sent').dataset.hash !== '${first}'`, 3000));
+  chk('上移：順序存進伺服器', true && await a.until(`document.querySelector('${art0} .ct-sent').dataset.hash !== '${first}'`, 3000)
+    && await a.evl(`new Promise(r => setTimeout(r, 600)).then(() => fetch('/api/admin/article-sentences?id=' + document.querySelector('${art0}').dataset.id)).then(r => r.json()).then(d => d.sentences[1].hash === '${first}')`));
+  await a.evl(`(() => { const c = document.querySelectorAll('${art0} .ct-sent input'); c[0].checked = true; c[1].checked = true; document.querySelector('${art0} .ct-newname').value = '拆出的句子'; })()`);
+  await a.click(art0 + ' [data-ct="smove-ok"]');
+  chk('移動到新文章表：多一份「拆出的句子」，且有 2 句', await a.until(`document.querySelectorAll('#ctArticles .srow').length === ${aN + 1} && /拆出的句子/.test(document.getElementById('ctArticles').textContent)`, 8000)
+    && await a.evl(`fetch('/api/admin/content').then(r => r.json()).then(d => d.articles.some(s => s.name === '拆出的句子' && s.count === 2))`));
   const nBefore = await a.evl(`document.querySelectorAll('#ctArticles .srow').length`);
   await a.click(art0 + ' [data-ct="delete"]');
   chk('刪除：先顯示會刪多少與「確認刪除」，還沒刪', await a.until(`/確認刪除/.test(document.querySelector('${art0} .ct-extra')?.textContent || '') && /先備份/.test(document.querySelector('${art0} .ct-extra').textContent)`, 5000) && await a.evl(`document.querySelectorAll('#ctArticles .srow').length`) === nBefore);

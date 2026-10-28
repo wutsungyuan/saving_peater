@@ -866,3 +866,9 @@ body[data-app="front"][data-role="teacher"] #wsNew{display:none}
 /* 考卷重現的卷子名稱欄：size=34 在手機上會比畫面寬、把整頁撐開，限制在容器內 */
 #exTitle{max-width:100%;min-width:0;box-sizing:border-box;text-overflow:ellipsis}
 @media (max-width:560px){ #exTitle{width:100%;flex:1 1 100%} }
+
+/* 內容管理：單字／句子勾選清單 */
+.ct-words{max-height:320px;overflow:auto;margin-top:6px;border:1px solid var(--line,#ddd);border-radius:8px;padding:4px 8px}
+.ct-word{display:block;padding:3px 0}
+.ct-sent{display:flex;align-items:flex-start;gap:6px;padding:3px 0}
+.ct-sent label{flex:1}

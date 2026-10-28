@@ -152,6 +152,66 @@ export const routes = [
       }
       return sendJson(res, 200, { ok: true, moved, deleted, kept });
     } },
+  // ---- 文章表編修：看句子、移動（拆分）、移除、調順序、合併 ----
+  { match: (req, url) => url.pathname === '/api/admin/article-sentences' && req.method === 'GET', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const id = Number(url.searchParams.get('id'));
+      if (!cache.getArticle(id)) return sendJson(res, 404, { error: 'not-found', message: '找不到這份文章表。' });
+      return sendJson(res, 200, { id, sentences: cache.articleSentences(id) });
+    } },
+  { match: (req, url) => url.pathname === '/api/admin/article-move' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req), from = Number(b.from);
+      const hashes = (Array.isArray(b.hashes) ? b.hashes : []).map(String).slice(0, 500);
+      if (!cache.getArticle(from)) return sendJson(res, 404, { error: 'not-found', message: '找不到來源文章表。' });
+      if (!hashes.length) return sendJson(res, 400, { error: 'no-sentences', message: '請先勾選要移動的句子。' });
+      let to = Number(b.to), created = false;
+      if (b.newName !== undefined){
+        const name = String(b.newName).trim().slice(0, 60);
+        if (!name) return sendJson(res, 400, { error: 'no-name', message: '新文章表要有名稱。' });
+        const dup = cache.articleByName(name);
+        if (dup) return sendJson(res, 409, { error: 'name-taken', message: `已經有一份文章表叫「${dup.name}」，換個名稱。` });
+        to = cache.saveArticle({ name, items: [] }).id; created = true;
+      } else if (!cache.getArticle(to)) return sendJson(res, 404, { error: 'not-found', message: '找不到目標文章表。' });
+      if (to === from) return sendJson(res, 400, { error: 'same-set', message: '來源和目標是同一份。' });
+      const r = cache.moveArticleItems(from, hashes, to);
+      if (created && !r.moved) cache.deleteArticles([to]);
+      return sendJson(res, 200, { ok: true, to: created && !r.moved ? null : to, created: created && r.moved > 0, ...r });
+    } },
+  // 移除句子：先預覽（會有幾句變成「沒有範圍」），帶 confirm:true 才動。句子分析留在句子庫，不用備份
+  { match: (req, url) => url.pathname === '/api/admin/article-remove' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req), from = Number(b.from);
+      const hashes = (Array.isArray(b.hashes) ? b.hashes : []).map(String).slice(0, 500);
+      if (!cache.getArticle(from)) return sendJson(res, 404, { error: 'not-found', message: '找不到這份文章表。' });
+      const preview = cache.removeArticleItems(from, hashes, { dryRun: true });
+      if (!preview.sentences) return sendJson(res, 400, { error: 'no-sentences', message: '請先勾選要移除的句子。' });
+      if (b.confirm !== true) return sendJson(res, 409, { error: 'confirm-required', message: '要先確認才會移除。', ...preview });
+      return sendJson(res, 200, { ok: true, removed: cache.removeArticleItems(from, hashes) });
+    } },
+  // 調順序：hashes 是新的完整順序
+  { match: (req, url) => url.pathname === '/api/admin/article-reorder' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req);
+      if (!cache.getArticle(Number(b.id))) return sendJson(res, 404, { error: 'not-found', message: '找不到這份文章表。' });
+      if (!cache.reorderArticle(Number(b.id), b.hashes)) return sendJson(res, 400, { error: 'bad-order', message: '順序和現有的句子對不上，請重新整理。' });
+      return sendJson(res, 200, { ok: true });
+    } },
+  // 合併：from 們的句子全部接進 into，來源文章表刪除（同句已在 into 的略過）
+  { match: (req, url) => url.pathname === '/api/admin/article-merge' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req), into = Number(b.into);
+      const from = [...new Set((Array.isArray(b.from) ? b.from : []).map(Number).filter(n => Number.isInteger(n) && n !== into))].slice(0, 50);
+      if (!cache.getArticle(into) || !from.length || !from.every(id => cache.getArticle(id)))
+        return sendJson(res, 404, { error: 'not-found', message: '找不到要合併的文章表。' });
+      let moved = 0, dup = 0;
+      for (const id of from){
+        const r = cache.moveArticleItems(id, cache.articleSentences(id).map(x => x.hash), into);
+        moved += r.moved; dup += r.skipped;
+      }
+      const deleted = cache.deleteArticles(from);
+      return sendJson(res, 200, { ok: true, moved, duplicates: dup, deleted });
+    } },
   // 列表：q 搜尋原文與翻譯；filter 篩選；limit、offset 分頁
   { match: (req, url) => url.pathname === '/api/admin/sentences' && req.method === 'GET', handler: async (req, res, url) => {
       if (teacherOnly(req, res, url)) return;
