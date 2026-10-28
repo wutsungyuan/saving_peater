@@ -98,7 +98,8 @@ async function ctAct(btn){
     if (!r.ok){ msg.textContent = r.json.message || '載入失敗'; return; }
     const others = ctData.wordsets.filter(y => y.id !== id);
     extra.hidden = false;
-    extra.innerHTML = `<div class="ct-words">${r.json.words.map(w => `<label class="ct-word"><input type="checkbox" value="${w.id}"> <b>${esc(w.term)}</b> <span class="hint">${esc(w.zh)}${w.attempts ? `　·　作答 ${w.attempts} 次` : ''}</span></label>`).join('') || '<p class="hint">這份沒有單字。</p>'}</div>
+    extra.innerHTML = `<div class="row ct-pick">勾選作答少於 <input type="number" class="ct-few" min="1" max="999" value="10" style="width:4.5em" aria-label="次數"> 次的字 <button type="button" class="linky" data-ct="pick-few">勾選</button><button type="button" class="linky" data-ct="pick-none">全部取消</button><span class="hint ct-picked"></span></div>
+      <div class="ct-words">${r.json.words.map(w => `<label class="ct-word"><input type="checkbox" value="${w.id}" data-n="${w.attempts}"> <b>${esc(w.term)}</b> <span class="hint">${esc(w.zh)}　·　作答 ${w.attempts} 次</span></label>`).join('') || '<p class="hint">這份沒有單字。</p>'}</div>
       <div class="row" style="margin-top:6px"><select class="ct-to" aria-label="移到哪一份"><option value="new">移到新字表…</option>${others.map(y => `<option value="${y.id}">移到「${esc(y.name)}」</option>`).join('')}</select>
         <input type="text" class="ct-newname" maxlength="60" placeholder="新字表名稱" aria-label="新字表名稱">
         <button type="button" class="primary" data-ct="move-ok">移動所選</button>
@@ -107,6 +108,11 @@ async function ctAct(btn){
       <div class="ct-confirm"></div>`;
     const sel = extra.querySelector('.ct-to'), nn = extra.querySelector('.ct-newname');
     sel.addEventListener('change', () => { nn.hidden = sel.value !== 'new'; });
+  } else if (act === 'pick-few' || act === 'pick-none'){
+    const lim = Number(extra.querySelector('.ct-few').value) || 10;
+    let n = 0;
+    for (const i of extra.querySelectorAll('.ct-words input')){ i.checked = act === 'pick-few' && Number(i.dataset.n) < lim; if (i.checked) n++; }
+    extra.querySelector('.ct-picked').textContent = n ? `已勾 ${n} 個` : '';
   } else if (act === 'move-ok'){
     const ids = [...extra.querySelectorAll('.ct-words input:checked')].map(i => Number(i.value));
     const to = extra.querySelector('.ct-to').value;
