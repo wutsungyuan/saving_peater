@@ -133,7 +133,7 @@ saving_peater/
 │  ├─ wordset.mjs         單字表整理、單字題型、批改、讀圖
 │  ├─ exercises.mjs       句子練習出題（程式）
 │  ├─ cache.mjs           全部 SQL（句子、字表、作答、文章、卷子、session…）
-│  ├─ migrate.mjs / migrations.mjs   版本化遷移（v1~v10）
+│  ├─ migrate.mjs / migrations.mjs   版本化遷移（v1~v11）
 │  ├─ claude-bin.mjs      找 claude 執行檔、spawn
 │  ├─ cache-cli.mjs       種子快取匯入／清理的命令列
 │  ├─ jobs.mjs / internal.mjs   申請單（花費關卡）與背景執行；內部呼叫（以老師身分重送請求給現有路由）
@@ -183,6 +183,7 @@ erDiagram
 | 其他新增欄位 | v5～v9 | `attempts.source`／`word_attempts.source`（practice／quiz／exam）、`requests.by_role`（算學生每天辨識張數）、`sentences.excluded`（排除出題）；`papers.status` 多了 `draft` | — |
 | `sessions` | v4、v6 | 登入 session：**只存 cookie 的 SHA-256**、到期時間、`role`（teacher／student） | 過期自動清 |
 | `jobs` | v7 | 申請單：`kind`（analyze／ocr／wordset-ocr／wordset／ai-grade）、`status`（pending／approved／running／done／failed／rejected／cancelled）、`dedup`、`payload`（重送用的請求內容）、`quote`（只有老師看）、`result`、`cost_usd` | 結束超過 60 天清掉 |
+| `wordsets.hidden` / `articles.hidden` | v11 | 對學生隱藏旗標（0/1） | 永久 |
 | `audit_log` | v10 | 後台不可復原操作的紀錄（誰、何時、條件、刪了多少、備份檔名） | 永久 |
 
 ### 4.2 設計決策
@@ -434,6 +435,9 @@ sequenceDiagram
 | GET `/api/admin/sentences` · `/api/admin/sentence` | 師 | 句子列表（搜尋、篩選、分頁）、完整分析與使用情形 |
 | POST `/api/admin/sentence-exclude` · `sentence-reanalyze` · DELETE `/api/admin/sentence` | 師 | 排除出題、重新分析（先報價）、刪除（被文章用到的 409） |
 | POST `/api/admin/sentences-assign` | 師 | 把還沒有範圍（沒進任何文章表）的句子歸進文章表：`mode` name（歸到 `name`）／by-date（每天一份「句子 月/日」），`q` 限縮；沒帶 `confirm:true` 只預覽 |
+| GET `/api/admin/content` | 師 | 內容管理：字表、文章表清單（筆數、`hidden`） |
+| POST `/api/admin/content-update` | 師 | 改名／備註／`hidden`（文章表名稱不可重複）。隱藏只影響學生：列表、`/api/wordset`、`/api/wordquiz`、搜尋、`/api/article`、`/api/exercises` 的範圍都濾掉 |
+| POST `/api/admin/content-delete-preview` · `content-delete` | 師 | 預覽連帶刪除的筆數；`confirm:true` 才刪，刪前 `VACUUM INTO` 備份（與整理學生紀錄共用 10 份上限）；字表連作答與熟練度一起刪，文章表只刪順序 |
 | POST `/api/admin/records-preview` · `records-delete` | 師 | 整理學生紀錄：預覽、確認後備份並刪除 |
 | POST `/api/paper-edit` | 師 | 卷子改名、換題、刪題、改題（考卷重現的題）、發佈、收回 |
 | POST `/api/exam-import` | 師 | 考卷重現：上傳考卷照片（最多 6 張）→ 選擇題存成草稿；回傳草稿 id、名稱、略過的題、完整句子 |

@@ -26,6 +26,7 @@
       <button data-view="jobs" aria-pressed="false" class="student-only">我的申請<span class="bdg" id="jobsBadgeS" hidden></span></button>
       <button data-view="jobs" aria-pressed="false" class="admin-only">待審<span class="bdg" id="jobsBadgeT" hidden></span></button>
       <button data-view="sentences" aria-pressed="false" class="admin-only">句子</button>
+      <button data-view="content" aria-pressed="false" class="admin-only">內容</button>
       <button data-view="students" aria-pressed="false" class="admin-only">學生紀錄</button>
       <button data-view="history" aria-pressed="false" class="admin-only">費用與用量</button>
     </div>
@@ -63,6 +64,19 @@
       </div>
       <div id="snList"></div>
       <div class="row"><button type="button" id="snMore" hidden>載入更多</button></div>
+    </div>
+
+    <div id="view-content" hidden>
+      <div class="box">
+        <h3 style="margin:0 0 6px">字表</h3>
+        <p class="hint" style="margin:0 0 8px">「對學生隱藏」：學生的列表、單字測驗、搜尋都看不到，你照常看得到也能出卷；作答紀錄與統計都保留。刪除會連同作答與熟練度一起刪，刪之前會先備份。</p>
+        <div id="ctWordsets"></div>
+      </div>
+      <div class="box">
+        <h3 style="margin:0 0 6px">文章表（句子範圍）</h3>
+        <p class="hint" style="margin:0 0 8px">隱藏後學生選不到這個範圍。刪除只刪文章表的順序，句子分析留在句子庫（會變成「沒有範圍」，可到「句子」頁重新歸類）。</p>
+        <div id="ctArticles"></div>
+      </div>
     </div>
 
     <div id="view-students" hidden>
@@ -344,4 +358,5 @@
 <script src="js/exam-import.js"></script>
 <script src="js/jobs.js"></script>
 <script src="js/admin.js"></script>
+<script src="js/content-admin.js"></script>
 <script src="js/init.js"></script>

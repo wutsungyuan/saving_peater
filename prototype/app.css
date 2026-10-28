@@ -825,8 +825,9 @@ body[data-app="admin"] .tabs button[data-view="exam"]{order:2}
 body[data-app="admin"] .tabs button[data-view="words"]{order:3}
 body[data-app="admin"] .tabs button[data-view="article"]{order:4}
 body[data-app="admin"] .tabs button[data-view="sentences"]{order:5}
-body[data-app="admin"] .tabs button[data-view="students"]{order:6}
-body[data-app="admin"] .tabs button[data-view="history"]{order:7}
+body[data-app="admin"] .tabs button[data-view="content"]{order:6}
+body[data-app="admin"] .tabs button[data-view="students"]{order:7}
+body[data-app="admin"] .tabs button[data-view="history"]{order:8}
 body[data-app="admin"] h1::after{content:"　後台";font-size:.5em;font-weight:500;color:var(--muted)}
 /* 老師在前台不新增字表（那是後台的事）；學生的「申請新增字表」照常 */
 body[data-app="front"][data-role="teacher"] #wsNew{display:none}

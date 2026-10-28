@@ -30,7 +30,7 @@ try {
   section('後台的分頁');
   const a = await login(S.base, T, '/admin');
   chk('body 標著後台、老師', await a.until(`document.body.dataset.app === 'admin' && document.body.dataset.role === 'teacher'`));
-  chk('分頁：待審、測驗卷、單字表、文章表、句子、學生紀錄、費用與用量', await visibleTabs(a) === '待審,測驗卷,單字表,文章表,句子,學生紀錄,費用與用量', await visibleTabs(a));
+  chk('分頁：待審、測驗卷、單字表、文章表、句子、內容、學生紀錄、費用與用量', await visibleTabs(a) === '待審,測驗卷,單字表,文章表,句子,內容,學生紀錄,費用與用量', await visibleTabs(a));
   chk('一進來先看待審', await a.evl(`document.body.dataset.view === 'jobs' && !document.getElementById('view-jobs').hidden`));
   chk('有「回到前台」連結、沒有「進入後台」', await shown(a, '#frontLink') && !(await shown(a, '#adminLink')));
   chk('後台沒有學生用的分頁（句子分析、弱點）', !(await shown(a, '.tabs button[data-view="sentence"]')) && !(await shown(a, '.tabs button[data-view="weak"]')));
@@ -106,6 +106,30 @@ try {
   chk('後端真的建了文章表「後台歸類」', await a.evl(`fetch('/api/articles').then(r => r.json()).then(d => d.articles.some(x => x.name === '後台歸類' && x.sentences > 0))`));
   await a.evl(`(() => { const s = document.getElementById('snFilter'); s.value = 'all'; s.dispatchEvent(new Event('change')); })()`);
   chk('切回全部：歸類區收起', await a.until(`document.getElementById('snAssign').hidden`, 5000));
+
+  section('內容管理：改名、隱藏、刪除');
+  await a.click('.tabs button[data-view="content"]');
+  chk('列出字表與文章表', await a.until(`document.querySelectorAll('#ctWordsets .srow').length >= 1 && document.querySelectorAll('#ctArticles .srow').length >= 1`, 8000));
+  const art0 = '#ctArticles .srow:first-child';
+  await a.click(art0 + ' [data-ct="hide"]');
+  chk('按「對學生隱藏」：標上隱藏、按鈕變成「對學生顯示」', await a.until(`/對學生隱藏/.test(document.querySelector('${art0} .badge')?.textContent || '') && /對學生顯示/.test(document.querySelector('${art0}').textContent)`, 5000));
+  chk('後端：文章表帶 hidden 標記', await a.evl(`fetch('/api/articles').then(r => r.json()).then(d => d.articles.some(x => x.hidden))`));
+  await a.click(art0 + ' [data-ct="hide"]');
+  chk('再按一次：恢復顯示', await a.until(`!document.querySelector('${art0} .badge')`, 5000));
+  await a.click(art0 + ' [data-ct="rename"]');
+  await a.until(`!!document.querySelector('${art0} .ct-extra input')`);
+  await a.evl(`(() => { const i = document.querySelector('${art0} .ct-extra input'); i.value = '改過的名字'; })()`);
+  await a.click(art0 + ' [data-ct="rename-ok"]');
+  chk('改名：清單與後端都更新', await a.until(`/改過的名字/.test(document.getElementById('ctArticles').textContent)`, 5000) && await a.evl(`fetch('/api/articles').then(r => r.json()).then(d => d.articles.some(x => x.name === '改過的名字'))`));
+  const nBefore = await a.evl(`document.querySelectorAll('#ctArticles .srow').length`);
+  await a.click(art0 + ' [data-ct="delete"]');
+  chk('刪除：先顯示會刪多少與「確認刪除」，還沒刪', await a.until(`/確認刪除/.test(document.querySelector('${art0} .ct-extra')?.textContent || '') && /先備份/.test(document.querySelector('${art0} .ct-extra').textContent)`, 5000) && await a.evl(`document.querySelectorAll('#ctArticles .srow').length`) === nBefore);
+  await a.click(art0 + ' [data-ct="cancel"]');
+  chk('取消：收起確認，沒刪', await a.until(`document.querySelector('${art0} .ct-extra').hidden`, 3000) && await a.evl(`document.querySelectorAll('#ctArticles .srow').length`) === nBefore);
+  await a.click(art0 + ' [data-ct="delete"]');
+  await a.until(`/確認刪除/.test(document.querySelector('${art0} .ct-extra')?.textContent || '')`);
+  await a.click(art0 + ' [data-ct="delete-ok"]');
+  chk('確認刪除：少一份', await a.until(`document.querySelectorAll('#ctArticles .srow').length === ${nBefore - 1}`, 8000));
 
   section('學生紀錄');
   await a.click('.tabs button[data-view="students"]');

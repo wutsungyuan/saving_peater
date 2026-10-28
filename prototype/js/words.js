@@ -36,7 +36,7 @@ async function loadWordsets(){
       const when = `${d2.getMonth()+1}/${d2.getDate()}`;
       return `<button class="wchip" data-id="${x.id}" aria-pressed="${wsSel.includes(x.id)}"
         title="建立於 ${d2.toLocaleString('zh-TW')}｜已背熟 ${x.mastered} 字">
-        ${esc(x.name)}<small>${x.word_count} 字</small><small class="when">${when}</small></button>`;
+        ${esc(x.name)}${x.hidden ? '<small>隱藏</small>' : ''}<small>${x.word_count} 字</small><small class="when">${when}</small></button>`;
     };
     // 字表會一直累積（家教每堂課一份），只先顯示最近幾份，其餘收起來
     const SHOWN = 6;

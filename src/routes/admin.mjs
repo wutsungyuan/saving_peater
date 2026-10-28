@@ -46,6 +46,55 @@ export const routes = [
       try { const mine = readdirSync(dir).filter(x => x.includes('.before-delete-')).sort(); for (const old of mine.slice(0, Math.max(0, mine.length - 10))) unlinkSync(join(dir, old)); } catch {}
       return sendJson(res, 200, { ok: true, deleted, backup: basename(path), audit: cache.auditList(10) });
     } },
+  // ---- 內容管理：字表與文章表的清單、改名、對學生隱藏、刪除（先預覽、先備份）----
+  { match: (req, url) => url.pathname === '/api/admin/content' && req.method === 'GET', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      return sendJson(res, 200, {
+        wordsets: cache.wordsets('student').map(s => ({ id: s.id, name: s.name, note: s.note, count: s.word_count, hidden: Boolean(s.hidden), createdAt: s.created_at })),
+        articles: cache.articles().map(a => ({ id: a.id, name: a.name, count: a.sentences, hidden: Boolean(a.hidden), createdAt: a.created_at })),
+      });
+    } },
+  // 改名（字表另可改備註）／隱藏。只改有帶的欄位
+  { match: (req, url) => url.pathname === '/api/admin/content-update' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req), kind = b.kind === 'article' ? 'article' : b.kind === 'wordset' ? 'wordset' : null, id = Number(b.id);
+      if (!kind || !Number.isInteger(id)) return sendJson(res, 400, { error: 'bad-request', message: '缺少 kind 或 id。' });
+      const exists = kind === 'article' ? cache.getArticle(id) : cache.wordsets('student').find(s => s.id === id);
+      if (!exists) return sendJson(res, 404, { error: 'not-found', message: '找不到這一份。' });
+      if (b.name !== undefined){
+        const name = String(b.name).trim().slice(0, 60);
+        if (!name) return sendJson(res, 400, { error: 'no-name', message: '名稱不能空白。' });
+        if (kind === 'article'){
+          const dup = cache.articleByName(name);
+          if (dup && dup.id !== id) return sendJson(res, 409, { error: 'name-taken', message: `已經有一份文章表叫「${dup.name}」，換個名稱。` });
+          cache.renameArticle(id, name);
+        } else cache.renameWordset(id, name, b.note === undefined ? undefined : String(b.note).trim().slice(0, 200));
+      } else if (b.note !== undefined && kind === 'wordset') cache.renameWordset(id, exists.name, String(b.note).trim().slice(0, 200));
+      if (b.hidden !== undefined) cache.setHidden(kind, id, b.hidden === true);
+      return sendJson(res, 200, { ok: true });
+    } },
+  // 刪除前的預覽：會連帶刪掉多少
+  { match: (req, url) => url.pathname === '/api/admin/content-delete-preview' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req), kind = b.kind === 'article' ? 'article' : 'wordset';
+      const ids = (Array.isArray(b.ids) ? b.ids : []).map(Number).filter(Number.isInteger).slice(0, 50);
+      return sendJson(res, 200, { kind, ...cache.deletePreview(kind, ids) });
+    } },
+  // 真的刪：要帶 confirm:true；先備份整個資料庫。字表連作答與熟練度一起刪，文章表只刪順序
+  { match: (req, url) => url.pathname === '/api/admin/content-delete' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req), kind = b.kind === 'article' ? 'article' : 'wordset';
+      const ids = (Array.isArray(b.ids) ? b.ids : []).map(Number).filter(Number.isInteger).slice(0, 50);
+      if (!ids.length) return sendJson(res, 400, { error: 'bad-request', message: '沒有指定要刪的項目。' });
+      const preview = cache.deletePreview(kind, ids);
+      if (b.confirm !== true) return sendJson(res, 409, { error: 'confirm-required', message: '要先確認才會刪。', ...preview });
+      const dir = join(dirname(DB_FILE), 'backups'); mkdirSync(dir, { recursive: true });
+      const path = join(dir, `${basename(DB_FILE, '.db')}.before-delete-${kind}-${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}-${Math.random().toString(36).slice(2, 6)}.db`);
+      cache.backupTo(path);
+      const deleted = kind === 'article' ? cache.deleteArticles(ids) : cache.deleteWordset(ids);
+      try { const mine = readdirSync(dir).filter(x => x.includes('.before-delete-')).sort(); for (const old of mine.slice(0, Math.max(0, mine.length - 10))) unlinkSync(join(dir, old)); } catch {}
+      return sendJson(res, 200, { ok: true, deleted, backup: basename(path), ...preview });
+    } },
   // 列表：q 搜尋原文與翻譯；filter 篩選；limit、offset 分頁
   { match: (req, url) => url.pathname === '/api/admin/sentences' && req.method === 'GET', handler: async (req, res, url) => {
       if (teacherOnly(req, res, url)) return;

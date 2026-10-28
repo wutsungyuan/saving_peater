@@ -8,7 +8,7 @@
 // 句子分析與新增文章共用同一個輸入框與結果區（#an-live），用 anMode 切換成哪一種用法，
 // 切換時把整塊搬到對應的子頁裡，所以輸入、拍照、分析、朗讀、提示便條的程式都不用分兩份。
 
-const VIEWS = ['words', 'sentence', 'article', 'exam', 'weak', 'jobs', 'sentences', 'students', 'history'];
+const VIEWS = ['words', 'sentence', 'article', 'exam', 'weak', 'jobs', 'sentences', 'content', 'students', 'history'];
 const VIEW_NAMES = { words: '單字', sentence: '句子', article: '文章', exam: '測驗卷', weak: '弱點', jobs: '申請', sentences: '句子', students: '學生紀錄', history: '歷史' };
 /** 現在是後台（/admin）還是前台。後台是老師管理用的，前台是學生練習用的；同一份頁面，分頁與按鈕不同。 */
 const isAdminApp = () => document.body.dataset.app === 'admin';
@@ -119,6 +119,7 @@ function showView(v, { sub = null, keepBack = false, auto = true } = {}){
   }
   if (v === 'jobs') loadJobs();
   if (v === 'sentences') loadSentences();
+  if (v === 'content') loadContent();
   if (v === 'students') loadStudentRecords();
   if (v === 'history'){
     if (API === false) historyOut.innerHTML = needApi('歷史紀錄');

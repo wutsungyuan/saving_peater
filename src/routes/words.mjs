@@ -11,7 +11,7 @@ import { cache } from '../context.mjs';
 import { readBody, authed, roleOf, denyStudent, userOf, decodeImage } from '../http.mjs';
 import { submitJob } from '../jobs.mjs';
 import { STUDENT_OCR_PER_DAY } from '../config.mjs';
-import { setIdList, redoQuestions, exampleSentences } from './shared.mjs';
+import { setIdList, redoQuestions, exampleSentences, visibleIds, visibleRows } from './shared.mjs';
 
 export const routes = [
     // ---------- 單字表 ----------
@@ -22,7 +22,7 @@ export const routes = [
       if (req.method === 'GET'){
         if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
         res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ sets: cache.wordsets(userToken) }));
+        return res.end(JSON.stringify({ sets: visibleRows(req, url, cache.wordsets(userToken)) }));
       }
       if (req.method === 'POST'){
         if (!authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
@@ -160,7 +160,7 @@ export const routes = [
       const q = String(url.searchParams.get('q') || '').trim().slice(0, 60);
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       if (!q) return res.end(JSON.stringify({ q, words: [], total: 0 }));
-      const hits = searchWords(cache.wordsOf(cache.wordsets(userToken).map(s => s.id), userToken), q);
+      const hits = searchWords(cache.wordsOf(visibleRows(req, url, cache.wordsets(userToken)).map(s => s.id), userToken), q);
       for (const w of hits)
         for (const sn of w.senses ?? [])
           if (sn.example) sn.analyzed = Boolean(cache.get(String(sn.example).trim()));
@@ -171,7 +171,7 @@ export const routes = [
     match: (req, url) => url.pathname === '/api/wordset',
     handler: async (req, res, url) => {
       const userToken = userOf(req, url, url.searchParams.get('user'));
-      const ids = setIdList(url.searchParams.get('ids'), url.searchParams.get('id'));
+      const ids = visibleIds(req, url, 'wordset', setIdList(url.searchParams.get('ids'), url.searchParams.get('id')));
       if (req.method === 'GET' && !authed(req, url)){ res.writeHead(401, { 'content-type':'application/json' }); return res.end('{"error":"unauthorized"}'); }
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       const words = cache.wordsOf(ids, userToken);
@@ -286,7 +286,7 @@ export const routes = [
         return res.end(JSON.stringify({ quizId, total: questions.length, redo: true,
           questions: questions.map(({ answer, alsoAccept, accept, explain, ...rest }) => rest) }));
       }
-      const words = cache.wordsOf(setIdList(b.setIds, b.setId), userToken);
+      const words = cache.wordsOf(visibleIds(req, url, 'wordset', setIdList(b.setIds, b.setId)), userToken);
       if (!words.length){
         res.writeHead(409, { 'content-type':'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error:'empty-set', message:'這份字表沒有單字。' }));

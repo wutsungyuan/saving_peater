@@ -141,7 +141,7 @@ async function loadArticles(){
   }
   box.innerHTML = `<div class="usage-cards">${artCache.map(a => `
     <button type="button" class="art-card" data-id="${a.id}">
-      <b>${esc(a.name)}</b>
+      <b>${esc(a.name)}</b>${a.hidden ? ' <small class="hint">（對學生隱藏）</small>' : ''}
       <span>${a.sentences} 句・${a.paragraphs} 段</span>
       <span class="hint">${new Date(a.created_at).toLocaleDateString('zh-TW')}</span>
     </button>`).join('')}</div>`;

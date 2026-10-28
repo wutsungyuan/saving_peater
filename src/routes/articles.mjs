@@ -3,7 +3,7 @@
 import { cache } from '../context.mjs';
 import { readBody, authed, denyStudent, sendJson } from '../http.mjs';
 import { saveArticle, articleView } from '../articles.mjs';
-import { setIdList } from './shared.mjs';
+import { setIdList, visibleIds, visibleRows } from './shared.mjs';
 
 const deny = res => sendJson(res, 401, { error: 'unauthorized' });
 const body = async req => { try { return JSON.parse(await readBody(req, 2e6)) || {}; } catch { return {}; } };
@@ -13,7 +13,7 @@ export const routes = [
     match: (req, url) => url.pathname === '/api/articles',
     handler: async (req, res, url) => {
       if (!authed(req, url)) return deny(res);
-      if (req.method === 'GET') return sendJson(res, 200, { articles: cache.articles() });
+      if (req.method === 'GET') return sendJson(res, 200, { articles: visibleRows(req, url, cache.articles()) });
       if (req.method === 'POST'){
         const b = await body(req);
         const r = saveArticle(cache, { name: b.name, text: b.text, appendTo: b.appendTo });
@@ -35,7 +35,8 @@ export const routes = [
       // sets：要標出哪些單字表的單字（選填）
       const sets = setIdList(url.searchParams.get('sets'));
       const words = sets.length ? cache.wordsOf(sets, 'anon') : [];
-      const v = articleView(cache, Number(url.searchParams.get('id')), words);
+      const aid = Number(url.searchParams.get('id'));
+      const v = visibleIds(req, url, 'article', [aid]).length ? articleView(cache, aid, words) : null;
       return v ? sendJson(res, 200, v) : sendJson(res, 404, { error: 'not-found', message: '找不到這份文章表。' });
     },
   },

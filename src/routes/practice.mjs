@@ -3,7 +3,7 @@
 import { generate, grade, TYPES } from '../exercises.mjs';
 import { cache } from '../context.mjs';
 import { readBody, pool, authed, roleOf, userOf } from '../http.mjs';
-import { redoQuestions } from './shared.mjs';
+import { redoQuestions, visibleIds } from './shared.mjs';
 
 export const routes = [
     // 出題：從已分析的句子反向生成，不呼叫模型
@@ -33,7 +33,13 @@ export const routes = [
           redo: true, questions: questions.map(({ answer, alsoAccept, accept, explain, ...rest }) => rest) }));
       }
       // 範圍：文章表 id（複選）。沒給就是整個句子庫；給了就只從那些文章表的句子出題
-      const articleIds = Array.isArray(body.articleIds) ? [...new Set(body.articleIds.filter(x => /^\d+$/.test(String(x))).map(Number))].slice(0, 50) : [];
+      let articleIds = Array.isArray(body.articleIds) ? [...new Set(body.articleIds.filter(x => /^\d+$/.test(String(x))).map(Number))].slice(0, 50) : [];
+      const asked = articleIds.length;
+      articleIds = visibleIds(req, url, 'article', articleIds);
+      if (asked && !articleIds.length){          // 選的全是被隱藏的範圍：不能退回「整個句子庫」
+        res.writeHead(409, { 'content-type':'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: 'no-sentences-in-scope', message: '你選的範圍已經不存在，請重新選擇。' }));
+      }
       const scopeNames = articleIds.map(id => cache.getArticle(id)?.name).filter(Boolean);
       const records = cache.pickSentences(60, { articleIds });
       if (!records.length){

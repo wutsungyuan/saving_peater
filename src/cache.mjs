@@ -490,7 +490,7 @@ export function openCache(file = 'data/cache.db'){
     },
 
     wordsets(userToken){
-      return db.prepare(`SELECT s.id, s.name, s.note, s.created_at,
+      return db.prepare(`SELECT s.id, s.name, s.note, s.created_at, s.hidden,
           (SELECT COUNT(*) FROM words w WHERE w.set_id = s.id) AS word_count,
           (SELECT COUNT(*) FROM words w JOIN word_progress p
              ON p.word_id = w.id AND p.user_token = ? WHERE w.set_id = s.id AND p.box >= 3) AS mastered
@@ -813,7 +813,7 @@ export function openCache(file = 'data/cache.db'){
     // ---------- 文章表 ----------
     hashOf(sentence){ return hashOf(sentence); },
     articles(){
-      return db.prepare(`SELECT a.id, a.name, a.created_at,
+      return db.prepare(`SELECT a.id, a.name, a.created_at, a.hidden,
           (SELECT COUNT(*) FROM article_items i WHERE i.article_id = a.id) AS sentences,
           (SELECT COUNT(DISTINCT para) FROM article_items i WHERE i.article_id = a.id) AS paragraphs
         FROM articles a ORDER BY a.created_at DESC, a.id DESC`).all();
@@ -843,6 +843,42 @@ export function openCache(file = 'data/cache.db'){
       } catch (e){ db.exec('ROLLBACK'); throw e; }
     },
     renameArticle(id, name){ return Number(db.prepare('UPDATE articles SET name = ? WHERE id = ?').run(name, Number(id)).changes); },
+
+    // ---------- 內容管理：隱藏、改名、刪除預覽（字表與文章表共用）----------
+    /** kind：'wordset' | 'article'。回傳對學生隱藏的 id 集合 */
+    hiddenIds(kind){
+      const t = kind === 'article' ? 'articles' : 'wordsets';
+      return new Set(db.prepare(`SELECT id FROM ${t} WHERE hidden = 1`).all().map(r => r.id));
+    },
+    setHidden(kind, id, hidden){
+      const t = kind === 'article' ? 'articles' : 'wordsets';
+      return Number(db.prepare(`UPDATE ${t} SET hidden = ? WHERE id = ?`).run(hidden ? 1 : 0, Number(id)).changes);
+    },
+    renameWordset(id, name, note){
+      return Number(note === undefined
+        ? db.prepare('UPDATE wordsets SET name = ? WHERE id = ?').run(name, Number(id)).changes
+        : db.prepare('UPDATE wordsets SET name = ?, note = ? WHERE id = ?').run(name, note || null, Number(id)).changes);
+    },
+    /** 刪除前先看會連帶刪掉什麼。字表連作答與熟練度一起刪；文章表只刪順序，句子分析留在句子庫（變成「沒有範圍」）。 */
+    deletePreview(kind, ids){
+      const list = (Array.isArray(ids) ? ids : [ids]).map(Number).filter(Number.isFinite);
+      if (!list.length) return { items: [] };
+      const qs = list.map(() => '?').join(',');
+      if (kind === 'article'){
+        const items = db.prepare(`SELECT a.id, a.name,
+            (SELECT COUNT(*) FROM article_items i WHERE i.article_id = a.id) AS sentences,
+            (SELECT COUNT(*) FROM article_items i WHERE i.article_id = a.id
+               AND NOT EXISTS (SELECT 1 FROM article_items o WHERE o.hash = i.hash AND o.article_id NOT IN (${qs}))) AS orphaned
+          FROM articles a WHERE a.id IN (${qs})`).all(...list, ...list);
+        return { items, totals: { sentences: items.reduce((n, x) => n + x.sentences, 0), orphaned: items.reduce((n, x) => n + x.orphaned, 0) } };
+      }
+      const items = db.prepare(`SELECT s.id, s.name,
+          (SELECT COUNT(*) FROM words w WHERE w.set_id = s.id) AS words,
+          (SELECT COUNT(*) FROM word_attempts a WHERE a.word_id IN (SELECT id FROM words WHERE set_id = s.id)) AS attempts,
+          (SELECT COUNT(*) FROM word_progress p WHERE p.word_id IN (SELECT id FROM words WHERE set_id = s.id)) AS progress
+        FROM wordsets s WHERE s.id IN (${qs})`).all(...list);
+      return { items, totals: { words: items.reduce((n, x) => n + x.words, 0), attempts: items.reduce((n, x) => n + x.attempts, 0), progress: items.reduce((n, x) => n + x.progress, 0) } };
+    },
     deleteArticles(ids){
       const list = (Array.isArray(ids) ? ids : [ids]).map(Number).filter(Number.isFinite);
       if (!list.length) return 0;

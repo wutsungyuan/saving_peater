@@ -229,6 +229,14 @@ function auditLog(db){
   `);
 }
 
+/** 第 11 版：字表與文章表可以對學生「隱藏」。資料、作答、統計都照舊，只是學生看不到、選不到。 */
+function contentHidden(db){
+  db.exec(`
+    ALTER TABLE wordsets ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE articles ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+  `);
+}
+
 export const MIGRATIONS = [
   { version: 1, name: 'baseline', up: baseline },
   { version: 2, name: 'articles', up: articles },
@@ -240,4 +248,5 @@ export const MIGRATIONS = [
   { version: 8, name: 'request-roles', up: requestRoles },
   { version: 9, name: 'sentence-excluded', up: sentenceExcluded },
   { version: 10, name: 'audit-log', up: auditLog },
+  { version: 11, name: 'content-hidden', up: contentHidden },
 ];
