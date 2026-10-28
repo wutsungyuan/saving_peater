@@ -95,6 +95,63 @@ export const routes = [
       try { const mine = readdirSync(dir).filter(x => x.includes('.before-delete-')).sort(); for (const old of mine.slice(0, Math.max(0, mine.length - 10))) unlinkSync(join(dir, old)); } catch {}
       return sendJson(res, 200, { ok: true, deleted, backup: basename(path), ...preview });
     } },
+  // ---- 字表編修：看單字、移動到別份（或新字表）、移除、合併 ----
+  { match: (req, url) => url.pathname === '/api/admin/wordset-words' && req.method === 'GET', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const id = Number(url.searchParams.get('id'));
+      if (!cache.wordsets('student').some(s => s.id === id)) return sendJson(res, 404, { error: 'not-found', message: '找不到這份字表。' });
+      return sendJson(res, 200, { id, words: cache.wordsetWords(id) });
+    } },
+  // 移動：to 是既有字表 id，或 newName 建新字表。目標已有同字的跳過、留在原處
+  { match: (req, url) => url.pathname === '/api/admin/wordset-move' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req), from = Number(b.from), sets = cache.wordsets('student');
+      const wordIds = (Array.isArray(b.wordIds) ? b.wordIds : []).map(Number).filter(Number.isInteger).slice(0, 500);
+      if (!sets.some(s => s.id === from)) return sendJson(res, 404, { error: 'not-found', message: '找不到來源字表。' });
+      if (!wordIds.length) return sendJson(res, 400, { error: 'no-words', message: '請先勾選要移動的單字。' });
+      let to = Number(b.to), created = false;
+      if (b.newName !== undefined){
+        const name = String(b.newName).trim().slice(0, 60);
+        if (!name) return sendJson(res, 400, { error: 'no-name', message: '新字表要有名稱。' });
+        to = cache.createWordset(name, [], String(b.note ?? '').trim().slice(0, 200) || null); created = true;
+      } else if (!sets.some(s => s.id === to)) return sendJson(res, 404, { error: 'not-found', message: '找不到目標字表。' });
+      if (to === from) return sendJson(res, 400, { error: 'same-set', message: '來源和目標是同一份。' });
+      const r = cache.moveWords(from, wordIds, to);
+      if (created && !r.moved) cache.deleteWordset([to]);
+      return sendJson(res, 200, { ok: true, to: created && !r.moved ? null : to, created: created && r.moved > 0, ...r });
+    } },
+  // 移除單字（連作答與熟練度）：先預覽，帶 confirm:true 才刪，先備份
+  { match: (req, url) => url.pathname === '/api/admin/wordset-remove' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req), from = Number(b.from);
+      const wordIds = (Array.isArray(b.wordIds) ? b.wordIds : []).map(Number).filter(Number.isInteger).slice(0, 500);
+      if (!cache.wordsets('student').some(s => s.id === from)) return sendJson(res, 404, { error: 'not-found', message: '找不到這份字表。' });
+      const preview = cache.removeWords(from, wordIds, { dryRun: true });
+      if (!preview.words) return sendJson(res, 400, { error: 'no-words', message: '請先勾選要移除的單字。' });
+      if (b.confirm !== true) return sendJson(res, 409, { error: 'confirm-required', message: '要先確認才會刪。', ...preview });
+      const dir = join(dirname(DB_FILE), 'backups'); mkdirSync(dir, { recursive: true });
+      const path = join(dir, `${basename(DB_FILE, '.db')}.before-delete-words-${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}-${Math.random().toString(36).slice(2, 6)}.db`);
+      cache.backupTo(path);
+      const removed = cache.removeWords(from, wordIds);
+      try { const mine = readdirSync(dir).filter(x => x.includes('.before-delete-')).sort(); for (const old of mine.slice(0, Math.max(0, mine.length - 10))) unlinkSync(join(dir, old)); } catch {}
+      return sendJson(res, 200, { ok: true, removed, backup: basename(path) });
+    } },
+  // 合併：把 from 們的單字全部移進 into，空了的來源字表刪掉；同字衝突的留在來源（來源不刪）
+  { match: (req, url) => url.pathname === '/api/admin/wordset-merge' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req), into = Number(b.into), sets = cache.wordsets('student');
+      const from = [...new Set((Array.isArray(b.from) ? b.from : []).map(Number).filter(n => Number.isInteger(n) && n !== into))].slice(0, 50);
+      if (!sets.some(s => s.id === into) || !from.length || !from.every(id => sets.some(s => s.id === id)))
+        return sendJson(res, 404, { error: 'not-found', message: '找不到要合併的字表。' });
+      let moved = 0, kept = [], deleted = 0;
+      for (const id of from){
+        const r = cache.moveWords(id, cache.wordsetWords(id).map(w => w.id), into);
+        moved += r.moved;
+        if (r.skipped.length) kept.push(...r.skipped);
+        else deleted += cache.deleteWordset([id]);
+      }
+      return sendJson(res, 200, { ok: true, moved, deleted, kept });
+    } },
   // 列表：q 搜尋原文與翻譯；filter 篩選；limit、offset 分頁
   { match: (req, url) => url.pathname === '/api/admin/sentences' && req.method === 'GET', handler: async (req, res, url) => {
       if (teacherOnly(req, res, url)) return;

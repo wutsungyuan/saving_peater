@@ -11,6 +11,7 @@ function ctRow(kind, x){
     <div class="srow-tags">${x.count} ${CT_KINDS[kind].unit}　·　建立 ${d}${x.note ? `　·　${esc(x.note)}` : ''}</div>
     <div class="row srow-acts">
       <button type="button" class="linky" data-ct="rename">改名</button>
+      ${kind === 'wordset' ? '<button type="button" class="linky" data-ct="words">單字</button><button type="button" class="linky" data-ct="merge">併入…</button>' : ''}
       <button type="button" class="linky" data-ct="hide">${x.hidden ? '對學生顯示' : '對學生隱藏'}</button>
       <button type="button" class="linky danger" data-ct="delete">刪除</button>
       <span class="hint srow-msg"></span>
@@ -72,6 +73,53 @@ async function ctAct(btn){
     btn.disabled = true;
     const r = await artApi('/api/admin/content-delete', { method: 'POST', body: { kind, ids: [id], confirm: true } });
     if (!r.ok){ msg.textContent = r.json.message || '刪除失敗'; btn.disabled = false; return; }
+    await loadContent(); ctRefreshOthers();
+  } else if (act === 'words'){
+    const r = await artApi(`/api/admin/wordset-words?id=${id}`);
+    if (!r.ok){ msg.textContent = r.json.message || '載入失敗'; return; }
+    const others = ctData.wordsets.filter(y => y.id !== id);
+    extra.hidden = false;
+    extra.innerHTML = `<div class="ct-words">${r.json.words.map(w => `<label class="ct-word"><input type="checkbox" value="${w.id}"> <b>${esc(w.term)}</b> <span class="hint">${esc(w.zh)}${w.attempts ? `　·　作答 ${w.attempts} 次` : ''}</span></label>`).join('') || '<p class="hint">這份沒有單字。</p>'}</div>
+      <div class="row" style="margin-top:6px"><select class="ct-to" aria-label="移到哪一份"><option value="new">移到新字表…</option>${others.map(y => `<option value="${y.id}">移到「${esc(y.name)}」</option>`).join('')}</select>
+        <input type="text" class="ct-newname" maxlength="60" placeholder="新字表名稱" aria-label="新字表名稱">
+        <button type="button" class="primary" data-ct="move-ok">移動所選</button>
+        <button type="button" class="linky danger" data-ct="remove">移除所選</button>
+        <button type="button" class="linky" data-ct="cancel">關閉</button></div>
+      <div class="ct-confirm"></div>`;
+    const sel = extra.querySelector('.ct-to'), nn = extra.querySelector('.ct-newname');
+    sel.addEventListener('change', () => { nn.hidden = sel.value !== 'new'; });
+  } else if (act === 'move-ok'){
+    const ids = [...extra.querySelectorAll('.ct-words input:checked')].map(i => Number(i.value));
+    const to = extra.querySelector('.ct-to').value;
+    const body = { from: id, wordIds: ids, ...(to === 'new' ? { newName: extra.querySelector('.ct-newname').value } : { to: Number(to) }) };
+    const r = await artApi('/api/admin/wordset-move', { method: 'POST', body });
+    if (!r.ok){ msg.textContent = r.json.message || '移動失敗'; return; }
+    await loadContent(); ctRefreshOthers();
+    const row2 = document.querySelector(`#ctWordsets .srow[data-id="${id}"] .srow-msg`);
+    if (row2) row2.textContent = `已移動 ${r.json.moved} 個${r.json.skipped.length ? `；目標已有：${r.json.skipped.join('、')}（留在原處）` : ''}`;
+  } else if (act === 'remove'){
+    const ids = [...extra.querySelectorAll('.ct-words input:checked')].map(i => Number(i.value));
+    const p = await artApi('/api/admin/wordset-remove', { method: 'POST', body: { from: id, wordIds: ids } });
+    const box = extra.querySelector('.ct-confirm');
+    if (p.status !== 409){ msg.textContent = p.json.message || '無法預覽'; return; }
+    box.innerHTML = `<p class="hint" style="margin:6px 0">移除 ${p.json.words} 個單字？會一併刪掉 ${p.json.attempts} 筆作答、${p.json.progress} 筆熟練度，刪之前先備份。</p>
+      <button type="button" class="primary danger" data-ct="remove-ok">確認移除</button>`;
+  } else if (act === 'remove-ok'){
+    const ids = [...extra.querySelectorAll('.ct-words input:checked')].map(i => Number(i.value));
+    btn.disabled = true;
+    const r = await artApi('/api/admin/wordset-remove', { method: 'POST', body: { from: id, wordIds: ids, confirm: true } });
+    if (!r.ok){ msg.textContent = r.json.message || '移除失敗'; btn.disabled = false; return; }
+    await loadContent(); ctRefreshOthers();
+  } else if (act === 'merge'){
+    const others = ctData.wordsets.filter(y => y.id !== id);
+    extra.hidden = false;
+    extra.innerHTML = others.length ? `<div class="row"><select class="ct-into" aria-label="併入哪一份">${others.map(y => `<option value="${y.id}">${esc(y.name)}</option>`).join('')}</select>
+      <button type="button" class="primary" data-ct="merge-ok">把「${esc(x.name)}」併進去</button> <button type="button" class="linky" data-ct="cancel">取消</button></div>
+      <p class="hint" style="margin:6px 0 0">單字連同作答與熟練度一起搬過去；搬完這一份就刪掉。目標已有同字的會留在這份。</p>` : '<p class="hint">沒有別的字表可以併入。</p>';
+  } else if (act === 'merge-ok'){
+    const into = Number(extra.querySelector('.ct-into').value);
+    const r = await artApi('/api/admin/wordset-merge', { method: 'POST', body: { from: [id], into } });
+    if (!r.ok){ msg.textContent = r.json.message || '合併失敗'; return; }
     await loadContent(); ctRefreshOthers();
   } else if (act === 'cancel'){
     extra.hidden = true; extra.innerHTML = '';

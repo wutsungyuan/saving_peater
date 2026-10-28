@@ -639,6 +639,7 @@ PORT=8788 node --no-warnings src/server.mjs             # 開發版用 8788，�
 | `GET /api/admin/content` | 內容管理：字表與文章表的清單（筆數、是否對學生隱藏） |
 | `POST /api/admin/content-update` | 改名（字表另可改備註）、`hidden` 對學生隱藏／顯示 |
 | `POST /api/admin/content-delete-preview` · `content-delete` | 刪除前預覽會連帶刪多少；確認（`confirm:true`）後先備份再刪 |
+| `GET /api/admin/wordset-words` · `POST wordset-move` · `wordset-remove` · `wordset-merge` | 字表編修：看單字、移動到新／既有字表（作答與熟練度跟著走，目標已有同字的留在原處）、移除（先預覽、確認後先備份）、整份併入 |
 | `POST /api/admin/records-preview`、`records-delete` | 後台整理學生紀錄：預覽、確認後備份並刪除（只有老師） |
 | `POST /api/paper-edit`、`GET /api/paper?admin=1` | 老師編修卷子（改名、換題、刪題、改題、發佈、收回）；含答案的卷子 |
 | `POST /api/exam-import` | 老師上傳考卷照片 → 選擇題存成草稿（名稱沒填用「日期 考卷重現」） |

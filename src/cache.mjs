@@ -879,8 +879,55 @@ export function openCache(file = 'data/cache.db'){
         FROM wordsets s WHERE s.id IN (${qs})`).all(...list);
       return { items, totals: { words: items.reduce((n, x) => n + x.words, 0), attempts: items.reduce((n, x) => n + x.attempts, 0), progress: items.reduce((n, x) => n + x.progress, 0) } };
     },
+    /** 一份字表的單字（老師管理用）：附詞義摘要與作答筆數 */
+    wordsetWords(setId){
+      return db.prepare(`SELECT w.id, w.idx, w.term, w.data,
+          (SELECT COUNT(*) FROM word_attempts a WHERE a.word_id = w.id) AS attempts
+        FROM words w WHERE w.set_id = ? ORDER BY w.idx, w.id`).all(Number(setId))
+        .map(r => { let zh = ''; try { zh = (JSON.parse(r.data).senses ?? []).map(s => s.zh).filter(Boolean).slice(0, 2).join('；'); } catch {}
+          return { id: r.id, term: r.term, zh, attempts: r.attempts }; });
+    },
+    /** 把單字從 fromId 移到 toId（改 set_id，作答與熟練度跟著走）。目標已有同字的跳過、留在原處。 */
+    moveWords(fromId, wordIds, toId){
+      const from = Number(fromId), to = Number(toId);
+      const ids = [...new Set((Array.isArray(wordIds) ? wordIds : []).map(Number).filter(Number.isInteger))];
+      if (!ids.length || from === to) return { moved: 0, skipped: [] };
+      const have = new Set(db.prepare('SELECT lower(term) t FROM words WHERE set_id = ?').all(to).map(r => r.t));
+      const rows = ids.map(id => db.prepare('SELECT id, term FROM words WHERE id = ? AND set_id = ?').get(id, from)).filter(Boolean);
+      let idx = db.prepare('SELECT COALESCE(MAX(idx), -1) m FROM words WHERE set_id = ?').get(to).m + 1;
+      const skipped = []; let moved = 0;
+      db.exec('BEGIN');
+      try {
+        const up = db.prepare('UPDATE words SET set_id = ?, idx = ? WHERE id = ?');
+        for (const w of rows){
+          const k = w.term.toLowerCase();
+          if (have.has(k)){ skipped.push(w.term); continue; }
+          up.run(to, idx++, w.id); have.add(k); moved++;
+        }
+        db.exec('COMMIT');
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
+      return { moved, skipped };
+    },
+    /** 從字表移除單字（連作答與熟練度）。dryRun 只回傳筆數。 */
+    removeWords(setId, wordIds, { dryRun = false } = {}){
+      const ids = (Array.isArray(wordIds) ? wordIds : []).map(Number).filter(Number.isInteger)
+        .filter(id => db.prepare('SELECT 1 FROM words WHERE id = ? AND set_id = ?').get(id, Number(setId)));
+      if (!ids.length) return { words: 0, attempts: 0, progress: 0 };
+      const qs = ids.map(() => '?').join(',');
+      const cnt = t => Number(db.prepare(`SELECT COUNT(*) n FROM ${t} WHERE word_id IN (${qs})`).get(...ids).n);
+      const out = { words: ids.length, attempts: cnt('word_attempts'), progress: cnt('word_progress') };
+      if (dryRun) return out;
+      db.exec('BEGIN');
+      try {
+        db.prepare(`DELETE FROM word_attempts WHERE word_id IN (${qs})`).run(...ids);
+        db.prepare(`DELETE FROM word_progress WHERE word_id IN (${qs})`).run(...ids);
+        db.prepare(`DELETE FROM words WHERE id IN (${qs})`).run(...ids);
+        db.exec('COMMIT');
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
+      return out;
+    },
     deleteArticles(ids){
-      const list = (Array.isArray(ids) ? ids : [ids]).map(Number).filter(Number.isFinite);
+      const list =(Array.isArray(ids) ? ids : [ids]).map(Number).filter(Number.isFinite);
       if (!list.length) return 0;
       const qs = list.map(() => '?').join(',');
       db.exec('BEGIN');

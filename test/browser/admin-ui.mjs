@@ -131,6 +131,15 @@ try {
   await a.click(art0 + ' [data-ct="delete-ok"]');
   chk('確認刪除：少一份', await a.until(`document.querySelectorAll('#ctArticles .srow').length === ${nBefore - 1}`, 8000));
 
+  const ws0 = '#ctWordsets .srow:first-child';
+  const wsN = await a.evl(`document.querySelectorAll('#ctWordsets .srow').length`);
+  await a.click(ws0 + ' [data-ct="words"]');
+  chk('單字：展開勾選清單與「移動所選」', await a.until(`document.querySelectorAll('${ws0} .ct-words input').length >= 2 && !!document.querySelector('${ws0} [data-ct="move-ok"]')`, 5000));
+  await a.evl(`(() => { const c = document.querySelectorAll('${ws0} .ct-words input'); c[0].checked = true; c[1].checked = true; document.querySelector('${ws0} .ct-newname').value = '拆出來的'; })()`);
+  await a.click(ws0 + ' [data-ct="move-ok"]');
+  chk('移動到新字表：多一份「拆出來的」，且有 2 個字', await a.until(`document.querySelectorAll('#ctWordsets .srow').length === ${wsN + 1} && /拆出來的/.test(document.getElementById('ctWordsets').textContent)`, 8000)
+    && await a.evl(`fetch('/api/admin/content').then(r => r.json()).then(d => d.wordsets.some(s => s.name === '拆出來的' && s.count === 2))`));
+
   section('學生紀錄');
   await a.click('.tabs button[data-view="students"]');
   chk('看到學生的紀錄（整體 4 題對 2、句型、單字）', await a.until(`/50%/.test(document.getElementById('studHead').textContent) && /五大句型/.test(document.getElementById('studCharts').textContent) && /最弱的單字/.test(document.getElementById('studCharts').textContent)`, 8000), (await a.evl(`document.getElementById('studHead').textContent.slice(0, 120)`)));
