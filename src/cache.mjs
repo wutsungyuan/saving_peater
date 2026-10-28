@@ -8,6 +8,19 @@ import { dirname } from 'node:path';
 import { normalize } from './segment.mjs';
 import { migrate } from './migrate.mjs';
 
+/** 單字熟練度（Leitner 盒子）的推進規則。
+ *  拼寫類題型（看中文拼、聽寫、克漏字、動詞變化）要自己寫出來才算會，答對才能一路升到最高盒；
+ *  認得類題型（英選中、詞義辨析）有選項可以猜、看過就認得，答對最多只推到 RECOG_CAP 盒，
+ *  不會因為選擇題做多了就被當成「已背熟」（筆試考的是拼寫）。答錯一律回到第 0 盒。 */
+export const SPELL_MODES = ['zh2en', 'listen', 'cloze', 'forms'];
+export const RECOG_CAP = 2;
+export const BOX_MAX = 5;
+export function nextBox(box, mode, correct){
+  if (!correct) return 0;
+  if (SPELL_MODES.includes(mode)) return Math.min(box + 1, BOX_MAX);
+  return Math.max(box, Math.min(box + 1, RECOG_CAP));
+}
+
 const hashOf = (sentence) =>
   createHash('sha256').update(normalize(sentence), 'utf8').digest('hex');
 
@@ -579,6 +592,41 @@ export function openCache(file = 'data/cache.db'){
       } catch (e){ db.exec('ROLLBACK'); throw e; }
     },
 
+    /** 依新規則把歷史作答重播一遍，重算每個字的盒子（不動作答紀錄與 correct／total）。
+     *  同一個字（不分大小寫）在多份字表的列合併成一條時間線，重算後寫回所有列。
+     *  dryRun 只回傳統計，不寫入。 */
+    recomputeWordProgress({ dryRun = false } = {}){
+      const INTERVALS = [10*60e3, 60*60e3, 24*3600e3, 3*24*3600e3, 7*24*3600e3, 14*24*3600e3];
+      const rows = db.prepare(`SELECT a.user_token u, lower(w.term) t, a.mode, a.correct, a.created_at
+        FROM word_attempts a JOIN words w ON w.id = a.word_id
+        WHERE COALESCE(a.is_fix,0) = 0 ORDER BY a.created_at, a.id`).all();
+      const state = new Map();
+      for (const r of rows){
+        const k = r.u + '|' + r.t;
+        const cur = state.get(k) ?? { u: r.u, t: r.t, box: 0, at: 0 };
+        state.set(k, { ...cur, box: nextBox(cur.box, r.mode, r.correct), at: r.created_at });
+      }
+      const before = {}, after = {};
+      const cnt = (m, v) => { m[v] = (m[v] ?? 0) + 1; };
+      const cur = db.prepare('SELECT box FROM word_progress WHERE user_token = ? AND word_id = ?');
+      const ids = db.prepare('SELECT id FROM words WHERE lower(term) = ?');
+      const upd = db.prepare('UPDATE word_progress SET box = ?, due_at = ? WHERE user_token = ? AND word_id = ?');
+      if (!dryRun) db.exec('BEGIN');
+      try {
+        for (const st of state.values()){
+          for (const { id } of ids.all(st.t)){
+            const c = cur.get(st.u, id);
+            if (!c) continue;
+            cnt(before, c.box); cnt(after, st.box);
+            if (!dryRun) upd.run(st.box, st.at + INTERVALS[st.box], st.u, id);
+          }
+        }
+        if (!dryRun) db.exec('COMMIT');
+      } catch (e){ if (!dryRun) db.exec('ROLLBACK'); throw e; }
+      const mastered = h => Object.entries(h).filter(([b]) => Number(b) >= 3).reduce((n, [, v]) => n + v, 0);
+      return { before, after, masteredBefore: mastered(before), masteredAfter: mastered(after) };
+    },
+
     /** 記錄單字作答並更新 Leitner 盒子 */
     recordWordAttempt(a){
       db.prepare(`INSERT INTO word_attempts
@@ -600,7 +648,7 @@ export function openCache(file = 'data/cache.db'){
         (user_token, word_id, box, due_at, correct, total) VALUES (?,?,?,?,?,?)`);
       for (const wid of ids){
         const cur = qCur.get(a.userToken, wid) ?? { box: 0, correct: 0, total: 0 };
-        const box = a.correct ? Math.min(cur.box + 1, INTERVALS.length - 1) : 0;
+        const box = nextBox(cur.box, a.mode, a.correct);
         qSet.run(a.userToken, wid, box, Date.now() + INTERVALS[box],
           cur.correct + (a.correct ? 1 : 0), cur.total + 1);
       }
@@ -619,7 +667,18 @@ export function openCache(file = 'data/cache.db'){
       const byWord = ws
         .map(w => ({ term: w.term, box: w.box, correct: w.correct, total: w.total }))
         .sort((a, b) => a.box - b.box);
-      return { words: ws.length, attempts, correct, mastered, weak, byWord };
+      // 認得（選擇題）和會拼（自己寫）分開算：兩者差很多，混在一起正確率會被選擇題拉高
+      const ids = [...new Set(ws.flatMap(w => w.mergedIds ?? [w.id]))];
+      const split = { recog: { attempts: 0, correct: 0 }, spell: { attempts: 0, correct: 0 } };
+      if (ids.length){
+        const qs = ids.map(() => '?').join(',');
+        for (const r of db.prepare(`SELECT mode, COUNT(*) n, SUM(correct) c FROM word_attempts
+            WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND word_id IN (${qs}) GROUP BY mode`).all(userToken, ...ids)){
+          const t = SPELL_MODES.includes(r.mode) ? split.spell : split.recog;
+          t.attempts += r.n; t.correct += r.c;
+        }
+      }
+      return { words: ws.length, attempts, correct, mastered, weak, byWord, ...split };
     },
 
     /** 匯出成可攜、可進版控、可合併的列陣列（依 hash 排序，git diff 才乾淨） */

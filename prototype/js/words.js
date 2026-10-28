@@ -86,11 +86,11 @@ async function selectSet(id, only = false){
     `<div class="ucard"><h4>單字</h4><div class="big">${st.words}</div>
        <div class="sub">共 ${wsWordsCache.reduce((a,w)=>a+(w.senses?.length||0),0)} 個意思</div></div>`
   + `<div class="ucard"><h4>已背熟</h4><div class="big">${st.mastered}</div>
-       <div class="sub">連續答對 3 次以上<br>之後會隔比較久才再考</div></div>`
+       <div class="sub">要能自己拼出來，連續答對 3 次以上<br>選擇題最多算到「認得」</div></div>`
   + `<div class="ucard"><h4>待加強</h4><div class="big">${st.weak}</div>
        <div class="sub">最近答錯過<br>下次出題會優先挑</div></div>`
   + `<div class="ucard"><h4>正確率</h4><div class="big">${st.attempts ? pct + '%' : '—'}</div>
-       <div class="sub">${st.correct} / ${st.attempts} 題</div></div>`;
+       <div class="sub">${splitLine(st)}</div></div>`;
   el('wsPanel').hidden = false;
   el('wsSummary').hidden = true;
   el('wsActions').hidden = true;
@@ -260,10 +260,16 @@ async function selectSetStatsOnly(){
   if (cards[2]) cards[2].textContent = st.weak;
   if (cards[3]) cards[3].textContent = st.attempts ? pct + '%' : '—';
   const sub = el('wsStats').querySelectorAll('.ucard .sub');
-  if (sub[3]) sub[3].textContent = `${st.correct} / ${st.attempts} 題`;
+  if (sub[3]) sub[3].innerHTML = splitLine(st);
   renderWordList();
 }
 
+
+/** 正確率卡片的說明：認得（選擇題）和會拼（自己寫）分開看，混在一起會被選擇題拉高 */
+function splitLine(st){
+  const p = x => x && x.attempts ? Math.round(x.correct / x.attempts * 100) + '%' : '—';
+  return `認得 ${p(st.recog)}・會拼 ${p(st.spell)}<br>${st.correct} / ${st.attempts} 題`;
+}
 
 /** 上傳前先縮到最長邊 1600px —— 手機原圖動輒四五 MB，縮完約十分之一，
  *  辨識品質一樣但快很多也省額度。HEIC 之類瀏覽器畫不出來的就原樣送。 */
