@@ -271,9 +271,8 @@ const RECENT_N = 100;
 function splitLine(st){
   // 小表格：列是會拼／認得，欄是最近／累積；窄卡片上一行一格，不會斷成好幾截
   const cell = x => x && x.attempts ? `<b>${Math.round(x.correct / x.attempts * 100)}%</b><small>${x.attempts} 題</small>` : '<small>沒有作答</small>';
-  const row = (name, all, rec) => `<span class="acc-n">${name}</span><span>${cell(rec)}</span><span>${cell(all)}</span>`;
-  return `<div class="acc-grid"><span></span><span class="acc-h">最近 ${RECENT_N} 題</span><span class="acc-h">累積全部</span>${row('會拼', st.spell, st.recentSpell)}${row('認得', st.recog, st.recentRecog)}</div>
-    <div class="acc-note">會拼＝自己拼寫　認得＝選擇題</div>`;
+  const row = (name, how, all, rec) => `<span class="acc-n">${name}<small>${how}</small></span><span>${cell(rec)}</span><span>${cell(all)}</span>`;
+  return `<div class="acc-grid"><span></span><span class="acc-h">近 ${RECENT_N} 題</span><span class="acc-h">累積</span>${row('會拼', '自己拼寫', st.spell, st.recentSpell)}${row('認得', '選擇題', st.recog, st.recentRecog)}</div>`;
 }
 
 /** 上傳前先縮到最長邊 1600px —— 手機原圖動輒四五 MB，縮完約十分之一，
