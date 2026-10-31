@@ -893,3 +893,9 @@ body[data-app="front"][data-role="teacher"] #wsNew{display:none}
 .tip::after{content:attr(data-tip);display:none;position:absolute;left:8px;right:8px;top:100%;margin-top:4px;z-index:5;
   background:#222;color:#fff;font-size:.78rem;font-weight:400;line-height:1.6;padding:9px 11px;border-radius:6px;text-align:left;white-space:normal}
 .tip:hover::after,.tip.open::after{display:block}
+/* 單字統計卡：間距（卡片與分頁、分頁與清單之間留白；正確率卡標題與表格靠近一點） */
+#wsStats{margin-bottom:16px}
+#pane-list{margin-top:14px}
+#wsStats .ucard.wide{padding-bottom:16px}
+#wsStats .ucard.wide h4{margin-bottom:4px}
+.acc-grid{gap:6px 8px}
