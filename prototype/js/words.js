@@ -265,10 +265,14 @@ async function selectSetStatsOnly(){
 }
 
 
-/** 正確率卡片的說明：認得（選擇題）和會拼（自己寫）分開看，混在一起會被選擇題拉高 */
+/** 正確率卡片的說明：認得（選擇題）和會拼（自己寫）分開看，混在一起會被選擇題拉高；
+ *  各自附「最近 100 次作答」的正確率，累積的會被過去答錯拖著，看不出現在的程度 */
 function splitLine(st){
-  const line = (name, how, x) => `<b>${name}</b>（${how}）${x && x.attempts ? Math.round(x.correct / x.attempts * 100) + '%　' + x.correct + ' / ' + x.attempts + ' 題' : '還沒有作答'}`;
-  return `${line('會拼', '自己拼寫', st.spell)}<br>${line('認得', '選擇題', st.recog)}`;
+  const pct = x => Math.round(x.correct / x.attempts * 100) + '%';
+  // 最近的放前面（現在的程度），累積的放後面；不到 100 題就用現有的全部，並標出題數
+  const line = (name, how, all, rec) => !all || !all.attempts ? `<b>${name}</b>（${how}）還沒有作答`
+    : `<b>${name}</b>（${how}）最近 ${rec.attempts} 題 <b>${pct(rec)}</b>　累積 ${pct(all)}（${all.correct} / ${all.attempts}）`;
+  return `${line('會拼', '自己拼寫', st.spell, st.recentSpell)}<br>${line('認得', '選擇題', st.recog, st.recentRecog)}`;
 }
 
 /** 上傳前先縮到最長邊 1600px —— 手機原圖動輒四五 MB，縮完約十分之一，

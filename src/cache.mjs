@@ -14,6 +14,9 @@ import { migrate } from './migrate.mjs';
  *  不會因為選擇題做多了就被當成「已背熟」（筆試考的是拼寫）。答錯一律回到第 0 盒。 */
 export const SPELL_MODES = ['zh2en', 'listen', 'cloze', 'forms'];
 export const RECOG_CAP = 2;
+export const RECOG_MODES = ['en2zh', 'sense'];
+/** 統計卡「最近」的視窗：會拼、認得各自最近這麼多次作答 */
+export const RECENT_N = 100;
 export const BOX_MAX = 5;
 export function nextBox(box, mode, correct){
   if (!correct) return 0;
@@ -670,6 +673,8 @@ export function openCache(file = 'data/cache.db'){
       // 認得（選擇題）和會拼（自己寫）分開算：兩者差很多，混在一起正確率會被選擇題拉高
       const ids = [...new Set(ws.flatMap(w => w.mergedIds ?? [w.id]))];
       const split = { recog: { attempts: 0, correct: 0 }, spell: { attempts: 0, correct: 0 } };
+      // 最近 RECENT_N 次作答（會拼、認得各自取）：累積的數字被過去答錯拖著，這個才看得出現在的程度
+      const recent = { recentRecog: { attempts: 0, correct: 0 }, recentSpell: { attempts: 0, correct: 0 } };
       if (ids.length){
         const qs = ids.map(() => '?').join(',');
         for (const r of db.prepare(`SELECT mode, COUNT(*) n, SUM(correct) c FROM word_attempts
@@ -677,8 +682,14 @@ export function openCache(file = 'data/cache.db'){
           const t = SPELL_MODES.includes(r.mode) ? split.spell : split.recog;
           t.attempts += r.n; t.correct += r.c;
         }
+        for (const [key, modes] of [['recentSpell', SPELL_MODES], ['recentRecog', RECOG_MODES]]){
+          const r = db.prepare(`SELECT COUNT(*) n, COALESCE(SUM(correct),0) c FROM (SELECT correct FROM word_attempts
+              WHERE user_token = ? AND COALESCE(is_fix,0) = 0 AND word_id IN (${qs}) AND mode IN (${modes.map(() => '?').join(',')})
+              ORDER BY created_at DESC, id DESC LIMIT ?)`).get(userToken, ...ids, ...modes, RECENT_N);
+          recent[key] = { attempts: Number(r.n), correct: Number(r.c) };
+        }
       }
-      return { words: ws.length, attempts, correct, mastered, weak, byWord, ...split };
+      return { words: ws.length, attempts, correct, mastered, weak, byWord, ...split, ...recent };
     },
 
     /** 匯出成可攜、可進版控、可合併的列陣列（依 hash 排序，git diff 才乾淨） */

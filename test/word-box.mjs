@@ -28,6 +28,18 @@ chk('再拼對 3 次才升到 5、算背熟', cache.wordStats([sid], 's').master
 const st = cache.wordStats([sid], 's');
 chk('統計分開算認得與會拼', st.recog.attempts === 6 && st.recog.correct === 6 && st.spell.attempts === 3 && st.spell.correct === 3, JSON.stringify([st.recog, st.spell]));
 
+chk('作答不到視窗大小：最近＝累積', st.recentSpell.attempts === 3 && st.recentSpell.correct === 3 && st.recentRecog.attempts === 6);
+// 最近 100 次：先答錯 20 次、再答對 100 次拼寫 → 累積還帶著錯的，最近是 100%
+const ins = cache.db.prepare(`INSERT INTO word_attempts (user_token, word_id, mode, correct, is_fix, created_at, source) VALUES ('s', ?, 'zh2en', ?, ?, ?, 'quiz')`);
+for (let i = 0; i < 20; i++) ins.run(apple.id, 0, 0, 100 + i);
+for (let i = 0; i < 100; i++) ins.run(apple.id, 1, 0, 500 + i);
+ins.run(apple.id, 0, 1, 9999); // 訂正的不算
+const st2 = cache.wordStats([sid], 's');
+chk('最近 100 次會拼只看最新的 100 筆（舊的錯不算、訂正不算）', st2.recentSpell.attempts === 100 && st2.recentSpell.correct === 100, JSON.stringify(st2.recentSpell));
+chk('累積仍帶著舊的錯，認得的最近不受影響', st2.spell.attempts === 123 && st2.spell.correct === 103 && st2.recentRecog.attempts === 6, JSON.stringify([st2.spell, st2.recentRecog]));
+for (const t of ['word_attempts']) cache.db.prepare(`DELETE FROM ${t} WHERE created_at >= 100 AND created_at < 1000`).run();
+cache.db.prepare("UPDATE word_progress SET box = 5, total = 9, correct = 9 WHERE word_id = ?").run(apple.id);
+
 // 舊規則留下的盒子（全靠選擇題升上去的）可以重算
 cache.db.prepare('INSERT OR REPLACE INTO word_progress (user_token, word_id, box, due_at, correct, total) VALUES (?,?,5,0,4,4)').run('s', teach.id);
 for (let i = 0; i < 4; i++) cache.db.prepare(`INSERT INTO word_attempts (user_token, word_id, mode, correct, is_fix, created_at, source) VALUES ('s', ?, 'en2zh', 1, 0, ?, 'quiz')`).run(teach.id, 1000 + i);
