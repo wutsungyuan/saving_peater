@@ -907,3 +907,4 @@ body[data-app="front"][data-role="teacher"] #wsNew{display:none}
 .acc-wrap .sub{min-width:0;flex:0 1 auto}
 .duo .sub{white-space:nowrap}
 @media (max-width:560px){ .acc-wrap{gap:14px} .acc-grid{column-gap:12px} }
+#pane-quiz{margin-top:14px}
