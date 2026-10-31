@@ -267,12 +267,13 @@ async function selectSetStatsOnly(){
 
 /** 正確率卡片的說明：認得（選擇題）和會拼（自己寫）分開看，混在一起會被選擇題拉高；
  *  各自附「最近 100 次作答」的正確率，累積的會被過去答錯拖著，看不出現在的程度 */
+const RECENT_N = 100;
 function splitLine(st){
-  const pct = x => Math.round(x.correct / x.attempts * 100) + '%';
-  // 最近的放前面（現在的程度），累積的放後面；不到 100 題就用現有的全部，並標出題數
-  const line = (name, how, all, rec) => !all || !all.attempts ? `<b>${name}</b>（${how}）還沒有作答`
-    : `<b>${name}</b>（${how}）最近 ${rec.attempts} 題 <b>${pct(rec)}</b>　累積 ${pct(all)}（${all.correct} / ${all.attempts}）`;
-  return `${line('會拼', '自己拼寫', st.spell, st.recentSpell)}<br>${line('認得', '選擇題', st.recog, st.recentRecog)}`;
+  // 小表格：列是會拼／認得，欄是最近／累積；窄卡片上一行一格，不會斷成好幾截
+  const cell = x => x && x.attempts ? `<b>${Math.round(x.correct / x.attempts * 100)}%</b><small>${x.attempts} 題</small>` : '<small>沒有作答</small>';
+  const row = (name, all, rec) => `<span class="acc-n">${name}</span><span>${cell(rec)}</span><span>${cell(all)}</span>`;
+  return `<div class="acc-grid"><span></span><span class="acc-h">最近 ${RECENT_N} 題</span><span class="acc-h">累積全部</span>${row('會拼', st.spell, st.recentSpell)}${row('認得', st.recog, st.recentRecog)}</div>
+    <div class="acc-note">會拼＝自己拼寫　認得＝選擇題</div>`;
 }
 
 /** 上傳前先縮到最長邊 1600px —— 手機原圖動輒四五 MB，縮完約十分之一，

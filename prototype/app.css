@@ -872,3 +872,12 @@ body[data-app="front"][data-role="teacher"] #wsNew{display:none}
 .ct-word{display:block;padding:3px 0}
 .ct-sent{display:flex;align-items:flex-start;gap:6px;padding:3px 0}
 .ct-sent label{flex:1}
+
+/* 單字統計卡：會拼／認得 × 最近／累積 的小表格 */
+.acc-grid{display:grid;grid-template-columns:auto 1fr 1fr;gap:4px 10px;align-items:baseline;margin-top:2px}
+.acc-grid>span{display:flex;flex-direction:column;line-height:1.3}
+.acc-grid b{font-size:1.15rem;color:var(--ink,inherit)}
+.acc-grid small{font-size:.72rem;color:var(--faint,#888)}
+.acc-h{font-size:.72rem;color:var(--muted,#666)}
+.acc-n{font-weight:700}
+.acc-note{font-size:.72rem;color:var(--faint,#888);margin-top:6px}
