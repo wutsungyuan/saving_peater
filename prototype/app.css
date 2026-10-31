@@ -880,3 +880,16 @@ body[data-app="front"][data-role="teacher"] #wsNew{display:none}
 .acc-grid small{font-size:.7rem;color:var(--faint,#888);font-weight:400;white-space:nowrap}
 .acc-h{font-size:.7rem;color:var(--muted,#666);white-space:nowrap}
 .acc-n{font-weight:700;font-size:.9rem}
+
+/* 單字統計卡：上 2 下 1，說明放 ⓘ 提示 */
+#wsStats{grid-template-columns:1fr 1fr}
+#wsStats .ucard{position:relative}
+#wsStats .ucard.wide{grid-column:1 / -1}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.duo .sub{margin-top:3px}
+.acc-wrap{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.acc-wrap .sub{margin-top:0;flex:1;min-width:210px}
+.tip{border:0;background:none;color:var(--faint,#888);font-size:.85rem;padding:0 4px;cursor:help;line-height:1;text-transform:none;letter-spacing:0}
+.tip::after{content:attr(data-tip);display:none;position:absolute;left:8px;right:8px;top:100%;margin-top:4px;z-index:5;
+  background:#222;color:#fff;font-size:.78rem;font-weight:400;line-height:1.6;padding:9px 11px;border-radius:6px;text-align:left;white-space:normal}
+.tip:hover::after,.tip.open::after{display:block}

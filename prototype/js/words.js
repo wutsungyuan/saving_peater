@@ -81,16 +81,7 @@ async function selectSet(id, only = false){
   wsExamples = d.examples || { total: 0, cached: 0 };
   renderAnalyzeBtn();
   const st = d.stats || { words:0, attempts:0, correct:0, mastered:0, weak:0 };
-  const pct = st.attempts ? Math.round(st.correct / st.attempts * 100) : 0;
-  el('wsStats').innerHTML =
-    `<div class="ucard"><h4>單字</h4><div class="big">${st.words}</div>
-       <div class="sub">共 ${wsWordsCache.reduce((a,w)=>a+(w.senses?.length||0),0)} 個意思</div></div>`
-  + `<div class="ucard"><h4>已背熟</h4><div class="big">${st.mastered}</div>
-       <div class="sub">要能自己拼出來，連續答對 3 次以上<br>選擇題最多算到「認得」</div></div>`
-  + `<div class="ucard"><h4>待加強</h4><div class="big">${st.weak}</div>
-       <div class="sub">最近答錯過<br>下次出題會優先挑</div></div>`
-  + `<div class="ucard"><h4>正確率</h4><div class="big">${st.attempts ? pct + '%' : '—'}</div>
-       <div class="sub">${splitLine(st)}</div></div>`;
+  paintWordStats(st);
   el('wsPanel').hidden = false;
   el('wsSummary').hidden = true;
   el('wsActions').hidden = true;
@@ -253,17 +244,30 @@ async function submitWordQuiz(){
 async function selectSetStatsOnly(){
   const d = await fetch(`/api/wordset?ids=${selParam()}&user=${encodeURIComponent(USER)}`).then(r => r.json());
   wsWordsCache = d.words || [];
-  const st = d.stats;
-  const pct = st.attempts ? Math.round(st.correct / st.attempts * 100) : 0;
-  const cards = el('wsStats').querySelectorAll('.ucard .big');
-  if (cards[1]) cards[1].textContent = st.mastered;
-  if (cards[2]) cards[2].textContent = st.weak;
-  if (cards[3]) cards[3].textContent = st.attempts ? pct + '%' : '—';
-  const sub = el('wsStats').querySelectorAll('.ucard .sub');
-  if (sub[3]) sub[3].innerHTML = splitLine(st);
+  paintWordStats(d.stats);
   renderWordList();
 }
 
+
+/** 統計卡：上排「單字」「學習狀況」（已背熟＋待加強），下排「正確率」整排寬。說明文字放在 ⓘ 提示裡。 */
+const tipBtn = text => `<button type="button" class="tip" aria-label="說明" data-tip="${esc(text)}">ⓘ</button>`;
+function paintWordStats(st){
+  const pct = st.attempts ? Math.round(st.correct / st.attempts * 100) : 0;
+  const senses = wsWordsCache.reduce((a, w) => a + (w.senses?.length || 0), 0);
+  el('wsStats').innerHTML =
+    `<div class="ucard"><h4>單字</h4><div class="big">${st.words}</div><div class="sub">共 ${senses} 個意思</div></div>`
+  + `<div class="ucard"><h4>學習狀況</h4><div class="duo">
+       <div><div class="big">${st.mastered}</div><div class="sub">已背熟${tipBtn('要能自己拼出來、連續答對 3 次以上才算。選擇題最多只算到「認得」。')}</div></div>
+       <div><div class="big">${st.weak}</div><div class="sub">待加強${tipBtn('最近答錯過的字，下次出題會優先挑。')}</div></div></div></div>`
+  + `<div class="ucard wide"><h4>正確率${tipBtn(`會拼＝自己拼寫的題型（中翻英、聽寫、填空、字形），認得＝選擇題。分開看，因為選擇題比較容易，混在一起會把數字拉高。近 ${RECENT_N} 題只看最近的作答，反映現在的程度；累積是全部歷史。訂正的作答不列入。`)}</h4>
+       <div class="acc-wrap"><div class="big">${st.attempts ? pct + '%' : '—'}</div><div class="sub">${splitLine(st)}</div></div></div>`;
+}
+// 點 ⓘ 展開／收起說明（手機沒有 hover）；點別處收起
+document.addEventListener('click', e => {
+  const t = e.target.closest?.('.tip');
+  for (const o of document.querySelectorAll('.tip.open')) if (o !== t) o.classList.remove('open');
+  if (t) t.classList.toggle('open');
+});
 
 /** 正確率卡片的說明：認得（選擇題）和會拼（自己寫）分開看，混在一起會被選擇題拉高；
  *  各自附「最近 100 次作答」的正確率，累積的會被過去答錯拖著，看不出現在的程度 */
