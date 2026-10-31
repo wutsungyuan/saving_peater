@@ -267,8 +267,8 @@ async function selectSetStatsOnly(){
 
 /** 正確率卡片的說明：認得（選擇題）和會拼（自己寫）分開看，混在一起會被選擇題拉高 */
 function splitLine(st){
-  const p = x => x && x.attempts ? Math.round(x.correct / x.attempts * 100) + '%' : '—';
-  return `認得 ${p(st.recog)}・會拼 ${p(st.spell)}<br>${st.correct} / ${st.attempts} 題`;
+  const line = (name, how, x) => `<b>${name}</b>（${how}）${x && x.attempts ? Math.round(x.correct / x.attempts * 100) + '%　' + x.correct + ' / ' + x.attempts + ' 題' : '還沒有作答'}`;
+  return `${line('會拼', '自己拼寫', st.spell)}<br>${line('認得', '選擇題', st.recog)}`;
 }
 
 /** 上傳前先縮到最長邊 1600px —— 手機原圖動輒四五 MB，縮完約十分之一，
