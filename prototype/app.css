@@ -899,3 +899,11 @@ body[data-app="front"][data-role="teacher"] #wsNew{display:none}
 #wsStats .ucard.wide{padding-bottom:16px}
 #wsStats .ucard.wide h4{margin-bottom:4px}
 .acc-grid{gap:6px 8px}
+/* 桌機：正確率表格不要攤到整排寬，欄位固定寬度、靠左，數字才看得出是同一組 */
+.acc-grid{grid-template-columns:auto repeat(2,minmax(0,9rem));justify-content:start;column-gap:20px}
+.acc-wrap{gap:32px}
+.acc-wrap .sub{flex:0 1 auto}
+.acc-wrap{flex-wrap:nowrap;gap:24px}
+.acc-wrap .sub{min-width:0;flex:0 1 auto}
+.duo .sub{white-space:nowrap}
+@media (max-width:560px){ .acc-wrap{gap:14px} .acc-grid{column-gap:12px} }
