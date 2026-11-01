@@ -18,8 +18,9 @@ const setB = fx.cache.createWordset('補句用', [
 // 一句分析過的句子帶有 teach 的三態，字卡才看得到
 fx.cache.put('My uncle taught me chess.', { index: 0, original: 'My uncle taught me chess.', translation: '我叔叔教我下棋。', words: [], notes: [], inScope: true, issue: null,
   clauses: [{ text: 'My uncle taught me chess', role: 'main', verb: { lemma: 'teach', form: 'taught', irregular: true, forms: { base: 'teach', past: 'taught', pastParticiple: 'taught', ing: 'teaching', third: 'teaches' } } }] }, 'test', {});
+const setC = fx.cache.createWordset('同時按', [W('pond', 'n', '池塘', 'The pond is small.', '池塘很小。'), W('hill', 'n', '山丘', 'The hill is green.', '山丘很綠。')]);
 fx.cache.db.close?.();
-const ENV = { AUTH_USER: T.user, AUTH_PASS: T.pass, STUDENT_USER: K.user, STUDENT_PASS: K.pass, ANALYZE_GROUP: '1', FAKE_EXTRA_BAD: '1' };
+const ENV = { AUTH_USER: T.user, AUTH_PASS: T.pass, STUDENT_USER: K.user, STUDENT_PASS: K.pass, ANALYZE_GROUP: '1', FAKE_EXTRA_BAD: '1', FAKE_DELAY_MS: '400' };
 const extrasOf = (file, setId) => {
   const d = new DatabaseSync(file, { readOnly: true });
   const o = Object.fromEntries(d.prepare('SELECT term, data FROM words WHERE set_id = ?').all(setId).map(r => [r.term, JSON.parse(r.data).extra ?? []]));
@@ -49,6 +50,14 @@ try {
   chk('river 原本的隱藏句沒被動；PE 沒有', ex.river.length === 1 && ex.river[0].example === 'We swam in the river.' && ex.PE.length === 0);
   r = await post('/api/admin/wordset-extra', { id: setB, confirm: true });
   chk('再按一次：都有了，不再呼叫模型', r.status === 200 && r.json.words === 0 && S.calls().length === calls0 + 1, r.text.slice(0, 160));
+
+  section('同一份同時按兩次：第二個被擋下，只花一次額度');
+  const busySet = setC;
+  const n0 = S.calls().filter(c => c.kind === 'wordset-extra').length;
+  const [p1, p2] = await Promise.all([post('/api/admin/wordset-extra', { id: busySet, confirm: true }), (async () => { await new Promise(r => setTimeout(r, 120)); return post('/api/admin/wordset-extra', { id: busySet, confirm: true }); })()]);
+  chk('第一個成功、第二個 409 busy', p1.status === 200 && p1.json.filled === 2 && p2.status === 409 && p2.json.error === 'busy', `${p1.status}/${p2.status} ${p2.text.slice(0, 100)}`);
+  chk('模型只被呼叫 1 次', S.calls().filter(c => c.kind === 'wordset-extra').length === n0 + 1);
+  chk('做完後這份可以再用（沒有卡在忙碌）', (await post('/api/admin/wordset-extra', { id: busySet, confirm: true })).status === 200);
 
   section('建立字表時一併產出');
   r = await post('/api/wordsets', { name: '新字表', text: 'bridge\ncave' });

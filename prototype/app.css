@@ -909,3 +909,6 @@ body[data-app="front"][data-role="teacher"] #wsNew{display:none}
 @media (max-width:560px){ .acc-wrap{gap:14px} .acc-grid{column-gap:12px} }
 #pane-quiz{margin-top:14px}
 .wcard .wforms{color:var(--fg);font-family:var(--font-en)}
+.spin{display:inline-block;width:.9em;height:.9em;margin-right:.5em;vertical-align:-.12em;border:2px solid var(--rule);border-top-color:var(--accent,#0f5c4d);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:2.4s}}

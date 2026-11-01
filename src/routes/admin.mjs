@@ -7,6 +7,7 @@ import { readBody, authed, denyStudent, sendJson } from '../http.mjs';
 import { internalCall } from '../internal.mjs';
 import { enrichExtra, isAbbrev } from '../wordset.mjs';
 
+const extraBusy = new Set();   // 正在補隱藏句的字表，同一份不能重複進行（會重複花額度）
 const EXTRA_BATCH = 20;      // 補隱藏句一次請模型處理幾個字
 
 const body = async req => { try { return JSON.parse(await readBody(req, 1e5)) || {}; } catch { return {}; } };
@@ -114,6 +115,8 @@ export const routes = [
       const batches = Math.ceil(todo.length / EXTRA_BATCH);
       if (!todo.length) return sendJson(res, 200, { ok: true, words: 0, filled: 0, batches: 0, message: '這份字表的字都已經有隱藏句了。' });
       if (b.confirm !== true) return sendJson(res, 409, { error: 'confirm-required', message: '要先確認才會呼叫模型。', words: todo.length, batches });
+      if (extraBusy.has(id)) return sendJson(res, 409, { error: 'busy', message: '這份字表正在補隱藏句，請等它做完。' });
+      extraBusy.add(id);
       const t0 = Date.now(), extras = new Map(); let usage = { costUsd: 0, outputTokens: 0, inputTokens: 0, cacheReadTokens: 0 };
       try {
         for (let i = 0; i < todo.length; i += EXTRA_BATCH){
@@ -122,11 +125,13 @@ export const routes = [
           for (const k of Object.keys(usage)) usage[k] += r.usage[k] ?? 0;
         }
       } catch (e){
+        extraBusy.delete(id);
         // 前面批次已經成功的照樣存，免得白花額度
         const filled = cache.setWordExtras(id, extras);
         const kind = e.kind || 'other';
         return sendJson(res, kind === 'rate-limit' ? 429 : 500, { error: kind, filled, message: `${kind === 'rate-limit' ? 'Claude 訂閱額度似乎已用盡' : '補隱藏句失敗：' + String(e.message).slice(0, 160)}。已補好 ${filled} 個字，其餘可以稍後再按一次。` });
       }
+      extraBusy.delete(id);
       const filled = cache.setWordExtras(id, extras);
       cache.log({ kind: 'wordset', refId: id, chars: 0, sentences: todo.length, cached: 0, analyzed: todo.length, ms: Date.now() - t0,
         text: `補隱藏句\n${todo.map(w => w.term).join('\n')}`, ...usage });
