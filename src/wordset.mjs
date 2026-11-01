@@ -277,11 +277,59 @@ function qListen(w){
   };
 }
 
-function qCloze(w, all){
-  const cands = (w.senses ?? []).map((s, i) => ({ s, i, f: findForm(s.example, w.term) }))
-    .filter(x => x.f);
+/** 這個字可能出現的變化形（嚴格比對，不像 findForm 用字根前綴亂抓）。forms：動詞三態等已知的形式。 */
+export function wordForms(term, forms){
+  const t = String(term).trim().toLowerCase();
+  // 不收 -er／-est：teacher 是另一個字，不是 teach 的變化形
+  const out = new Set([t, `${t}s`, `${t}es`, `${t}ed`, `${t}d`, `${t}ing`]);
+  if (t.endsWith('e')) out.add(`${t.slice(0, -1)}ing`);
+  if (/[^aeiou]y$/.test(t)) { const b = t.slice(0, -1); ['ies', 'ied'].forEach(x => out.add(b + x)); }
+  if (/[^aeiou][aeiou][^aeiouwxy]$/.test(t)) { const l = t.slice(-1); ['ed', 'ing'].forEach(x => out.add(t + l + x)); }
+  if (forms) for (const v of [forms.base, forms.past, forms.pastParticiple, forms.ing, forms.third])
+    for (const x of String(v ?? '').split(/[/,]/)) if (x.trim()) out.add(x.trim().toLowerCase());
+  return out;
+}
+
+/** 從已分析過的句子裡找出含這個字的句子，當作額外的填空例句。
+ *  只收單一單字、句子不太長，且挖空處確實是這個字或它的變化形。 */
+export function bankExamples(w, bank, verbForms){
+  const t = String(w.term ?? '').trim();
+  if (!bank?.length || t.length < 3 || !/^[A-Za-z]+$/.test(t) || isAbbrev(t)) return [];
+  const forms = wordForms(t, verbForms?.get(t.toLowerCase()));
+  const re = new RegExp(`\\b(${[...forms].sort((a, b) => b.length - a.length).join('|')})\\b`, 'i');
+  const out = [];
+  for (const b of bank){
+    if (b.en.split(/\s+/).length > 22) continue;
+    const m = re.exec(b.en);
+    if (m) out.push({ en: b.en, zh: b.zh, f: { text: m[0], start: m.index, end: m.index + m[0].length } });
+  }
+  return out;
+}
+
+function qCloze(w, all, ctx){
+  const own = (w.senses ?? []).map((s, i) => ({ s, i, f: findForm(s.example, w.term) })).filter(x => x.f);
+  // 字表原有的例句之外，再加上句庫裡含這個字的句子，出題時一起抽，每次看到的句子就不會固定那幾句
+  const extra = bankExamples(w, ctx?.bank, ctx?.verbForms)
+    .filter(b => !own.some(o => norm(o.s.example) === norm(b.en)))
+    .map(b => ({ s: null, i: null, f: b.f, ex: b }));
+  const cands = [...own, ...extra];
   if (!cands.length) return null;
-  const { s, i, f } = pick(cands);
+  const c = pick(cands);
+  if (!c.s){
+    const { ex, f } = c, inflected = norm(f.text) !== norm(w.term);
+    return {
+      mode: 'cloze', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
+      prompt: '把單字填進句子裡',
+      question: ex.en.slice(0, f.start) + '______' + ex.en.slice(f.end),
+      hint: ex.zh,                                   // 句庫的句子不確定是哪個詞性，提示直接給整句翻譯
+      inputMode: 'text', blanks: 1,
+      answer: [f.text],
+      alsoAccept: inflected ? [w.term] : [],
+      explain: `${ex.en}\n${ex.zh}` + (inflected ? `\n這裡用的是變化形 ${f.text}（原形 ${w.term}）。` : ''),
+      meta: { senseIdx: null, src: 'bank' },
+    };
+  }
+  const { s, i, f } = c;
   const display = s.example.slice(0, f.start) + '______' + s.example.slice(f.end);
   const inflected = norm(f.text) !== norm(w.term);
   return {
@@ -356,7 +404,7 @@ function qForms(w, _all, ctx){
   };
 }
 
-export function generateWordQuiz(words, { count = 10, modes = WORD_MODES, verbForms = null } = {}){
+export function generateWordQuiz(words, { count = 10, modes = WORD_MODES, verbForms = null, bank = null } = {}){
   const want = modes.filter(m => WORD_BUILDERS[m]);
   if (!want.length || !words.length) return [];
 
@@ -368,7 +416,7 @@ export function generateWordQuiz(words, { count = 10, modes = WORD_MODES, verbFo
     const b = new Map(want.map(m => [m, []]));
     for (const w of src)
       for (const m of want){
-        const q = WORD_BUILDERS[m](w, words, { verbForms });
+        const q = WORD_BUILDERS[m](w, words, { verbForms, bank });
         if (q) b.get(m).push(q);
       }
     return b;

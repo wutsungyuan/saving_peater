@@ -296,7 +296,7 @@ export const routes = [
       // 三態直接取自分析過的句子，不用再問模型
       const questions = generateWordQuiz(words, {
         count: Math.min(Math.max(Number(b.count)||10,1),30), modes,
-        verbForms: cache.verbForms(),
+        verbForms: cache.verbForms(), bank: cache.sentenceBank(),   // 句庫的句子也拿來當填空例句
       });
       const quizId = 'w' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
       cache.putQuiz(quizId, 'word', questions);

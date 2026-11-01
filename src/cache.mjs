@@ -35,6 +35,7 @@ function parseContext(raw){
 }
 
 let _verbFormsCache = null, _verbFormsCount = -1;
+let _bankCache = null, _bankKey = '', _bankDb = null;
 
 export function openCache(file = 'data/cache.db'){
   mkdirSync(dirname(file), { recursive: true });
@@ -746,6 +747,21 @@ export function openCache(file = 'data/cache.db'){
         }
       }
       _verbFormsCache = out; _verbFormsCount = n;
+      return out;
+    },
+
+    /** 已分析過的句子（原文＋中文翻譯），給單字測驗當額外的例句 —— 不用再花額度。
+     *  老師標成「不要用來出題」的不收。回傳 [{ en, zh }]。 */
+    sentenceBank(){
+      const k = db.prepare('SELECT COUNT(*) n, COALESCE(SUM(excluded),0) x FROM sentences').get();
+      const key = `${k.n}/${k.x}`;
+      if (_bankCache && _bankDb === db && _bankKey === key) return _bankCache;
+      const out = [];
+      for (const r of db.prepare('SELECT original, result FROM sentences WHERE issue IS NULL AND excluded = 0').all()){
+        let d; try { d = JSON.parse(r.result); } catch { continue; }
+        if (r.original && d.translation) out.push({ en: r.original, zh: d.translation });
+      }
+      _bankCache = out; _bankKey = key; _bankDb = db;
       return out;
     },
 
