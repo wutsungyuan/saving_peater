@@ -25,6 +25,7 @@ const kind = sys === 'analyzer-system.md' ? 'analyze'
   : sys === 'analyze-ocr.md' ? 'prose-ocr'
   : sys === 'exam-import.md' ? 'exam-import'
   : sys === 'wordset-system.md' ? 'enrich'
+  : sys === 'wordset-extra.md' ? 'wordset-extra'
   : sys === 'wordset-ocr.md' ? 'wordset-ocr'
   : sys === 'exam-gen.md' ? 'exam'
   : sys === 'exam-grade.md' ? 'grade' : 'unknown';
@@ -104,7 +105,18 @@ if (kind === 'enrich') {
     term: it.term, syllables: it.term, spellTip: null,
     senses: [{ pos: 'n', zh: it.zh || '測試', example: `I use the word ${it.term} every day.`, exampleZh: '我每天用這個字。' }],
     confusable: [], family: [],
+    extra: [{ pos: 'n', example: `We talked about ${it.term} after school.`, exampleZh: '放學後我們聊到這個。' },
+            { pos: 'n', example: `My teacher likes ${it.term} very much.`, exampleZh: '我的老師很喜歡這個。' }],
   })) }, { n: items.length });
+}
+
+// 補隱藏句：一行「單字｜詞性 中文」，回每個字 2 句（FAKE_EXTRA_BAD=1 時其中一句沒含這個字，要被濾掉）
+if (kind === 'wordset-extra') {
+  const terms = prompt.split('\n').map(l => l.split('｜')[0].trim()).filter(Boolean);
+  finish({ words: terms.map(t => ({ term: t, extra: [
+    { pos: 'n', example: `I read about ${t} in a book.`, exampleZh: '我在書上讀到這個。' },
+    { pos: 'n', example: env.FAKE_EXTRA_BAD === '1' ? 'This sentence has nothing in it.' : `She wrote a story about ${t}.`, exampleZh: '她寫了一個故事。' },
+  ] })) }, { n: terms.length });
 }
 
 // ---- 測驗卷的 AI 批改：回答「含 wrong 的就錯，其餘對」，方便測 ----

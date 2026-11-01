@@ -39,5 +39,25 @@ const bare = w(5, 'swim', [{ pos: 'v', zh: '游泳' }]);
 chk('沒有句庫：沒例句的字仍不出填空', WORD_BUILDERS.cloze(bare, [bare], {}) === null);
 const qs = generateWordQuiz([teach], { count: 5, modes: ['cloze'], verbForms: forms, bank });
 chk('整份測驗可以用 bank 出題', qs.length > 0 && qs.every(q => q.mode === 'cloze'));
+// 隱藏句：模型給的備用例句要先過濾
+import { cleanExtra } from '../src/wordset.mjs';
+const raw = [
+  { pos: 'v', example: 'She teaches English.', exampleZh: '重複' },                    // 和字表例句一樣 → 丟
+  { pos: 'v', example: 'My uncle taught me chess.', exampleZh: '我叔叔教我下棋。' },
+  { pos: 'v', example: 'The teacher is nice.', exampleZh: 'teacher 不是 teach' },   // 另一個字 → 丟
+  { pos: 'v', example: 'Nothing here.', exampleZh: '沒有這個字' },                    // 沒含這個字 → 丟
+  { pos: 'v', example: 'Please teach me.', exampleZh: '' },                          // 沒翻譯 → 丟
+  { pos: 'v', example: 'I like to teach kids.', exampleZh: '我喜歡教小孩。' },
+  { pos: 'v', example: 'Can you teach me?', exampleZh: '你能教我嗎？' },
+  { pos: 'v', example: 'They teach every day.', exampleZh: '他們每天教書。' },          // 超過 3 句 → 丟
+];
+const ce = cleanExtra('teach', raw, teach.senses, forms);
+chk('不認得的不規則形（沒有三態資料）→ taught 那句丟掉，不亂收', !cleanExtra('teach', raw, teach.senses).some(x => /taught/.test(x.example)));
+chk('隱藏句過濾：重複、另一個字、沒含該字、沒翻譯都丟，最多 3 句', ce.length === 3 && ce.map(x => x.example).join('|') === 'My uncle taught me chess.|I like to teach kids.|Can you teach me?', JSON.stringify(ce));
+chk('隱藏句：不是陣列、縮寫 → 空', !cleanExtra('teach', 'x').length && !cleanExtra('PE', raw).length);
+const withExtra = { ...teach, extra: ce };
+const seen2 = new Set();
+for (let i = 0; i < 300; i++) seen2.add(WORD_BUILDERS.cloze(withExtra, [withExtra], { verbForms: forms }).question);
+chk('填空題抽得到字表原句與 3 句隱藏句（共 4 種），沒有句庫也行', seen2.size === 4, [...seen2].join(' | '));
 console.log(fail ? `\n有失敗 (${fail})` : '\n全部通過');
 process.exit(fail ? 1 : 0);

@@ -73,6 +73,18 @@
 填同字根的常見衍生字，沒有就填空陣列。例如 `teach` → `teacher`、`health` → `healthy`、
 `design` → `designer`。每筆 `{ "word": "...", "pos": "n", "zh": "老師" }`，最多 3 筆。
 
+# 六、測驗用的備用例句（extra）
+
+每個字另外寫 **3 個備用例句**，只給測驗出填空題用，不會顯示在字卡上。目的是讓同一個字每次考到的句子不一樣：
+
+- 3 句要**情境不同**（人物、地點、句型都換），也不要和 `senses` 裡的例句重複。
+- 每句都要用到這個字的**原形或常見變化形**（片語要整個出現），讓人看得出意思。
+- 動詞請盡量用原形、-s、-ing 或規則的 -ed 形式，避開不規則的過去式與過去分詞（went、taught、written 這類），
+  系統要能自動核對句子裡真的有這個字。
+- `pos` 填這句用的是哪個詞性（和 `senses` 的代碼一致）。
+- 長度 5–12 字，國中程度。`exampleZh` 是繁體中文翻譯。
+- 如果某個字實在造不出 3 句好句子，寫 2 句或 1 句，不要硬湊；縮寫（如 ROC、PE）填空陣列。
+
 ---
 
 # 輸出 Schema
@@ -91,6 +103,10 @@
           "example": "The show is free for students.",
           "exampleZh": "這場表演對學生免費。"
         }
+      ],
+      "extra": [
+        { "pos": "adj", "example": "Is the museum free on Sundays?", "exampleZh": "這間博物館星期日免費嗎？" },
+        { "pos": "adj", "example": "Tom got a free ticket from his aunt.", "exampleZh": "湯姆從阿姨那裡拿到一張免費的票。" }
       ],
       "confusable": [ { "word": "freedom", "zh": "自由（名詞）" } ],
       "family":     [ { "word": "freedom", "pos": "n", "zh": "自由" } ]

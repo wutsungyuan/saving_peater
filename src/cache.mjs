@@ -37,6 +37,9 @@ function parseContext(raw){
 let _verbFormsCache = null, _verbFormsCount = -1;
 let _bankCache = null, _bankKey = '', _bankDb = null;
 
+/** words.data 欄位存的 JSON。extra 是測驗用的隱藏句，字卡不顯示 */
+const wordDataJson = w => JSON.stringify({ senses: w.senses ?? [], confusable: w.confusable ?? [], family: w.family ?? [], extra: w.extra ?? [] });
+
 export function openCache(file = 'data/cache.db'){
   mkdirSync(dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
@@ -487,7 +490,7 @@ export function openCache(file = 'data/cache.db'){
         const ins = db.prepare(`INSERT OR REPLACE INTO words
           (set_id, idx, term, syllables, spell_tip, data) VALUES (?,?,?,?,?,?)`);
         words.forEach((w, i) => ins.run(setId, i, w.term, w.syllables ?? null, w.spellTip ?? null,
-          JSON.stringify({ senses: w.senses ?? [], confusable: w.confusable ?? [], family: w.family ?? [] })));
+          wordDataJson(w)));
         db.exec('COMMIT');
         return setId;
       } catch (e){ db.exec('ROLLBACK'); throw e; }
@@ -516,10 +519,33 @@ export function openCache(file = 'data/cache.db'){
           (set_id, idx, term, syllables, spell_tip, data) VALUES (?,?,?,?,?,?)`);
         for (const w of fresh)
           ins.run(id, idx++, w.term, w.syllables ?? null, w.spellTip ?? null,
-            JSON.stringify({ senses: w.senses ?? [], confusable: w.confusable ?? [], family: w.family ?? [] }));
+            wordDataJson(w));
         db.exec('COMMIT');
       } catch (e){ db.exec('ROLLBACK'); throw e; }
       return { added: fresh.length, skipped: words.length - fresh.length };
+    },
+
+    /** 這份字表裡還沒有隱藏句的字（補隱藏句用）。回傳 [{ id, term, senses }] */
+    wordsLackingExtra(setId){
+      return db.prepare('SELECT id, term, data FROM words WHERE set_id = ? ORDER BY idx').all(Number(setId))
+        .map(r => { const d = JSON.parse(r.data); return { id: r.id, term: r.term, senses: d.senses ?? [], has: (d.extra ?? []).length }; })
+        .filter(w => !w.has).map(({ has, ...w }) => w);
+    },
+    /** 把隱藏句寫回字裡。extras：Map(小寫字 → [隱藏句])，沒有句子的字不動 */
+    setWordExtras(setId, extras){
+      let n = 0;
+      db.exec('BEGIN');
+      try {
+        const up = db.prepare('UPDATE words SET data = ? WHERE id = ?');
+        for (const r of db.prepare('SELECT id, term, data FROM words WHERE set_id = ?').all(Number(setId))){
+          const ex = extras.get(r.term.toLowerCase());
+          if (!ex?.length) continue;
+          const d = JSON.parse(r.data); d.extra = ex;
+          up.run(JSON.stringify(d), r.id); n++;
+        }
+        db.exec('COMMIT');
+      } catch (e){ db.exec('ROLLBACK'); throw e; }
+      return n;
     },
 
     /** 某份字表已經有哪些字（小寫），用來在呼叫模型之前先濾掉重複的 */
@@ -574,6 +600,7 @@ export function openCache(file = 'data/cache.db'){
         return { ...main, senses,
           confusable: uniq(g.flatMap(w => w.confusable ?? []), c => c.word),
           family:     uniq(g.flatMap(w => w.family ?? []),     c => c.word),
+          extra:      uniq(g.flatMap(w => w.extra ?? []),      x => x.example),
           mergedFrom: g.map(w => w.setId),
           mergedIds:  g.map(w => w.id) };
       });

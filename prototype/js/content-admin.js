@@ -11,7 +11,7 @@ function ctRow(kind, x){
     <div class="srow-tags">${x.count} ${CT_KINDS[kind].unit}　·　建立 ${d}${x.note ? `　·　${esc(x.note)}` : ''}</div>
     <div class="row srow-acts">
       <button type="button" class="linky" data-ct="rename">改名</button>
-      <button type="button" class="linky" data-ct="${kind === 'wordset' ? 'words' : 'sents'}">${kind === 'wordset' ? '單字' : '句子'}</button><button type="button" class="linky" data-ct="merge">併入…</button>
+      <button type="button" class="linky" data-ct="${kind === 'wordset' ? 'words' : 'sents'}">${kind === 'wordset' ? '單字' : '句子'}</button><button type="button" class="linky" data-ct="merge">併入…</button>${kind === 'wordset' ? '<button type="button" class="linky" data-ct="extra">補隱藏句</button>' : ''}
       <button type="button" class="linky" data-ct="hide">${x.hidden ? '對學生顯示' : '對學生隱藏'}</button>
       <button type="button" class="linky danger" data-ct="delete">刪除</button>
       <span class="hint srow-msg"></span>
@@ -135,6 +135,22 @@ async function ctAct(btn){
     const r = await artApi('/api/admin/wordset-remove', { method: 'POST', body: { from: id, wordIds: ids, confirm: true } });
     if (!r.ok){ msg.textContent = r.json.message || '移除失敗'; btn.disabled = false; return; }
     await loadContent(); ctRefreshOthers();
+  } else if (act === 'extra' || act === 'extra-ok'){
+    // 隱藏句：測驗填空用的備用例句，字卡不顯示。先預覽要補幾個字，確認才呼叫模型（花額度）
+    const confirm = act === 'extra-ok';
+    btn.disabled = true;
+    if (confirm) msg.textContent = '請模型寫例句中…（20 個字約需半分鐘）';
+    const r = await artApi('/api/admin/wordset-extra', { method: 'POST', body: { id, confirm } });
+    btn.disabled = false;
+    if (r.status === 409){
+      extra.hidden = false;
+      extra.innerHTML = `<p class="hint" style="margin:6px 0">「${esc(x.name)}」有 ${r.json.words} 個字還沒有隱藏句，每個字補 3 句，分 ${r.json.batches} 批請模型寫（會花一點 Claude 額度）。補完後填空題會從更多句子裡抽。</p>
+        <div class="row"><button type="button" class="primary" data-ct="extra-ok">開始補</button> <button type="button" class="linky" data-ct="cancel">取消</button></div>`;
+      return;
+    }
+    if (!r.ok){ msg.textContent = r.json.message || '補隱藏句失敗'; return; }
+    extra.hidden = true; extra.innerHTML = '';
+    msg.textContent = r.json.words ? `已補好 ${r.json.filled} 個字的隱藏句` : (r.json.message || '都已經有了');
   } else if (act === 'merge'){
     const others = ctData[kind === 'wordset' ? 'wordsets' : 'articles'].filter(y => y.id !== id);
     extra.hidden = false;

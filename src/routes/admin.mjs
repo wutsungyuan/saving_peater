@@ -5,6 +5,9 @@ import { mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
 import { readBody, authed, denyStudent, sendJson } from '../http.mjs';
 import { internalCall } from '../internal.mjs';
+import { enrichExtra, isAbbrev } from '../wordset.mjs';
+
+const EXTRA_BATCH = 20;      // 補隱藏句一次請模型處理幾個字
 
 const body = async req => { try { return JSON.parse(await readBody(req, 1e5)) || {}; } catch { return {}; } };
 /** 驗證並限定老師。通過回 false，沒通過已經回應了（呼叫端直接 return）。 */
@@ -101,6 +104,33 @@ export const routes = [
       const id = Number(url.searchParams.get('id'));
       if (!cache.wordsets('student').some(s => s.id === id)) return sendJson(res, 404, { error: 'not-found', message: '找不到這份字表。' });
       return sendJson(res, 200, { id, words: cache.wordsetWords(id) });
+    } },
+  // 補隱藏句：幫還沒有的字請模型寫備用例句（測驗填空用，字卡不顯示）。先預覽字數，confirm 才呼叫模型。
+  { match: (req, url) => url.pathname === '/api/admin/wordset-extra' && req.method === 'POST', handler: async (req, res, url) => {
+      if (teacherOnly(req, res, url)) return;
+      const b = await body(req), id = Number(b.id);
+      if (!cache.wordsets('student').some(s => s.id === id)) return sendJson(res, 404, { error: 'not-found', message: '找不到這份字表。' });
+      const todo = cache.wordsLackingExtra(id).filter(w => !isAbbrev(w.term));
+      const batches = Math.ceil(todo.length / EXTRA_BATCH);
+      if (!todo.length) return sendJson(res, 200, { ok: true, words: 0, filled: 0, batches: 0, message: '這份字表的字都已經有隱藏句了。' });
+      if (b.confirm !== true) return sendJson(res, 409, { error: 'confirm-required', message: '要先確認才會呼叫模型。', words: todo.length, batches });
+      const t0 = Date.now(), extras = new Map(); let usage = { costUsd: 0, outputTokens: 0, inputTokens: 0, cacheReadTokens: 0 };
+      try {
+        for (let i = 0; i < todo.length; i += EXTRA_BATCH){
+          const r = await enrichExtra(todo.slice(i, i + EXTRA_BATCH), { verbForms: cache.verbForms() });
+          for (const [k, v] of r.extras) extras.set(k, v);
+          for (const k of Object.keys(usage)) usage[k] += r.usage[k] ?? 0;
+        }
+      } catch (e){
+        // 前面批次已經成功的照樣存，免得白花額度
+        const filled = cache.setWordExtras(id, extras);
+        const kind = e.kind || 'other';
+        return sendJson(res, kind === 'rate-limit' ? 429 : 500, { error: kind, filled, message: `${kind === 'rate-limit' ? 'Claude 訂閱額度似乎已用盡' : '補隱藏句失敗：' + String(e.message).slice(0, 160)}。已補好 ${filled} 個字，其餘可以稍後再按一次。` });
+      }
+      const filled = cache.setWordExtras(id, extras);
+      cache.log({ kind: 'wordset', refId: id, chars: 0, sentences: todo.length, cached: 0, analyzed: todo.length, ms: Date.now() - t0,
+        text: `補隱藏句\n${todo.map(w => w.term).join('\n')}`, ...usage });
+      return sendJson(res, 200, { ok: true, words: todo.length, filled, batches, usage });
     } },
   // 移動：to 是既有字表 id，或 newName 建新字表。目標已有同字的跳過、留在原處
   { match: (req, url) => url.pathname === '/api/admin/wordset-move' && req.method === 'POST', handler: async (req, res, url) => {

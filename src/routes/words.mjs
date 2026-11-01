@@ -64,7 +64,7 @@ export const routes = [
         }
         const t0 = Date.now();
         try {
-          const { words, usage } = await enrich(todo);
+          const { words, usage } = await enrich(todo, { verbForms: cache.verbForms() });
           let id, name, added;
           if (appendTo){
             const r = cache.appendWords(appendTo, words);

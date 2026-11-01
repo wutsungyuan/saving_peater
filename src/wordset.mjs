@@ -8,6 +8,7 @@ import { parseModelJson, classifyError, MODEL } from './analyzer.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT = join(__dirname, '..', 'prompts', 'wordset-system.md');
+const EXTRA_PROMPT = join(__dirname, '..', 'prompts', 'wordset-extra.md');
 
 /** 解析使用者貼上的字表。一行一個，可用逗號／tab／全形逗號分隔中文 */
 /** 課本常把意思相近的幾個字寫在同一行、用 / 隔開（normally / generally、hardly ever / almost never）。
@@ -40,12 +41,40 @@ export function parseWordList(text){
 }
 
 /** 呼叫模型充實一批單字。回傳 { words, usage } */
-export function enrich(items, { model = MODEL, timeoutMs = 180_000 } = {}){
+export function enrich(items, { model = MODEL, timeoutMs = 180_000, verbForms = null } = {}){
   const payload = items.map(w => w.zh ? `${w.term}, ${w.zh}` : w.term).join('\n');
+  return callModel(payload, SYSTEM_PROMPT, { model, timeoutMs }).then(({ data, usage }) => {
+    // 對齊回使用者原本給的拼寫與順序，模型漏掉的補一個最小可用的結果
+    const byTerm = new Map((data.words ?? []).map(w => [String(w.term).toLowerCase(), w]));
+    const words = items.map(it => {
+      const got = byTerm.get(it.term.toLowerCase());
+      if (!got) return { term: it.term, syllables: it.term, spellTip: null,
+        senses: it.zh ? [{ pos: 'n', zh: it.zh, example: null, exampleZh: null }] : [],
+        confusable: [], family: [], incomplete: true };
+      return { ...got, term: it.term, extra: cleanExtra(it.term, got.extra, got.senses, verbForms) };   // 拼寫一律以使用者的為準
+    });
+    return { words, usage };
+  });
+}
+
+/** 幫已經建好的字補隱藏句。words：[{ term, senses }]。回傳 { extras: Map(小寫字 → [隱藏句]), usage }。
+ *  只花輸出幾句例句的額度，不重做詞義與音節。 */
+export function enrichExtra(words, { model = MODEL, timeoutMs = 180_000, verbForms = null } = {}){
+  const payload = words.map(w => `${w.term}｜${(w.senses ?? []).map(s => `${s.pos} ${s.zh}`).join('；')}`).join('\n');
+  return callModel(payload, EXTRA_PROMPT, { model, timeoutMs }).then(({ data, usage }) => {
+    const byTerm = new Map((data.words ?? []).map(x => [String(x.term).toLowerCase(), x]));
+    const extras = new Map();
+    for (const w of words) extras.set(w.term.toLowerCase(), cleanExtra(w.term, byTerm.get(w.term.toLowerCase())?.extra, w.senses, verbForms));
+    return { extras, usage };
+  });
+}
+
+/** 呼叫一次模型，回傳 { data（解析後的 JSON）, usage } */
+function callModel(payload, systemFile, { model = MODEL, timeoutMs = 180_000 } = {}){
   return new Promise((resolve, reject) => {
     const args = [
       '-p', payload,
-      '--system-prompt-file', SYSTEM_PROMPT,
+      '--system-prompt-file', systemFile,
       '--allowedTools', '',
       '--exclude-dynamic-system-prompt-sections',
       '--model', model,
@@ -76,17 +105,8 @@ export function enrich(items, { model = MODEL, timeoutMs = 180_000 } = {}){
       try { data = parseModelJson(env.result); }
       catch (e){ return reject(new Error('模型回傳無法解析: ' + e.message)); }
 
-      // 對齊回使用者原本給的拼寫與順序，模型漏掉的補一個最小可用的結果
-      const byTerm = new Map((data.words ?? []).map(w => [String(w.term).toLowerCase(), w]));
-      const words = items.map(it => {
-        const got = byTerm.get(it.term.toLowerCase());
-        if (!got) return { term: it.term, syllables: it.term, spellTip: null,
-          senses: it.zh ? [{ pos: 'n', zh: it.zh, example: null, exampleZh: null }] : [],
-          confusable: [], family: [], incomplete: true };
-        return { ...got, term: it.term };          // 拼寫一律以使用者的為準
-      });
       const u = env.usage ?? {};
-      resolve({ words, usage: {
+      resolve({ data, usage: {
         inputTokens: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
         outputTokens: u.output_tokens ?? 0,
         cacheReadTokens: u.cache_read_input_tokens ?? 0,
@@ -306,11 +326,44 @@ export function bankExamples(w, bank, verbForms){
   return out;
 }
 
+/** 在句子裡找這個字：單字用嚴格的變化形比對；片語用 findForm（中間可夾字）。 */
+function locate(term, text, verbForms){
+  const t = String(term ?? '').trim();
+  if (!t || !text) return null;
+  if (/^[A-Za-z]+$/.test(t)){
+    const forms = wordForms(t, verbForms?.get(t.toLowerCase()));
+    const m = new RegExp(`\\b(${[...forms].sort((a, b) => b.length - a.length).join('|')})\\b`, 'i').exec(text);
+    return m ? { text: m[0], start: m.index, end: m.index + m[0].length } : null;
+  }
+  return findForm(text, t);
+}
+
+/** 模型給的隱藏句（測驗用備用例句）：留下格式正確、真的含這個字、不重複的，最多 3 句。
+ *  縮寫（ROC、PE）挖空沒意義，不收。 */
+export function cleanExtra(term, extra, senses = [], verbForms = null){
+  if (!Array.isArray(extra) || isAbbrev(term)) return [];
+  const seen = new Set((senses ?? []).map(s => norm(s?.example)).filter(Boolean));
+  const out = [];
+  for (const x of extra){
+    const en = String(x?.example ?? '').trim(), zh = String(x?.exampleZh ?? '').trim();
+    if (!en || !zh || en.length > 160 || seen.has(norm(en)) || !locate(term, en, verbForms)) continue;
+    seen.add(norm(en));
+    out.push({ pos: String(x?.pos ?? '').trim() || null, example: en, exampleZh: zh });
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+/** 字裡存的隱藏句 → 填空題候選 */
+export function extraExamples(w, verbForms){
+  return (w.extra ?? []).map(x => ({ en: x.example, zh: x.exampleZh, f: locate(w.term, x.example, verbForms) })).filter(x => x.f);
+}
+
 function qCloze(w, all, ctx){
   const own = (w.senses ?? []).map((s, i) => ({ s, i, f: findForm(s.example, w.term) })).filter(x => x.f);
   // 字表原有的例句之外，再加上句庫裡含這個字的句子，出題時一起抽，每次看到的句子就不會固定那幾句
-  const extra = bankExamples(w, ctx?.bank, ctx?.verbForms)
-    .filter(b => !own.some(o => norm(o.s.example) === norm(b.en)))
+  const extra = [...extraExamples(w, ctx?.verbForms), ...bankExamples(w, ctx?.bank, ctx?.verbForms)]
+    .filter((b, k, arr) => !own.some(o => norm(o.s.example) === norm(b.en)) && arr.findIndex(y => norm(y.en) === norm(b.en)) === k)
     .map(b => ({ s: null, i: null, f: b.f, ex: b }));
   const cands = [...own, ...extra];
   if (!cands.length) return null;
