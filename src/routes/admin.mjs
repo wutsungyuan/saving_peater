@@ -6,6 +6,7 @@ import { dirname, join, basename } from 'node:path';
 import { readBody, authed, denyStudent, sendJson } from '../http.mjs';
 import { internalCall } from '../internal.mjs';
 import { enrichExtra, isAbbrev } from '../wordset.mjs';
+import { hiddenSentences, analyzeIntoCache } from './shared.mjs';
 
 const extraBusy = new Set();   // 正在補隱藏句的字表，同一份不能重複進行（會重複花額度）
 const EXTRA_BATCH = 20;      // 補隱藏句一次請模型處理幾個字
@@ -106,36 +107,63 @@ export const routes = [
       if (!cache.wordsets('student').some(s => s.id === id)) return sendJson(res, 404, { error: 'not-found', message: '找不到這份字表。' });
       return sendJson(res, 200, { id, words: cache.wordsetWords(id) });
     } },
-  // 補隱藏句：幫還沒有的字請模型寫備用例句（測驗填空用，字卡不顯示）。先預覽字數，confirm 才呼叫模型。
+  // 補隱藏句：幫還沒有的字請模型寫備用例句（測驗填空用，字卡不顯示），寫完一併分析、存進句子庫
+  // （句子清單、句子練習、測驗卷才看得到）。先預覽，confirm 才呼叫模型；用 SSE 回報進度，手機斷線也不會白做。
   { match: (req, url) => url.pathname === '/api/admin/wordset-extra' && req.method === 'POST', handler: async (req, res, url) => {
       if (teacherOnly(req, res, url)) return;
       const b = await body(req), id = Number(b.id);
       if (!cache.wordsets('student').some(s => s.id === id)) return sendJson(res, 404, { error: 'not-found', message: '找不到這份字表。' });
-      const todo = cache.wordsLackingExtra(id).filter(w => !isAbbrev(w.term));
-      const batches = Math.ceil(todo.length / EXTRA_BATCH);
-      if (!todo.length) return sendJson(res, 200, { ok: true, words: 0, filled: 0, batches: 0, message: '這份字表的字都已經有隱藏句了。' });
-      if (b.confirm !== true) return sendJson(res, 409, { error: 'confirm-required', message: '要先確認才會呼叫模型。', words: todo.length, batches });
+      const lacking = cache.wordsLackingExtra(id).filter(w => !isAbbrev(w.term));
+      const unanalyzed = hiddenSentences(cache.wordsOf([id], 'anon')).filter(t => !cache.get(t));
+      const batches = Math.ceil(lacking.length / EXTRA_BATCH);
+      if (!lacking.length && !unanalyzed.length) return sendJson(res, 200, { ok: true, words: 0, filled: 0, analyzed: 0, message: '這份字表的隱藏句都已經補好，也都分析過了。' });
+      if (b.confirm !== true) return sendJson(res, 409, { error: 'confirm-required', message: '要先確認才會呼叫模型。',
+        words: lacking.length, batches, unanalyzed: unanalyzed.length, estimate: unanalyzed.length + lacking.length * 3 });
       if (extraBusy.has(id)) return sendJson(res, 409, { error: 'busy', message: '這份字表正在補隱藏句，請等它做完。' });
       extraBusy.add(id);
-      const t0 = Date.now(), extras = new Map(); let usage = { costUsd: 0, outputTokens: 0, inputTokens: 0, cacheReadTokens: 0 };
+      res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+      const send = (ev, d) => { if (!res.writableEnded) res.write(`event: ${ev}\ndata: ${JSON.stringify(d)}\n\n`); };
+      const beat = setInterval(() => { if (!res.writableEnded) res.write(': ping\n\n'); }, 8000);
+      let filled = 0, analyzed = 0, stage = 'write';
       try {
-        for (let i = 0; i < todo.length; i += EXTRA_BATCH){
-          const r = await enrichExtra(todo.slice(i, i + EXTRA_BATCH), { verbForms: cache.verbForms() });
-          for (const [k, v] of r.extras) extras.set(k, v);
-          for (const k of Object.keys(usage)) usage[k] += r.usage[k] ?? 0;
+        if (lacking.length){
+          send('stage', { stage: 'write', words: lacking.length });
+          const t0 = Date.now(), extras = new Map(), usage = { costUsd: 0, outputTokens: 0, inputTokens: 0, cacheReadTokens: 0 };
+          try {
+            for (let i = 0; i < lacking.length; i += EXTRA_BATCH){
+              const r = await enrichExtra(lacking.slice(i, i + EXTRA_BATCH), { verbForms: cache.verbForms() });
+              for (const [k, v] of r.extras) extras.set(k, v);
+              for (const k of Object.keys(usage)) usage[k] += r.usage[k] ?? 0;
+              send('progress', { stage: 'write', done: Math.min(i + EXTRA_BATCH, lacking.length), total: lacking.length });
+            }
+          } finally {
+            // 前面批次已經成功的照樣存，免得白花額度
+            filled = cache.setWordExtras(id, extras);
+            if (usage.costUsd) cache.log({ kind: 'wordset', refId: id, chars: 0, sentences: lacking.length, cached: 0, analyzed: lacking.length, ms: Date.now() - t0,
+              text: `補隱藏句\n${lacking.map(w => w.term).join('\n')}`, ...usage });
+          }
         }
+        stage = 'analyze';
+        const todo = hiddenSentences(cache.wordsOf([id], 'anon')).filter(t => !cache.get(t));
+        let total = { costUsd: 0 };
+        if (todo.length){
+          send('stage', { stage: 'analyze', sentences: todo.length });
+          const t1 = Date.now();
+          try {
+            ({ saved: analyzed, total } = await analyzeIntoCache(todo, p => send('progress', { stage: 'analyze', done: p.saved, total: p.total, costUsd: p.costUsd })));
+          } catch (e){
+            analyzed = e.saved ?? 0;
+            if (analyzed) cache.log({ kind: 'analyze', chars: todo.join(' ').length, sentences: todo.length, cached: 0, analyzed, ms: Date.now() - t1, text: todo.join('\n'), ...(e.total ?? {}) });
+            throw e;
+          }
+          cache.log({ kind: 'analyze', chars: todo.join(' ').length, sentences: todo.length, cached: 0, analyzed, ms: Date.now() - t1, text: todo.join('\n'), ...total });
+        }
+        send('done', { filled, analyzed, costUsd: total.costUsd });
       } catch (e){
-        extraBusy.delete(id);
-        // 前面批次已經成功的照樣存，免得白花額度
-        const filled = cache.setWordExtras(id, extras);
         const kind = e.kind || 'other';
-        return sendJson(res, kind === 'rate-limit' ? 429 : 500, { error: kind, filled, message: `${kind === 'rate-limit' ? 'Claude 訂閱額度似乎已用盡' : '補隱藏句失敗：' + String(e.message).slice(0, 160)}。已補好 ${filled} 個字，其餘可以稍後再按一次。` });
-      }
-      extraBusy.delete(id);
-      const filled = cache.setWordExtras(id, extras);
-      cache.log({ kind: 'wordset', refId: id, chars: 0, sentences: todo.length, cached: 0, analyzed: todo.length, ms: Date.now() - t0,
-        text: `補隱藏句\n${todo.map(w => w.term).join('\n')}`, ...usage });
-      return sendJson(res, 200, { ok: true, words: todo.length, filled, batches, usage });
+        send('failed', { kind, stage, filled, analyzed, message: (kind === 'rate-limit' ? 'Claude 訂閱額度似乎已用盡' : (stage === 'write' ? '補隱藏句失敗：' : '分析失敗：') + String(e.message).slice(0, 160))
+          + `。已補好 ${filled} 個字、已分析 ${analyzed} 句，做完的都存起來了，稍後再按一次會接著做。` });
+      } finally { clearInterval(beat); extraBusy.delete(id); res.end(); }
     } },
   // 移動：to 是既有字表 id，或 newName 建新字表。目標已有同字的跳過、留在原處
   { match: (req, url) => url.pathname === '/api/admin/wordset-move' && req.method === 'POST', handler: async (req, res, url) => {

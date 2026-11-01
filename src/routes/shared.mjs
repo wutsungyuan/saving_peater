@@ -1,6 +1,8 @@
 // 單字與句子路由共用的小工具。
 import { cache } from '../context.mjs';
 import { roleOf } from '../http.mjs';
+import { analyzeMany, fixPronounCase, MODEL } from '../analyzer.mjs';
+import { hasBlank } from '../exercises.mjs';
 
 /** 從查詢字串或 body 解析出字表 id 陣列（相容舊的單一 id） */
 export function setIdList(v, fallback){
@@ -49,4 +51,43 @@ export function exampleSentences(words){
     for (const sn of w.senses ?? [])
       if (sn.example) seen.add(String(sn.example).trim());
   return [...seen];
+}
+
+/** 字裡的隱藏句（測驗用備用例句）原文，去重 */
+export function hiddenSentences(words){
+  const seen = new Set();
+  for (const w of words) for (const x of w.extra ?? []) if (x?.example) seen.add(String(x.example).trim());
+  return [...seen];
+}
+
+/** 把句子分析後存進句子庫：一批（8 句）做完就存，斷線最多損失一批。
+ *  onProgress({ saved, total, costUsd })。失敗時丟出的錯誤帶 e.saved（已存幾句）與 e.total（已花的用量）。 */
+export async function analyzeIntoCache(todo, onProgress = () => {}){
+  const groupResults = [];
+  let saved = 0, lastDone = 0;
+  const total = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 };
+  try {
+    await analyzeMany(todo, {
+      onGroup: ({ done, usage }) => {
+        const n = Math.max(1, done - lastDone);
+        const per = {
+          inputTokens:  Math.round((usage.inputTokens  - total.inputTokens)  / n),
+          outputTokens: Math.round((usage.outputTokens - total.outputTokens) / n),
+          costUsd: (usage.costUsd - total.costUsd) / n,
+        };
+        for (let i = lastDone; i < done; i++){
+          const r = groupResults[i];
+          if (!r) continue;
+          if (hasBlank(todo[i])) continue;    // 仍有未還原的空格就不入庫
+          try { fixPronounCase(r.words ?? []); cache.put(todo[i], r, MODEL, per); saved++; }
+          catch (err){ console.error('存快取失敗：', todo[i].slice(0, 40), err.message); }
+        }
+        lastDone = done;
+        Object.assign(total, usage);
+        onProgress({ saved, total: todo.length, costUsd: usage.costUsd });
+      },
+      onDone: (i, s) => { groupResults[i] = s; },
+    });
+  } catch (e){ e.saved = saved; e.total = total; throw e; }
+  return { saved, total };
 }

@@ -1,8 +1,6 @@
 // 路由：單字表：建立、辨識、測驗、交卷。
 // 每條路由是 { match, handler }。handler 沒有送出回應時，server 會繼續比對下一條（和原本的 if 串列一致）。
 import { join } from 'node:path';
-import { analyzeMany, fixPronounCase, MODEL } from '../analyzer.mjs';
-import { hasBlank } from '../exercises.mjs';
 import { parseWordList, enrich, generateWordQuiz, gradeWord, WORD_MODES, extractFromImage, wordsToText, searchWords } from '../wordset.mjs';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -11,7 +9,7 @@ import { cache } from '../context.mjs';
 import { readBody, authed, roleOf, denyStudent, userOf, decodeImage } from '../http.mjs';
 import { submitJob } from '../jobs.mjs';
 import { STUDENT_OCR_PER_DAY } from '../config.mjs';
-import { setIdList, redoQuestions, exampleSentences, visibleIds, visibleRows } from './shared.mjs';
+import { setIdList, redoQuestions, exampleSentences, visibleIds, visibleRows, analyzeIntoCache } from './shared.mjs';
 
 /** 字卡要的額外資料：動詞附三態（取自分析過的句子）；隱藏句只給測驗用，不送到前端 */
 function cardExtras(words){
@@ -232,32 +230,8 @@ export const routes = [
       const beat = setInterval(() => { if (!res.writableEnded) res.write(': ping\n\n'); }, 8000);
       send('meta', { total: all.length, cached: all.length - todo.length, todo: todo.length });
       const t0 = Date.now();
-      const groupResults = [];
-      let saved = 0, lastDone = 0;
-      const total = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 };
       try {
-        await analyzeMany(todo, {
-          onGroup: ({ done, usage }) => {
-            // 這一批剛完成的句子立刻寫進快取 —— 斷線最多只損失一批
-            const n = Math.max(1, done - lastDone);
-            const per = {
-              inputTokens:  Math.round((usage.inputTokens  - total.inputTokens)  / n),
-              outputTokens: Math.round((usage.outputTokens - total.outputTokens) / n),
-              costUsd: (usage.costUsd - total.costUsd) / n,
-            };
-            for (let i = lastDone; i < done; i++){
-              const r = groupResults[i];
-              if (!r) continue;
-              if (hasBlank(todo[i])) continue;    // 仍有未還原的空格就不入庫，理由同上
-              try { fixPronounCase(r.words ?? []); cache.put(todo[i], r, MODEL, per); saved++; }
-              catch (err){ console.error('存快取失敗：', todo[i].slice(0, 40), err.message); }
-            }
-            lastDone = done;
-            Object.assign(total, usage);
-            send('progress', { done: saved, total: todo.length, costUsd: usage.costUsd });
-          },
-          onDone: (i, s) => { groupResults[i] = s; },
-        });
+        const { saved, total } = await analyzeIntoCache(todo, p => send('progress', { done: p.saved, total: p.total, costUsd: p.costUsd }));
         clearInterval(beat);
         cache.log({ kind:'analyze', chars: todo.join(' ').length, sentences: todo.length,
           cached: all.length - todo.length, analyzed: saved, ms: Date.now() - t0,
@@ -267,11 +241,11 @@ export const routes = [
         return res.end();
       } catch (e){
         clearInterval(beat);
-        const kind = e.kind || 'other';
+        const kind = e.kind || 'other', saved = e.saved ?? 0;
         // 已經存進去的不會白費，照樣記帳
         if (saved) cache.log({ kind:'analyze', chars: todo.join(' ').length, sentences: todo.length,
           cached: all.length - todo.length, analyzed: saved, ms: Date.now() - t0,
-          text: todo.join('\n'), ...total });
+          text: todo.join('\n'), ...(e.total ?? {}) });
         send('failed', { kind, analyzed: saved, message:
           kind === 'rate-limit' ? 'Claude 訂閱額度似乎已用盡，等額度重置後再試。'
         : '分析失敗：' + String(e.message).slice(0, 200) });

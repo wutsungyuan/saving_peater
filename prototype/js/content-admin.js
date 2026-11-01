@@ -136,28 +136,60 @@ async function ctAct(btn){
     if (!r.ok){ msg.textContent = r.json.message || '移除失敗'; btn.disabled = false; return; }
     await loadContent(); ctRefreshOthers();
   } else if (act === 'extra' || act === 'extra-ok'){
-    // 隱藏句：測驗填空用的備用例句，字卡不顯示。先預覽要補幾個字，確認才呼叫模型（花額度）
-    const confirm = act === 'extra-ok';
-    btn.disabled = true;
-    if (confirm) msg.innerHTML = '<span class="spin" aria-hidden="true"></span>請模型寫例句中…每 20 個字約半分鐘，請不要切到別的程式，等這一行消失';
-    let r;
-    try { r = await artApi('/api/admin/wordset-extra', { method: 'POST', body: { id, confirm } }); }
-    catch {
-      // 手機在等待時切到背景或休眠，連線會被中斷；伺服器那邊還是會做完並存好
+    // 隱藏句：測驗填空用的備用例句，字卡不顯示。寫完會一併分析，存進句子庫（句子清單、句子練習才看得到）。
+    // 先預覽要補幾個字、分析幾句，確認才呼叫模型（花額度）。確認後用串流回報進度，手機斷線也不會白做。
+    if (act === 'extra'){
+      btn.disabled = true;
+      const p = await artApi('/api/admin/wordset-extra', { method: 'POST', body: { id } });
       btn.disabled = false;
-      msg.textContent = '連線中斷了，但伺服器會繼續做完。過一分鐘再按一次「補隱藏句」，看還剩幾個字沒補。';
-      return;
-    }
-    btn.disabled = false;
-    if (r.status === 409 && r.json.error === 'confirm-required'){
+      if (p.status !== 409 || p.json.error !== 'confirm-required'){ msg.textContent = p.json.message || '無法預覽'; return; }
+      const j = p.json;
       extra.hidden = false;
-      extra.innerHTML = `<p class="hint" style="margin:6px 0">「${esc(x.name)}」有 ${r.json.words} 個字還沒有隱藏句，每個字補 3 句，分 ${r.json.batches} 批請模型寫（會花一點 Claude 額度）。補完後填空題會從更多句子裡抽。</p>
-        <div class="row"><button type="button" class="primary" data-ct="extra-ok">開始補</button> <button type="button" class="linky" data-ct="cancel">取消</button></div>`;
+      extra.innerHTML = `<p class="hint" style="margin:6px 0">「${esc(x.name)}」：${j.words ? `${j.words} 個字還沒有隱藏句，每個字補 3 句（分 ${j.batches} 批請模型寫）。` : ''}${j.unanalyzed ? `${j.words ? '另外' : ''}已有 ${j.unanalyzed} 句隱藏句還沒分析。` : ''}寫完會一併分析，存進句子庫，這樣句子清單、句子練習和測驗卷都看得到。預計分析約 ${j.estimate} 句，會花 Claude 額度（單價見費用與用量）。</p>
+        <div class="row"><button type="button" class="primary" data-ct="extra-ok">開始補並分析</button> <button type="button" class="linky" data-ct="cancel">取消</button></div>`;
       return;
     }
-    if (!r.ok){ msg.textContent = r.json.message || '補隱藏句失敗'; return; }
+    btn.disabled = true;
+    const t0 = Date.now();
+    let line = '準備中…';
+    const show = () => { msg.innerHTML = `<span class="spin" aria-hidden="true"></span>${esc(line)}（已 ${Math.round((Date.now() - t0) / 1000)} 秒）　請不要切到別的程式，等這一行變成 ✓`; };
+    show();
+    const tick = setInterval(show, 1000);
+    let failed = null, done = null, got = false;
+    try {
+      const res = await fetch('/api/admin/wordset-extra', { method: 'POST', headers: artHeaders(), body: JSON.stringify({ id, confirm: true }) });
+      if (!res.ok || !res.body){
+        const d = await res.json().catch(() => ({}));
+        msg.textContent = d.message || '補隱藏句失敗'; btn.disabled = false; return;
+      }
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let buf = '';
+      for (;;){
+        const { value, done: fin } = await reader.read();
+        if (fin) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n\n'); buf = parts.pop() ?? '';
+        for (const part of parts){
+          const ev = /^event: (\w+)/m.exec(part)?.[1], dl = /^data: (.*)$/m.exec(part)?.[1];
+          if (!ev || !dl) continue;
+          let d; try { d = JSON.parse(dl); } catch { continue; }
+          if (ev === 'stage') line = d.stage === 'write' ? `請模型寫例句：${d.words} 個字` : `分析隱藏句：${d.sentences} 句`;
+          else if (ev === 'progress') line = d.stage === 'write' ? `請模型寫例句：${d.done} / ${d.total} 個字` : `分析隱藏句：${d.done} / ${d.total} 句`;
+          else if (ev === 'failed') failed = d;
+          else if (ev === 'done'){ done = d; got = true; }
+        }
+      }
+    } catch {}
+    clearInterval(tick);
+    btn.disabled = false;
+    if (failed){ msg.textContent = failed.message; return; }
+    if (!got){
+      // 手機切到背景或休眠會中斷連線；伺服器會繼續做完並存好
+      msg.textContent = '連線中斷了，但伺服器會繼續做完。過一兩分鐘再按一次「補隱藏句」，看還剩多少沒做。';
+      return;
+    }
     extra.hidden = true; extra.innerHTML = '';
-    msg.textContent = r.json.words ? `✓ 已補好 ${r.json.filled} 個字的隱藏句` : (r.json.message || '都已經有了');
+    msg.textContent = `✓ 補好 ${done.filled} 個字的隱藏句，分析了 ${done.analyzed} 句，已存進句子庫`;
   } else if (act === 'merge'){
     const others = ctData[kind === 'wordset' ? 'wordsets' : 'articles'].filter(y => y.id !== id);
     extra.hidden = false;
