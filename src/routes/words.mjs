@@ -13,6 +13,17 @@ import { submitJob } from '../jobs.mjs';
 import { STUDENT_OCR_PER_DAY } from '../config.mjs';
 import { setIdList, redoQuestions, exampleSentences, visibleIds, visibleRows } from './shared.mjs';
 
+/** 字卡要的額外資料：動詞附三態（取自分析過的句子）；隱藏句只給測驗用，不送到前端 */
+function cardExtras(words){
+  const vf = cache.verbForms();
+  for (const w of words){
+    delete w.extra;
+    if (!(w.senses ?? []).some(s => s.pos === 'v')) continue;
+    const f = vf.get(String(w.term).toLowerCase());
+    if (f) w.verbForms = { base: f.base, past: f.past, pastParticiple: f.pastParticiple, irregular: Boolean(f.irregular) };
+  }
+}
+
 export const routes = [
     // ---------- 單字表 ----------
   {
@@ -164,6 +175,7 @@ export const routes = [
       for (const w of hits)
         for (const sn of w.senses ?? [])
           if (sn.example) sn.analyzed = Boolean(cache.get(String(sn.example).trim()));
+      cardExtras(hits);
       return res.end(JSON.stringify({ q, words: hits, total: hits.length }));
     },
   },
@@ -180,6 +192,7 @@ export const routes = [
         for (const sn of w.senses ?? [])
           if (sn.example) sn.analyzed = Boolean(cache.get(String(sn.example).trim()));
       const exs = exampleSentences(words);
+      cardExtras(words);
       return res.end(JSON.stringify({
         words,
         stats: ids.length ? cache.wordStats(ids, userToken) : null,

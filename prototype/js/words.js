@@ -116,6 +116,7 @@ function wordCardHtml(w, multi){
            title="${sn.analyzed ? (isStudentRole() ? '已分析過，點了馬上看句型與詞性' : '已分析過，點了馬上看句型與詞性，不花額度')
                                 : (isStudentRole() ? '還沒分析，點了會送出申請，等老師核准' : '還沒分析，點了會花一次額度')}">分析</button></span>` : ''}
       ${sn.exampleZh ? `<span class="exz">${esc(sn.exampleZh)}</span>` : ''}</div>`).join('')}
+    ${w.verbForms ? `<div class="wextra wforms">三態：${esc(w.verbForms.base)} → ${esc(w.verbForms.past)} → ${esc(w.verbForms.pastParticiple)}${w.verbForms.irregular ? '（不規則）' : ''}</div>` : ''}
     ${w.spellTip ? `<div class="wtip">拼字：${esc(w.spellTip)}</div>` : ''}
     ${(w.confusable||[]).length ? `<div class="wextra">易混淆：${w.confusable.map(c=>`${esc(c.word)}（${esc(c.zh)}）`).join('、')}</div>` : ''}
     ${(w.family||[]).length ? `<div class="wextra">衍生字：${w.family.map(c=>`${esc(c.word)}（${esc(c.zh)}）`).join('、')}</div>` : ''}

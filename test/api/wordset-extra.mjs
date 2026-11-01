@@ -15,6 +15,9 @@ const setB = fx.cache.createWordset('補句用', [
   W('lake', 'n', '湖', 'The lake is calm.', '湖很平靜。'),
   W('PE', 'n', '體育', 'We have PE today.', '我們今天有體育課。'),
 ]);
+// 一句分析過的句子帶有 teach 的三態，字卡才看得到
+fx.cache.put('My uncle taught me chess.', { index: 0, original: 'My uncle taught me chess.', translation: '我叔叔教我下棋。', words: [], notes: [], inScope: true, issue: null,
+  clauses: [{ text: 'My uncle taught me chess', role: 'main', verb: { lemma: 'teach', form: 'taught', irregular: true, forms: { base: 'teach', past: 'taught', pastParticiple: 'taught', ing: 'teaching', third: 'teaches' } } }] }, 'test', {});
 fx.cache.db.close?.();
 const ENV = { AUTH_USER: T.user, AUTH_PASS: T.pass, STUDENT_USER: K.user, STUDENT_PASS: K.pass, ANALYZE_GROUP: '1', FAKE_EXTRA_BAD: '1' };
 const extrasOf = (file, setId) => {
@@ -64,5 +67,14 @@ try {
   chk('填空題出得來', okAll);
   const all = [...seen].join(' | ');
   chk('字表原句和兩句隱藏句都抽得到（bridge）', /I use the word ______ every day/.test(all) && /We talked about ______ after school/.test(all) && /My teacher likes ______ very much/.test(all), all);
+  section('字卡：動詞附三態、隱藏句不外送');
+  const ws = (await J(B, `/api/wordset?id=${setNew}`, withCookie(sk))).json.words;
+  chk('回應裡沒有 extra 欄位', ws.length === 2 && ws.every(w => !('extra' in w)));
+  const wf = (await J(B, `/api/wordset?id=${fx.setId}`, withCookie(sk))).json.words;
+  const teach = wf.find(w => w.term === 'teach'), apple = wf.find(w => w.term === 'apple');
+  chk('teach 帶三態 teach／taught／taught，標不規則', teach.verbForms?.past === 'taught' && teach.verbForms.pastParticiple === 'taught' && teach.verbForms.irregular === true, JSON.stringify(teach.verbForms));
+  chk('名詞（apple）、形容詞（cloudy）不帶三態', !apple.verbForms && !wf.find(w => w.term === 'cloudy').verbForms);
+  const sr = (await J(B, '/api/wordsearch?q=teach', withCookie(sk))).json.words;
+  chk('搜尋結果也帶三態', sr.some(w => w.term === 'teach' && w.verbForms?.base === 'teach'));
   await finish();
 } catch (e) { await finish(e); } finally { try { rmSync(fx.dir, { recursive: true, force: true }); } catch {} }
