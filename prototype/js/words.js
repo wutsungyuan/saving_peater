@@ -132,7 +132,7 @@ function renderWordList(){
 function renderWordQ(q, n){
   const body = q.inputMode === 'choice'
     ? `<div class="q-opts">${q.choices.map(c =>
-        `<label class="q-opt"><input type="radio" name="${q.id}" value="${esc(c.value)}"> ${esc(c.label)}</label>`).join('')}</div>`
+        `<label class="q-opt"><input type="${q.multi ? 'checkbox' : 'radio'}" name="${q.id}" value="${esc(c.value)}"> ${esc(c.label)}</label>`).join('')}</div>`
     // 多格題（動詞三態要填過去式與過去分詞）要有對應數量的輸入框
     : `<div class="q-blanks">${Array.from({ length: q.blanks || 1 }, (_, i) =>
         `<input type="text" data-q="${q.id}" data-i="${i}" autocomplete="off"
@@ -194,7 +194,9 @@ async function submitWordQuiz(){
   const answers = {};
   for (const q of wsQuiz.questions)
     answers[q.id] = q.inputMode === 'choice'
-      ? [el('wsOut').querySelector(`input[name="${q.id}"]:checked`)?.value ?? '']
+      ? (q.multi
+        ? [...el('wsOut').querySelectorAll(`input[name="${q.id}"]:checked`)].map(x => x.value)   // 複選：勾了幾個就送幾個
+        : [el('wsOut').querySelector(`input[name="${q.id}"]:checked`)?.value ?? ''])
       // 多格題要把每一格都收進來，只讀第一格的話第二格永遠是空的
       : [...el('wsOut').querySelectorAll(`input[data-q="${q.id}"]`)].map(x => x.value ?? '');
   try {
@@ -214,7 +216,7 @@ async function submitWordQuiz(){
       if (!r.correct) wrong.push(r.term);
       card.insertAdjacentHTML('beforeend', `<div class="q-result">
         <span class="q-verdict">${r.correct ? '✓ 答對了' : '✗ 答錯了'}</span>${
-        r.correct ? '' : `正解：<span class="q-ans">${esc(r.expected.join('　'))}</span>\n`}${esc(r.explain)}</div>`);
+        r.correct ? '' : `${wsQuiz.questions.find(x => x.id === r.id)?.multi ? `你選了：${esc(r.given.join('　') || '（沒選）')}\n` : ''}正解：<span class="q-ans">${esc(r.expected.join('　'))}</span>\n`}${esc(r.explain)}</div>`);
     }
     const pct = Math.round(d.correct / d.total * 100);
     el('wsSummary').innerHTML = `<div class="sum-score"><b>${d.correct}</b> / ${d.total} 答對（${pct}%）</div>`

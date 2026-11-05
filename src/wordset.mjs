@@ -264,7 +264,39 @@ function qZh2En(w, all){
       + (alike.length ? `\n也可以寫 ${alike.map(x => x.term).join('、')}（也有「${s.zh}」的意思），這題兩個都算對。` : '') };
 }
 
-function qEn2Zh(w, all){
+/** 多義字的英翻中：複選題，要把這個字的意思全部選出來（家教筆試考的是「寫出意思」，只認得一個不夠）。
+ *  最多考 3 個意思（取字表排在前面的）；干擾項取自其他字，並排除這個字自己的任何意思。
+ *  只有單字測驗（ctx.multi）會出；測驗卷沿用單選。 */
+const MULTI_MAX = 3;
+function qEn2ZhMulti(w, all){
+  const seen = new Set();
+  const own = (w.senses ?? []).filter(s => s.zh && !seen.has(s.zh) && seen.add(s.zh));
+  if (own.length < 2) return null;
+  const right = own.slice(0, MULTI_MAX);
+  const bad = (o) => own.some(s => s.zh === o.zh || sharesZh(s.zh, o.zh));
+  const pool = shuffle(all.filter(x => x.id !== w.id).flatMap(x => x.senses ?? [])).filter(o => o.zh && !bad(o));
+  // 詞性相同的干擾項優先，看起來才像是真的選項
+  const samePos = pool.filter(o => right.some(s => s.pos === o.pos));
+  const uniq = [];
+  for (const o of [...samePos, ...pool]) if (!uniq.some(u => u.zh === o.zh || sharesZh(u.zh, o.zh))) uniq.push(o);
+  const need = right.length === 2 ? 3 : 2;               // 選項固定 5 個，2 個答案配 3 個干擾項
+  const wrong = uniq.slice(0, need);
+  if (wrong.length < 2) return null;
+  const pos = [...new Set(right.map(s => s.pos))].join('、');
+  return {
+    mode: 'en2zh', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
+    prompt: `「${w.term}」有 ${right.length} 個意思，請全部選出來`,
+    question: w.term, hint: `${pos}（複選：少選、多選都算錯）`,
+    inputMode: 'choice', multi: true,
+    choices: shuffle([...right, ...wrong]).map(o => ({ value: o.zh, label: senseLabel(o) })),
+    answer: right.map(s => s.zh),
+    explain: `${w.term} 的意思：\n` + own.map(s => `${senseLabel(s)}${s.example ? `\n　${s.example}　${s.exampleZh ?? ''}` : ''}`).join('\n'),
+    meta: { senseIdx: w.senses.indexOf(right[0]), multi: true },
+  };
+}
+
+function qEn2Zh(w, all, ctx){
+  if (ctx?.multi){ const m = qEn2ZhMulti(w, all); if (m) return m; }
   const s = pick(w.senses);
   if (!s?.zh) return null;
   const others = shuffle(all.filter(x => x.id !== w.id).flatMap(x => x.senses ?? []))
@@ -469,7 +501,7 @@ export function generateWordQuiz(words, { count = 10, modes = WORD_MODES, verbFo
     const b = new Map(want.map(m => [m, []]));
     for (const w of src)
       for (const m of want){
-        const q = WORD_BUILDERS[m](w, words, { verbForms, bank });
+        const q = WORD_BUILDERS[m](w, words, { verbForms, bank, multi: true });
         if (q) b.get(m).push(q);
       }
     return b;
@@ -504,6 +536,11 @@ export function generateWordQuiz(words, { count = 10, modes = WORD_MODES, verbFo
 
 export function gradeWord(q, given){
   const got = Array.isArray(given) ? given : [given];
+  // 複選題：選的和答案要完全一樣（順序不拘），少選、多選都算錯
+  if (q.multi){
+    const a = new Set(q.answer.map(cmp)), g = new Set(got.map(cmp).filter(Boolean));
+    return { correct: a.size === g.size && [...a].every(x => g.has(x)), expected: q.answer, given: got.filter(Boolean) };
+  }
   // accept 在時，每一格只要符合該格的任一種寫法就算對（got / gotten）
   const ok = q.accept
     ? q.accept.length === got.length &&
