@@ -15,6 +15,8 @@ import { migrate } from './migrate.mjs';
 export const SPELL_MODES = ['zh2en', 'listen', 'cloze', 'forms'];
 export const RECOG_CAP = 2;
 export const RECOG_MODES = ['en2zh', 'sense'];
+const SPELL_IN = SPELL_MODES.map(m => `'${m}'`).join(',');
+const RECOG_IN = RECOG_MODES.map(m => `'${m}'`).join(',');
 /** 統計卡「最近」的視窗：會拼、認得各自最近這麼多次作答 */
 export const RECENT_N = 100;
 export const BOX_MAX = 5;
@@ -414,7 +416,12 @@ export function openCache(file = 'data/cache.db'){
             WHERE a.user_token = ? AND COALESCE(a.is_fix,0) = 0${C.replace('source', 'a.source')}
             GROUP BY lower(w.term) HAVING COUNT(*) >= 2
             ORDER BY CAST(SUM(a.correct) AS REAL) / COUNT(*), COUNT(*) DESC, lower(w.term) LIMIT 10`),
-          bySet: q(`SELECT s.name, COUNT(*) total, SUM(a.correct) correct
+          // 會拼（自己寫）與認得（選擇題）分開算：選擇題容易，混在一起會把字表的正確率拉高
+          bySet: q(`SELECT s.name, COUNT(*) total, SUM(a.correct) correct,
+            SUM(CASE WHEN a.mode IN (${SPELL_IN}) THEN 1 ELSE 0 END) spell_total,
+            SUM(CASE WHEN a.mode IN (${SPELL_IN}) THEN a.correct ELSE 0 END) spell_correct,
+            SUM(CASE WHEN a.mode IN (${RECOG_IN}) THEN 1 ELSE 0 END) recog_total,
+            SUM(CASE WHEN a.mode IN (${RECOG_IN}) THEN a.correct ELSE 0 END) recog_correct
             FROM word_attempts a JOIN words w ON w.id = a.word_id JOIN wordsets s ON s.id = w.set_id
             WHERE a.user_token = ? AND COALESCE(a.is_fix,0) = 0${C.replace('source', 'a.source')}
             GROUP BY s.id ORDER BY s.created_at DESC`),

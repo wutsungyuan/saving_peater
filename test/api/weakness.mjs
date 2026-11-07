@@ -35,6 +35,7 @@ try {
   chk('依模式的正確率（中考英 1/3、英考中 3/3）', (m => m.zh2en.correct === 1 && m.zh2en.total === 3 && m.en2zh.correct === 3)(Object.fromEntries(w.words.byMode.map(x => [x.mode, x]))));
   chk('最弱的字：w1 排第一（1/3），w2 滿分排後面', w.words.weakest[0].term === w1.term.toLowerCase() && w.words.weakest[0].total === 3 && w.words.weakest[0].correct === 1, JSON.stringify(w.words.weakest));
   chk('依字表統計', w.words.bySet.length === 1 && w.words.bySet[0].total === 6, JSON.stringify(w.words.bySet));
+  chk('字表統計分成會拼（中考英 1/3）與認得（英考中 3/3）', (s => s.spell_total === 3 && s.spell_correct === 1 && s.recog_total === 3 && s.recog_correct === 3)(w.words.bySet[0]), JSON.stringify(w.words.bySet));
   chk('亂寫的來源 → 當成全部', (await get('zzz')).source === 'all');
 
   section('測驗卷');

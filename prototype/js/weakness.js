@@ -102,10 +102,12 @@ function wkWordSections(w){
   const modeRows = [...(x.byMode || [])].sort((a, b) => a.correct / a.total - b.correct / b.total)
     .map(r => wkRow(WMODE_NAME[r.mode] || r.mode, '', r.correct, r.total)).join('');
   const weakRows = (x.weakest || []).map(r => wkRow(r.term, '', r.correct, r.total)).join('');
-  const setRows = (x.bySet || []).map(r => wkRow(r.name, '', r.correct, r.total)).join('');
+  // 每份字表分成會拼、認得兩列，一起看才知道是哪一種弱
+  const setRows = (x.bySet || []).map(r =>
+    wkRow(r.name, '會拼（自己寫）', r.spell_correct, r.spell_total) + wkRow(r.name, '認得（選擇題）', r.recog_correct, r.recog_total)).join('');
   return wkSection('單字題型', '單字測驗與測驗卷的單字題，哪一種題型最弱。', modeRows) +
     (weakRows ? wkSection('最弱的單字', '至少作答 2 次的字，依正確率由低到高，最多列 10 個。', weakRows) : '') +
-    (setRows ? wkSection('各單字表', '每份字表累計的正確率。', setRows) : '');
+    (setRows ? wkSection('各單字表', '每份字表累計的正確率，分成會拼（中翻英、聽寫、填空、三態）和認得（選擇題）。選擇題比較容易，分開看才準。', setRows) : '');
 }
 
 /** 測驗卷成績：最近幾份的分數、各題型累計得分率（卷子歷史只保留近期，所以是近期成績） */
