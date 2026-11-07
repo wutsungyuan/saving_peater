@@ -1,7 +1,7 @@
 // 路由：單字表：建立、辨識、測驗、交卷。
 // 每條路由是 { match, handler }。handler 沒有送出回應時，server 會繼續比對下一條（和原本的 if 串列一致）。
 import { join } from 'node:path';
-import { parseWordList, enrich, generateWordQuiz, gradeWord, WORD_MODES, extractFromImage, wordsToText, searchWords } from '../wordset.mjs';
+import { parseWordList, enrich, generateWordQuiz, gradeWord, diagnoseText, WORD_MODES, extractFromImage, wordsToText, searchWords } from '../wordset.mjs';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { ROOT } from '../config.mjs';
@@ -311,7 +311,14 @@ export const routes = [
         cache.recordWordAttempt({ userToken, wordId: q.wordId, wordIds: q.wordIds, senseIdx: q.meta?.senseIdx,
           mode: q.mode, correct: g.correct, isFix,
           answer: g.given.join(' | '), expected: g.expected.join(' | ') });
-        return { id:q.id, wordId:q.wordId, correct:g.correct, expected:q.answer, given:g.given, explain:q.explain, term:q.term };
+        // 文字題答錯：說明錯在哪。固定的「拼字：」提示只在真的有字拼錯時才留，
+        // 否則（錯的是空格、少字）會像在說另一個字拼錯了
+        let explain = q.explain, diag = null;
+        if (!g.correct && q.inputMode === 'text' && (q.blanks || 1) === 1){
+          diag = diagnoseText(g.given[0], q.answer[0]);
+          if (diag && diag.kind !== 'spell') explain = explain.replace(/\n拼字：[^\n]*$/, '');
+        }
+        return { id:q.id, wordId:q.wordId, correct:g.correct, expected:q.answer, given:g.given, explain, diag, term:q.term };
       });
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ results, isFix,

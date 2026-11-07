@@ -550,6 +550,49 @@ export function gradeWord(q, given){
   return { correct: ok || alt, expected: q.answer, given: got };
 }
 
+function editDistance(a, b){
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++){
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++)
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** 文字題答錯時，說明「錯在哪」：空格、少字、多字、拼錯。
+ *  回傳 { kind, note, marks } —— marks 是「你寫的」裡要標紅的字；kind 為 spell 才表示有字拼錯
+ *  （固定的拼字提示只在這時才有意義）。只處理單格題；答對或看不出差別回 null。 */
+export function diagnoseText(given, expected){
+  const tok = s => String(s ?? '').trim().split(/\s+/).filter(Boolean);
+  const key = t => cmp(t);
+  const G = tok(given), E = tok(expected);
+  if (!G.length) return { kind: 'blank', note: '這題沒有作答。', marks: [] };
+  if (G.map(key).join(' ') === E.map(key).join(' ')) return null;
+  if (G.map(key).join('') === E.map(key).join(''))
+    return { kind: 'space', note: `空格不對：應該分成 ${E.join(' ／ ')}`, marks: G.filter(t => !E.some(e => key(e) === key(t))) };
+  // 逐字比對：先把兩邊都有的字配掉，剩下的才是錯的
+  const left = [...E], extra = [];
+  for (const t of G){
+    const i = left.findIndex(e => key(e) === key(t));
+    if (i >= 0) left.splice(i, 1); else extra.push(t);
+  }
+  const lines = [], marks = [];
+  let spell = false;
+  const pairs = Math.min(left.length, extra.length);
+  for (let i = 0; i < pairs; i++){
+    marks.push(extra[i]);
+    // 差太多就不是拼錯，是寫成別的字了；這時拼字提示沒有意義
+    if (editDistance(key(extra[i]), key(left[i])) > Math.max(2, Math.ceil(left[i].length / 2))){ lines.push(`${extra[i]} 不是這個字，應該是 ${left[i]}`); continue; }
+    lines.push(`${extra[i]} 拼錯了，應該是 ${left[i]}`); spell = true;
+  }
+  for (const t of left.slice(pairs)) lines.push(`少了 ${t}`);
+  for (const t of extra.slice(pairs)){ lines.push(`多了 ${t}`); marks.push(t); }
+  if (!lines.length) return { kind: 'order', note: '字的順序不對。', marks: [] };
+  return { kind: spell ? 'spell' : 'words', note: lines.join('；'), marks };
+}
+
 // ---------------------------------------------------------------------------
 // 拍照辨識：讀課本單字表的照片，抄出單字與中文
 // ---------------------------------------------------------------------------

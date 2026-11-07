@@ -188,6 +188,14 @@ el('view-words').addEventListener('click', e => {
   Spk.speak(b.dataset.say, { onEnd: () => b.classList.remove('on') });
 });
 
+/** 文字題答錯：顯示「你寫的」（有問題的字標紅）和錯在哪。輸入框太窄看不到整句，這裡完整列出。 */
+function diagHtml(r){
+  if (!r.diag) return '';
+  const bad = new Set(r.diag.marks.map(m => m.toLowerCase()));
+  const written = String(r.given[0] ?? '').split(/(\s+)/).map(t => bad.has(t.toLowerCase()) ? `<mark class="q-bad">${esc(t)}</mark>` : esc(t)).join('');
+  return `你寫的：<span class="q-mine">${written || '（空白）'}</span>\n${esc(r.diag.note)}\n`;
+}
+
 async function submitWordQuiz(){
   if (!wsQuiz) return;
   el('wsSubmit').disabled = true;
@@ -216,7 +224,7 @@ async function submitWordQuiz(){
       if (!r.correct) wrong.push(r.term);
       card.insertAdjacentHTML('beforeend', `<div class="q-result">
         <span class="q-verdict">${r.correct ? '✓ 答對了' : '✗ 答錯了'}</span>${
-        r.correct ? '' : `${wsQuiz.questions.find(x => x.id === r.id)?.multi ? `你選了：${esc(r.given.join('　') || '（沒選）')}\n` : ''}正解：<span class="q-ans">${esc(r.expected.join('　'))}</span>\n`}${esc(r.explain)}</div>`);
+        r.correct ? '' : `${wsQuiz.questions.find(x => x.id === r.id)?.multi ? `你選了：${esc(r.given.join('　') || '（沒選）')}\n` : ''}${diagHtml(r)}正解：<span class="q-ans">${esc(r.expected.join('　'))}</span>\n`}${esc(r.explain)}</div>`);
     }
     const pct = Math.round(d.correct / d.total * 100);
     el('wsSummary').innerHTML = `<div class="sum-score"><b>${d.correct}</b> / ${d.total} 答對（${pct}%）</div>`

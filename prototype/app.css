@@ -313,6 +313,10 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
 .ime-warn[data-show="1"]{opacity:1;transform:none}
 .q-blanks input{font-family:var(--font-en);font-size:1rem;padding:8px 11px;border:1px solid var(--rule);
   border-radius:3px;background:var(--surface-2);color:var(--fg);min-width:140px}
+/* 一格的題目（常是整個詞組）輸入框佔滿一行，整句才看得到；多格題維持並排 */
+.q-blanks input:only-of-type{flex:1 1 100%;min-width:0}
+.q-mine{font-family:var(--font-en);color:var(--fg)}
+.q-bad{background:var(--err-bg);color:var(--err);font-weight:700;text-decoration:underline wavy;padding:0 2px;border-radius:2px}
 .q.graded{border-width:2px}
 .q.ok{border-color:var(--c-o)} .q.ng{border-color:var(--err)}
 .q-result{font-size:.88rem;line-height:1.75;padding:11px 13px;border-radius:3px;white-space:pre-line}
