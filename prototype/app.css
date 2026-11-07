@@ -121,6 +121,9 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--o
   text-transform:uppercase;color:var(--muted);font-family:var(--font-mono)}
 .wk-sec .cap{font-size:.78rem;color:var(--faint);margin:0 0 13px;line-height:1.6}
 .wk-rows{display:flex;flex-direction:column;gap:9px}
+.wk-group{display:flex;flex-direction:column;gap:9px;padding-top:12px;border-top:1px solid var(--rule)}
+.wk-group:first-child{padding-top:0;border-top:0}
+.wk-group h5{margin:0;font-size:.95rem;font-weight:700;color:var(--fg)}
 .wk-row{display:grid;grid-template-columns:11em minmax(0,1fr) auto;gap:12px;align-items:center}
 .wk-row .name{font-size:.86rem;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wk-row .name small{color:var(--faint);font-family:var(--font-mono);font-size:.72rem;margin-left:5px}
