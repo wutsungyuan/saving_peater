@@ -570,27 +570,73 @@ export function diagnoseText(given, expected){
   const G = tok(given), E = tok(expected);
   if (!G.length) return { kind: 'blank', note: '這題沒有作答。', marks: [] };
   if (G.map(key).join(' ') === E.map(key).join(' ')) return null;
-  if (G.map(key).join('') === E.map(key).join(''))
-    return { kind: 'space', note: `空格不對：應該分成 ${E.join(' ／ ')}`, marks: G.filter(t => !E.some(e => key(e) === key(t))) };
-  // 逐字比對：先把兩邊都有的字配掉，剩下的才是錯的
-  const left = [...E], extra = [];
-  for (const t of G){
-    const i = left.findIndex(e => key(e) === key(t));
-    if (i >= 0) left.splice(i, 1); else extra.push(t);
-  }
+
+  // 先把兩邊都有的字配掉，剩下的才是有問題的
+  const gFree = G.map(() => true), eFree = E.map(() => true);
+  G.forEach((t, i) => { const j = E.findIndex((e, k) => eFree[k] && key(e) === key(t)); if (j >= 0){ gFree[i] = false; eFree[j] = false; } });
+
   const lines = [], marks = [];
-  let spell = false;
-  const pairs = Math.min(left.length, extra.length);
-  for (let i = 0; i < pairs; i++){
-    marks.push(extra[i]);
-    // 差太多就不是拼錯，是寫成別的字了；這時拼字提示沒有意義
-    if (editDistance(key(extra[i]), key(left[i])) > Math.max(2, Math.ceil(left[i].length / 2))){ lines.push(`${extra[i]} 不是這個字，應該是 ${left[i]}`); continue; }
-    lines.push(`${extra[i]} 拼錯了，應該是 ${left[i]}`); spell = true;
+  let spell = false, space = false, other = false;
+  const spellWords = [];
+  // 連續幾個沒配到的字，合起來剛好等於另一邊的一個字 → 空格問題
+  const runOf = (arr, free, target) => {
+    for (let i = 0; i < arr.length; i++){
+      if (!free[i]) continue;
+      let acc = '';
+      for (let j = i; j < arr.length && free[j]; j++){
+        acc += key(arr[j]);
+        if (j > i && acc === target) return [i, j];
+        if (acc.length >= target.length) break;
+      }
+    }
+    return null;
+  };
+  for (let i = 0; i < G.length; i++){                       // 寫的一個字 = 正解的連續幾個字：少了空格
+    if (!gFree[i]) continue;
+    const r = runOf(E, eFree, key(G[i]));
+    if (!r) continue;
+    lines.push(`「${G[i]}」中間少了空格，應該寫成 ${E.slice(r[0], r[1] + 1).join(' ')}`);
+    marks.push(G[i]); gFree[i] = false; for (let k = r[0]; k <= r[1]; k++) eFree[k] = false; space = true;
   }
-  for (const t of left.slice(pairs)) lines.push(`少了 ${t}`);
-  for (const t of extra.slice(pairs)){ lines.push(`多了 ${t}`); marks.push(t); }
+  for (let i = 0; i < E.length; i++){                       // 正解的一個字 = 寫的連續幾個字：多切了空格
+    if (!eFree[i]) continue;
+    const r = runOf(G, gFree, key(E[i]));
+    if (!r) continue;
+    lines.push(`「${G.slice(r[0], r[1] + 1).join(' ')}」多了空格，應該連在一起寫成 ${E[i]}`);
+    marks.push(...G.slice(r[0], r[1] + 1)); eFree[i] = false; for (let k = r[0]; k <= r[1]; k++) gFree[k] = false; space = true;
+  }
+
+  // 剩下的：先把最像的配成「拼錯」，再處理少字、多字
+  const near = w => Math.max(2, Math.ceil(w.length / 3));
+  const eLeft = E.filter((_, i) => eFree[i]);
+  const gLeft = G.filter((_, i) => gFree[i]);
+  const unmatched = [];
+  for (const g of gLeft){
+    let best = -1, bd = Infinity;
+    eLeft.forEach((e, k) => { const d = editDistance(key(g), key(e)); if (d < bd){ bd = d; best = k; } });
+    if (best >= 0 && bd <= near(eLeft[best])){
+      lines.push(`${g} 拼錯了，應該是 ${eLeft[best]}`); marks.push(g); spell = true; spellWords.push(eLeft[best]); eLeft.splice(best, 1);
+    } else unmatched.push(g);
+  }
+  // 還剩的字數一樣：寫成別的字了（不是拼錯，拼字提示沒有意義）
+  const pairs = Math.min(unmatched.length, eLeft.length);
+  other = unmatched.length > 0 || eLeft.length > 0;
+  for (let i = 0; i < pairs; i++){ lines.push(`${unmatched[i]} 不是這個字，應該是 ${eLeft[i]}`); marks.push(unmatched[i]); }
+  for (const e of eLeft.slice(pairs)) lines.push(`少了 ${e}`);
+  for (const g of unmatched.slice(pairs)){ lines.push(`多了 ${g}`); marks.push(g); }
   if (!lines.length) return { kind: 'order', note: '字的順序不對。', marks: [] };
-  return { kind: spell ? 'spell' : 'words', note: lines.join('；'), marks };
+  return { kind: spell ? 'spell' : space && !other ? 'space' : 'words', note: lines.join('；'), marks, spellWords };
+}
+
+/** 固定的拼字提示（例：stomach 結尾是 -ach）要不要附在答錯的解說裡。
+ *  提示有提到正解裡的某個字（stomach）→ 只有那個字真的拼錯才附；
+ *  提示沒提到任何字（單字題：中間有兩個 s）→ 有字拼錯就附。 */
+export function tipRelevant(tip, expected, diag){
+  if (!tip || !diag || diag.kind !== 'spell') return false;
+  const words = String(expected ?? '').split(/\s+/).map(cmp).filter(w => w.length > 2);
+  const mentioned = words.filter(w => new RegExp(`\\b${w.replace(/[^a-z0-9']/g, '')}`, 'i').test(tip));
+  if (!mentioned.length) return true;
+  return mentioned.some(w => (diag.spellWords ?? []).some(s => cmp(s) === w));
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 // 路由：單字表：建立、辨識、測驗、交卷。
 // 每條路由是 { match, handler }。handler 沒有送出回應時，server 會繼續比對下一條（和原本的 if 串列一致）。
 import { join } from 'node:path';
-import { parseWordList, enrich, generateWordQuiz, gradeWord, diagnoseText, WORD_MODES, extractFromImage, wordsToText, searchWords } from '../wordset.mjs';
+import { parseWordList, enrich, generateWordQuiz, gradeWord, diagnoseText, tipRelevant, WORD_MODES, extractFromImage, wordsToText, searchWords } from '../wordset.mjs';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { ROOT } from '../config.mjs';
@@ -316,7 +316,8 @@ export const routes = [
         let explain = q.explain, diag = null;
         if (!g.correct && q.inputMode === 'text' && (q.blanks || 1) === 1){
           diag = diagnoseText(g.given[0], q.answer[0]);
-          if (diag && diag.kind !== 'spell') explain = explain.replace(/\n拼字：[^\n]*$/, '');
+          const tip = /\n拼字：([^\n]*)$/.exec(explain)?.[1];
+          if (diag && tip && !tipRelevant(tip, q.answer[0], diag)) explain = explain.replace(/\n拼字：[^\n]*$/, '');
         }
         return { id:q.id, wordId:q.wordId, correct:g.correct, expected:q.answer, given:g.given, explain, diag, term:q.term };
       });
