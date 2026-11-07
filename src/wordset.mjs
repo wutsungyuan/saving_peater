@@ -561,6 +561,34 @@ function editDistance(a, b){
   return prev[b.length];
 }
 
+/** 片語的中性對照：用最長共同子序列把兩邊對齊，中間不同的地方逐段列出「你寫／正解」，
+ *  不判斷是拼錯、單複數還是時態。diffWords 是正解裡不一樣的字（決定拼字提示要不要附）。 */
+function diffPhrase(G, E, key){
+  // 同樣的字只是順序不同
+  if ([...G.map(key)].sort().join(' ') === [...E.map(key)].sort().join(' ')) return { kind: 'order', note: '字的順序不對。', marks: [], spellWords: [] };
+  const n = G.length, m = E.length;
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i][j] = key(G[i]) === key(E[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const lines = [], marks = [], diffWords = [];
+  let i = 0, j = 0, gg = [], ee = [];
+  const flush = () => {
+    if (!gg.length && !ee.length) return;
+    lines.push(!gg.length ? `少了「${ee.join(' ')}」` : !ee.length ? `多了「${gg.join(' ')}」`
+      : `你寫「${gg.join(' ')}」，正解是「${ee.join(' ')}」`);
+    marks.push(...gg); diffWords.push(...ee); gg = []; ee = [];
+  };
+  while (i < n || j < m){
+    if (i < n && j < m && key(G[i]) === key(E[j])){ flush(); i++; j++; }
+    else if (j >= m || (i < n && dp[i + 1][j] >= dp[i][j + 1])) gg.push(G[i++]);
+    else ee.push(E[j++]);
+  }
+  flush();
+  if (!lines.length) return { kind: 'order', note: '字的順序不對。', marks: [], spellWords: [] };
+  return { kind: 'diff', note: lines.join('；'), marks, spellWords: diffWords };
+}
+
 /** 文字題答錯時，說明「錯在哪」：空格、少字、多字、拼錯。
  *  回傳 { kind, note, marks } —— marks 是「你寫的」裡要標紅的字；kind 為 spell 才表示有字拼錯
  *  （固定的拼字提示只在這時才有意義）。只處理單格題；答對或看不出差別回 null。 */
@@ -606,6 +634,14 @@ export function diagnoseText(given, expected){
     marks.push(...G.slice(r[0], r[1] + 1)); eFree[i] = false; for (let k = r[0]; k <= r[1]; k++) gFree[k] = false; space = true;
   }
 
+  // 片語：每個字的角色（單複數、時態、固定搭配）不同，逐字猜「拼錯」容易猜錯。
+  // 只有「單純空格問題」有把握；其他一律中性對照：你寫什麼、正解是什麼。
+  if (E.length > 1){
+    if (space && !gFree.some(Boolean) && !eFree.some(Boolean))
+      return { kind: 'space', note: lines.join('；'), marks, spellWords: [] };
+    return diffPhrase(G, E, key);
+  }
+
   // 剩下的：先把最像的配成「拼錯」，再處理少字、多字
   const near = w => Math.max(2, Math.ceil(w.length / 3));
   const eLeft = E.filter((_, i) => eFree[i]);
@@ -632,10 +668,10 @@ export function diagnoseText(given, expected){
  *  提示有提到正解裡的某個字（stomach）→ 只有那個字真的拼錯才附；
  *  提示沒提到任何字（單字題：中間有兩個 s）→ 有字拼錯就附。 */
 export function tipRelevant(tip, expected, diag){
-  if (!tip || !diag || diag.kind !== 'spell') return false;
+  if (!tip || !diag || (diag.kind !== 'spell' && diag.kind !== 'diff')) return false;
   const words = String(expected ?? '').split(/\s+/).map(cmp).filter(w => w.length > 2);
   const mentioned = words.filter(w => new RegExp(`\\b${w.replace(/[^a-z0-9']/g, '')}`, 'i').test(tip));
-  if (!mentioned.length) return true;
+  if (!mentioned.length) return diag.kind === 'spell';      // 片語的提示沒指名哪個字：不確定相不相關，不附
   return mentioned.some(w => (diag.spellWords ?? []).some(s => cmp(s) === w));
 }
 
