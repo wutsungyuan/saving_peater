@@ -102,12 +102,15 @@ function wkWordSections(w){
   const modeRows = [...(x.byMode || [])].sort((a, b) => a.correct / a.total - b.correct / b.total)
     .map(r => wkRow(WMODE_NAME[r.mode] || r.mode, '', r.correct, r.total)).join('');
   const weakRows = (x.weakest || []).map(r => wkRow(r.term, '', r.correct, r.total)).join('');
-  // 每份字表自成一組：標題是字表名稱，底下會拼、認得兩列，一起看才知道是哪一種弱
+  // 每份字表自成一組：標題是字表名稱，底下會拼、認得兩列。長條看最近 N 次（反映現在的程度），累積的放在組尾
+  const N = x.recentN || 100;
+  const pctOf = (c, n) => n ? `${Math.round(c / n * 100)}%（${c}/${n}）` : '—';
   const setRows = (x.bySet || []).map(r => `<div class="wk-group"><h5>${esc(r.name)}</h5>` +
-    wkRow('會拼', '自己寫', r.spell_correct, r.spell_total) + wkRow('認得', '選擇題', r.recog_correct, r.recog_total) + '</div>').join('');
+    wkRow('會拼', `近 ${N} 次`, r.spell_recent_correct, r.spell_recent_total) + wkRow('認得', `近 ${N} 次`, r.recog_recent_correct, r.recog_recent_total) +
+    `<p class="cap wk-all">累積：會拼 ${pctOf(r.spell_correct, r.spell_total)}　認得 ${pctOf(r.recog_correct, r.recog_total)}</p></div>`).join('');
   return wkSection('單字題型', '單字測驗與測驗卷的單字題，哪一種題型最弱。', modeRows) +
     (weakRows ? wkSection('最弱的單字', '至少作答 2 次的字，依正確率由低到高，最多列 10 個。', weakRows) : '') +
-    (setRows ? wkSection('各單字表', '每份字表累計的正確率，分成會拼（中翻英、聽寫、填空、三態）和認得（選擇題）。選擇題比較容易，分開看才準。', setRows) : '');
+    (setRows ? wkSection('各單字表', '每份字表分成會拼（中翻英、聽寫、填空、三態）和認得（選擇題）。長條是最近 100 次作答，反映現在的程度；累積的數字在每組最下面。選擇題比較容易，分開看才準。', setRows) : '');
 }
 
 /** 測驗卷成績：最近幾份的分數、各題型累計得分率（卷子歷史只保留近期，所以是近期成績） */

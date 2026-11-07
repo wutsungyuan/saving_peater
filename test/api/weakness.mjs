@@ -12,6 +12,10 @@ const [w1, w2] = words;
 for (const ok of [true, true, false, false]) fx.cache.recordAttempt({ userToken: U, qtype: 'pattern', patternId: 3, correct: ok });
 for (const ok of [false, false, true]) fx.cache.recordWordAttempt({ userToken: U, wordId: w1.id, mode: 'zh2en', correct: ok });
 for (const ok of [true, true, true]) fx.cache.recordWordAttempt({ userToken: U, wordId: w2.id, mode: 'en2zh', correct: ok });
+// 另一個學生：會拼 105 次（最舊 5 次答錯、之後全對）、認得 2 次（1 對 1 錯）；用來驗證「最近 100 次」
+const V = 'vet';
+for (let i = 0; i < 105; i++) fx.cache.recordWordAttempt({ userToken: V, wordId: w1.id, mode: 'zh2en', correct: i >= 5 });
+for (const ok of [true, false]) fx.cache.recordWordAttempt({ userToken: V, wordId: w2.id, mode: 'en2zh', correct: ok });
 // 訂正不計
 fx.cache.recordWordAttempt({ userToken: U, wordId: w1.id, mode: 'zh2en', correct: true, isFix: true });
 fx.cache.db.close?.();
@@ -37,6 +41,15 @@ try {
   chk('依字表統計', w.words.bySet.length === 1 && w.words.bySet[0].total === 6, JSON.stringify(w.words.bySet));
   chk('字表統計分成會拼（中考英 1/3）與認得（英考中 3/3）', (s => s.spell_total === 3 && s.spell_correct === 1 && s.recog_total === 3 && s.recog_correct === 3)(w.words.bySet[0]), JSON.stringify(w.words.bySet));
   chk('亂寫的來源 → 當成全部', (await get('zzz')).source === 'all');
+
+  section('各字表：近 100 次與累積分開');
+  const wv = (await j(`/api/weakness?user=${V}&source=quiz`)).json;
+  const sv = wv.words.bySet[0];
+  chk('回傳視窗大小', wv.words.recentN === 100, String(wv.words.recentN));
+  chk('累積：會拼 100/105（含最舊 5 次答錯）、認得 1/2', sv.spell_total === 105 && sv.spell_correct === 100 && sv.recog_total === 2 && sv.recog_correct === 1, JSON.stringify(sv));
+  chk('近 100 次：會拼 100/100（最舊的答錯被排除）、認得只有 2 次就是 1/2', sv.spell_recent_total === 100 && sv.spell_recent_correct === 100 && sv.recog_recent_total === 2 && sv.recog_recent_correct === 1, JSON.stringify(sv));
+  const sw = (await get('quiz')).words.bySet[0];
+  chk('另一個學生的作答不混進來：stu 會拼 1/3、近 100 次也是 1/3', sw.spell_total === 3 && sw.spell_recent_total === 3 && sw.spell_recent_correct === 1, JSON.stringify(sw));
 
   section('測驗卷');
   let r = await j('/api/papers', { method: 'POST', body: { setIds: [fx.setId], articleIds: [fx.artId], n: 25, difficulty: 'easy', saver: true, userToken: U } });

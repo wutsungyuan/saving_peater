@@ -408,6 +408,7 @@ export function openCache(file = 'data/cache.db'){
           WHERE user_token = ? AND COALESCE(is_fix,0) = 0${C} ORDER BY created_at DESC LIMIT 20`),
         words: {
           ...word,
+          recentN: RECENT_N,
           byMode: q(`SELECT mode, COUNT(*) total, SUM(correct) correct FROM word_attempts
             WHERE user_token = ? AND COALESCE(is_fix,0) = 0${C} GROUP BY mode ORDER BY mode`),
           // 同一個字出現在多份字表時合併計算；至少作答 2 次才排進最弱的字
@@ -417,14 +418,31 @@ export function openCache(file = 'data/cache.db'){
             GROUP BY lower(w.term) HAVING COUNT(*) >= 2
             ORDER BY CAST(SUM(a.correct) AS REAL) / COUNT(*), COUNT(*) DESC, lower(w.term) LIMIT 10`),
           // 會拼（自己寫）與認得（選擇題）分開算：選擇題容易，混在一起會把字表的正確率拉高
-          bySet: q(`SELECT s.name, COUNT(*) total, SUM(a.correct) correct,
+          bySet: (() => {
+          const rows = q(`SELECT s.id set_id, s.name, COUNT(*) total, SUM(a.correct) correct,
             SUM(CASE WHEN a.mode IN (${SPELL_IN}) THEN 1 ELSE 0 END) spell_total,
             SUM(CASE WHEN a.mode IN (${SPELL_IN}) THEN a.correct ELSE 0 END) spell_correct,
             SUM(CASE WHEN a.mode IN (${RECOG_IN}) THEN 1 ELSE 0 END) recog_total,
             SUM(CASE WHEN a.mode IN (${RECOG_IN}) THEN a.correct ELSE 0 END) recog_correct
             FROM word_attempts a JOIN words w ON w.id = a.word_id JOIN wordsets s ON s.id = w.set_id
             WHERE a.user_token = ? AND COALESCE(a.is_fix,0) = 0${C.replace('source', 'a.source')}
-            GROUP BY s.id ORDER BY s.created_at DESC`),
+            GROUP BY s.id ORDER BY s.created_at DESC`);
+          // 每份字表、會拼與認得各自最近 RECENT_N 次：累積的被過去答錯拖著，這個才看得出現在的程度
+          const kind = `CASE WHEN a.mode IN (${SPELL_IN}) THEN 'spell' ELSE 'recog' END`;
+          const rec = q(`SELECT sid, kind, COUNT(*) total, SUM(correct) correct FROM (
+              SELECT s.id sid, ${kind} kind, a.correct,
+                ROW_NUMBER() OVER (PARTITION BY s.id, ${kind} ORDER BY a.created_at DESC, a.id DESC) rn
+              FROM word_attempts a JOIN words w ON w.id = a.word_id JOIN wordsets s ON s.id = w.set_id
+              WHERE a.user_token = ? AND COALESCE(a.is_fix,0) = 0${C.replace('source', 'a.source')}
+                AND a.mode IN (${SPELL_IN},${RECOG_IN})) WHERE rn <= ${RECENT_N} GROUP BY sid, kind`);
+          for (const r of rows){
+            for (const k of ['spell', 'recog']){
+              const x = rec.find(y => y.sid === r.set_id && y.kind === k);
+              r[`${k}_recent_total`] = x?.total ?? 0; r[`${k}_recent_correct`] = x?.correct ?? 0;
+            }
+          }
+          return rows;
+        })(),
         },
         papers: src === 'all' || src === 'exam' ? this.paperSummary() : null,
       };
