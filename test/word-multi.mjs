@@ -42,7 +42,7 @@ chk('沒開 multi（測驗卷）時多義字也維持單選', !WORD_BUILDERS.en2
 const tiny = [light, book];
 chk('其他字太少湊不出干擾項：退回單選，不出壞題', !WORD_BUILDERS.en2zh(light, tiny, { multi: true })?.multi);
 
-const quiz = generateWordQuiz(all, { count: 10, modes: ['en2zh'] });
+const quiz = generateWordQuiz(all, { count: all.length, modes: ['en2zh'] });
 chk('整份測驗：多義字是複選、其他是單選', quiz.some(x => x.multi) && quiz.some(x => !x.multi), JSON.stringify(quiz.map(x => [x.term, !!x.multi])));
 
 console.log(fail ? `\n${fail} 項失敗` : '\n全部通過');
