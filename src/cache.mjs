@@ -314,6 +314,7 @@ export function openCache(file = 'data/cache.db'){
       try {
         const del = (table) => { const c = this._recWhere(table, f); return c ? Number(db.prepare(`DELETE FROM ${table} WHERE ${c.sql}`).run(...c.p).changes) : 0; };
         const attempts = del('attempts'), wordAttempts = del('word_attempts');
+        del('speak_attempts');                    // 口說紀錄跟著單字作答一起清（不另外回報筆數）
         let progress = 0;
         if (f.resetProgress){
           const w = ["user_token != 'teacher'"], p = [];
@@ -351,6 +352,7 @@ export function openCache(file = 'data/cache.db'){
       try {
         const a = db.prepare(`UPDATE attempts SET user_token = ? WHERE user_token IN (${ph})`).run(target, ...src).changes;
         const w = db.prepare(`UPDATE word_attempts SET user_token = ? WHERE user_token IN (${ph})`).run(target, ...src).changes;
+        db.prepare(`UPDATE speak_attempts SET user_token = ? WHERE user_token IN (${ph})`).run(target, ...src);
         const rows = db.prepare(`SELECT user_token, word_id, box, due_at, correct, total FROM word_progress WHERE user_token IN (${ph}, ?)`).all(...src, target);
         const best = new Map();
         for (const r of rows){
@@ -440,6 +442,23 @@ export function openCache(file = 'data/cache.db'){
               const x = rec.find(y => y.sid === r.set_id && y.kind === k);
               r[`${k}_recent_total`] = x?.total ?? 0; r[`${k}_recent_correct`] = x?.correct ?? 0;
             }
+          }
+          // 會唸（口說）另一張表：累積與最近 RECENT_N 次。只唸過沒考過別的題型的字表也要列出來
+          const sp = q(`SELECT sid, COUNT(*) total, SUM(correct) correct, SUM(CASE WHEN rn <= ${RECENT_N} THEN 1 ELSE 0 END) rt,
+              SUM(CASE WHEN rn <= ${RECENT_N} THEN correct ELSE 0 END) rc FROM (
+              SELECT s.id sid, a.correct,
+                ROW_NUMBER() OVER (PARTITION BY s.id ORDER BY a.created_at DESC, a.id DESC) rn
+              FROM speak_attempts a JOIN words w ON w.id = a.word_id JOIN wordsets s ON s.id = w.set_id
+              WHERE a.user_token = ?${C.replace('source', 'a.source')}) GROUP BY sid`);
+          for (const x of sp) if (!rows.some(r => r.set_id === x.sid)){
+            const s = db.prepare('SELECT id, name FROM wordsets WHERE id = ?').get(x.sid);
+            if (s) rows.push({ set_id: s.id, name: s.name, total: 0, correct: 0, spell_total: 0, spell_correct: 0, recog_total: 0, recog_correct: 0,
+              spell_recent_total: 0, spell_recent_correct: 0, recog_recent_total: 0, recog_recent_correct: 0 });
+          }
+          for (const r of rows){
+            const x = sp.find(y => y.sid === r.set_id);
+            r.speak_total = x?.total ?? 0; r.speak_correct = x?.correct ?? 0;
+            r.speak_recent_total = x?.rt ?? 0; r.speak_recent_correct = x?.rc ?? 0;
           }
           return rows;
         })(),
@@ -640,6 +659,7 @@ export function openCache(file = 'data/cache.db'){
       db.exec('BEGIN');
       try {
         db.prepare(`DELETE FROM word_attempts WHERE word_id IN (SELECT id FROM words WHERE set_id IN (${qs}))`).run(...ids);
+        db.prepare(`DELETE FROM speak_attempts WHERE word_id IN (SELECT id FROM words WHERE set_id IN (${qs}))`).run(...ids);
         db.prepare(`DELETE FROM word_progress WHERE word_id IN (SELECT id FROM words WHERE set_id IN (${qs}))`).run(...ids);
         db.prepare(`DELETE FROM words WHERE set_id IN (${qs})`).run(...ids);
         const r = db.prepare(`DELETE FROM wordsets WHERE id IN (${qs})`).run(...ids);
@@ -681,6 +701,12 @@ export function openCache(file = 'data/cache.db'){
       } catch (e){ if (!dryRun) db.exec('ROLLBACK'); throw e; }
       const mastered = h => Object.entries(h).filter(([b]) => Number(b) >= 3).reduce((n, [, v]) => n + v, 0);
       return { before, after, masteredBefore: mastered(before), masteredAfter: mastered(after) };
+    },
+
+    /** 口說作答：只記錄，不動 Leitner 盒子、不進「會拼」「認得」的統計（語音辨識會聽錯）。訂正不記。 */
+    recordSpeakAttempt(a){
+      db.prepare(`INSERT INTO speak_attempts (user_token, word_id, correct, heard, expected, source, created_at)
+        VALUES (?,?,?,?,?,?,?)`).run(a.userToken, a.wordId, a.correct ? 1 : 0, a.heard ?? null, a.expected ?? null, a.source ?? 'quiz', Date.now());
     },
 
     /** 記錄單字作答並更新 Leitner 盒子 */
@@ -999,6 +1025,7 @@ export function openCache(file = 'data/cache.db'){
       db.exec('BEGIN');
       try {
         db.prepare(`DELETE FROM word_attempts WHERE word_id IN (${qs})`).run(...ids);
+        db.prepare(`DELETE FROM speak_attempts WHERE word_id IN (${qs})`).run(...ids);
         db.prepare(`DELETE FROM word_progress WHERE word_id IN (${qs})`).run(...ids);
         db.prepare(`DELETE FROM words WHERE id IN (${qs})`).run(...ids);
         db.exec('COMMIT');

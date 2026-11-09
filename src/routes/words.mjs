@@ -1,7 +1,7 @@
 // 路由：單字表：建立、辨識、測驗、交卷。
 // 每條路由是 { match, handler }。handler 沒有送出回應時，server 會繼續比對下一條（和原本的 if 串列一致）。
 import { join } from 'node:path';
-import { parseWordList, enrich, generateWordQuiz, gradeWord, diagnoseText, tipRelevant, WORD_MODES, extractFromImage, wordsToText, searchWords } from '../wordset.mjs';
+import { parseWordList, enrich, generateWordQuiz, gradeWord, diagnoseText, tipRelevant, WORD_MODES, ALL_WORD_MODES, extractFromImage, wordsToText, searchWords } from '../wordset.mjs';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { ROOT } from '../config.mjs';
@@ -279,7 +279,7 @@ export const routes = [
         return res.end(JSON.stringify({ error:'empty-set', message:'這份字表沒有單字。' }));
       }
       const modes = Array.isArray(b.modes) && b.modes.length
-        ? b.modes.filter(m => WORD_MODES.includes(m)) : WORD_MODES;
+        ? b.modes.filter(m => ALL_WORD_MODES.includes(m)) : WORD_MODES;
       // 三態直接取自分析過的句子，不用再問模型
       const questions = generateWordQuiz(words, {
         count: Math.min(Math.max(Number(b.count)||10,1),30), modes,
@@ -308,6 +308,12 @@ export const routes = [
       const isFix = quiz.kind.endsWith('-fix');     // 訂正不計入統計，也不推進 Leitner
       const results = quiz.questions.map(q => {
         const g = gradeWord(q, given[q.id] ?? []);
+        if (q.mode === 'speak'){
+          // 口說：沒唸（沒麥克風、沒權限）不計分也不記錄；訂正不記；不動熟練度盒子
+          if (!g.skipped && !isFix)
+            cache.recordSpeakAttempt({ userToken, wordId: q.wordId, correct: g.correct, heard: g.given.join(' | '), expected: q.answer[0] });
+          return { id:q.id, wordId:q.wordId, correct:g.correct, skipped:g.skipped, expected:q.answer, given:g.given, explain:q.explain, diag:null, term:q.term };
+        }
         cache.recordWordAttempt({ userToken, wordId: q.wordId, wordIds: q.wordIds, senseIdx: q.meta?.senseIdx,
           mode: q.mode, correct: g.correct, isFix,
           answer: g.given.join(' | '), expected: g.expected.join(' | ') });
@@ -323,7 +329,7 @@ export const routes = [
       });
       res.writeHead(200, { 'content-type':'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ results, isFix,
-        correct: results.filter(r=>r.correct).length, total: results.length }));
+        correct: results.filter(r=>r.correct).length, total: results.filter(r=>!r.skipped).length }));
     },
   },
 ];

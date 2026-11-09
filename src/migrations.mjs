@@ -237,6 +237,22 @@ function contentHidden(db){
   `);
 }
 
+/** 第 12 版：口說作答。獨立一張表，不混進 word_attempts：
+ *  語音辨識會聽錯，不該拿來推進或重設 Leitner 盒子，也不該拉動「會拼」「認得」的正確率。 */
+function speakAttempts(db){
+  db.exec(`
+    CREATE TABLE speak_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_token TEXT NOT NULL, word_id INTEGER NOT NULL,
+      correct INTEGER NOT NULL,
+      heard TEXT, expected TEXT,           -- 辨識到的字（候選以 | 分隔）、單字本身
+      source TEXT NOT NULL DEFAULT 'quiz',
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX idx_speak_user ON speak_attempts(user_token, created_at);
+  `);
+}
+
 export const MIGRATIONS = [
   { version: 1, name: 'baseline', up: baseline },
   { version: 2, name: 'articles', up: articles },
@@ -249,4 +265,5 @@ export const MIGRATIONS = [
   { version: 9, name: 'sentence-excluded', up: sentenceExcluded },
   { version: 10, name: 'audit-log', up: auditLog },
   { version: 11, name: 'content-hidden', up: contentHidden },
+  { version: 12, name: 'speak-attempts', up: speakAttempts },
 ];

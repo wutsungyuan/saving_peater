@@ -450,7 +450,59 @@ function qSense(w){
   };
 }
 
-export const WORD_BUILDERS = { zh2en:qZh2En, en2zh:qEn2Zh, listen:qListen, cloze:qCloze, sense:qSense, forms:qForms };
+/** 口說：看著單字大聲唸，瀏覽器的語音辨識把聽到的內容傳回來，和單字比對。
+ *  縮寫（TV、Mr.）唸法不固定、辨識結果也亂，不出。 */
+function qSpeak(w){
+  if (isAbbrev(w.term)) return null;
+  const s = w.senses?.[0];
+  return {
+    mode: 'speak', wordId: w.id, wordIds: w.mergedIds ?? [w.id], term: w.term,
+    prompt: '看著單字，大聲唸出來',
+    question: w.term, speak: w.term,           // speak：「聽示範」要唸的內容
+    hint: s?.zh ? `${s.pos} ${s.zh}` : null,
+    inputMode: 'speak',
+    answer: [w.term],
+    explain: `${w.term}（${w.syllables || w.term}）` + (s?.zh ? ` ${s.pos} ${s.zh}` : ''),
+    meta: { senseIdx: 0 },
+  };
+}
+
+const ONES = ['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+const TENS = ['', '', 'twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+/** 0–999 的英文唸法。語音辨識常把 two 寫成 2，兩邊都轉成字再比。 */
+function numWords(n){
+  if (n < 20) return ONES[n];
+  if (n < 100) return TENS[Math.floor(n / 10)] + (n % 10 ? ` ${ONES[n % 10]}` : '');
+  return `${ONES[Math.floor(n / 100)]} hundred` + (n % 100 ? ` ${numWords(n % 100)}` : '');
+}
+// 所有格：片語寫 one's／sb's 時，唸 my、your、his… 都算對
+const POSS = new Set(['my','your','his','her','its','our','their','ones','someones','somebodys','sbs']);
+const SOMEONE = new Set(['sb','sth','someone','somebody','something','him','her','them','me','you','us','it']);
+
+function spokenTokens(s){
+  return String(s ?? '').toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')                         // 字表裡的 (be) 之類不唸
+    .replace(/\d{1,3}/g, m => ` ${numWords(Number(m))} `)
+    .replace(/['’]/g, '').replace(/[^a-z\s]/g, ' ')     // 撇號去掉（don't→dont、one's→ones）、連字號與標點當空格
+    .split(/\s+/).filter(Boolean);
+}
+const tokEq = (e, g) => e === g || (POSS.has(e) && POSS.has(g)) || (SOMEONE.has(e) && SOMEONE.has(g));
+
+/** 聽到的 heard 算不算唸對 term。字表裡 a/b 寫法（color/colour）唸哪個都算。 */
+export function spokenMatch(heard, term){
+  const G = spokenTokens(heard);
+  if (!G.length) return false;
+  return String(term ?? '').split('/').some(t => {
+    const E = spokenTokens(t);
+    if (!E.length) return false;
+    return (E.length === G.length && E.every((e, i) => tokEq(e, G[i])))
+      || E.join('') === G.join('');                     // ice cream／icecream 這類連寫
+  });
+}
+
+export const WORD_BUILDERS = { zh2en:qZh2En, en2zh:qEn2Zh, listen:qListen, cloze:qCloze, sense:qSense, forms:qForms, speak:qSpeak };
+/** 口說要瀏覽器有麥克風與語音辨識（HTTPS 才有），所以不在預設題型裡，由前端確認可用後才要求。 */
+export const ALL_WORD_MODES = [...WORD_MODES, 'speak'];
 
 /** 從一份字表生成測驗。words 要帶進度欄位（box / dueAt / total）
  *  題型用輪流取的方式，確保五種平均分佈，不是每個字各自隨機挑 */
@@ -536,6 +588,11 @@ export function generateWordQuiz(words, { count = 10, modes = WORD_MODES, verbFo
 
 export function gradeWord(q, given){
   const got = Array.isArray(given) ? given : [given];
+  // 口說：given 是辨識到的所有候選（可能多次嘗試）。任何一個唸對就算對；一個都沒有＝沒作答
+  if (q.mode === 'speak'){
+    const heard = got.map(x => String(x ?? '').trim()).filter(Boolean);
+    return { correct: heard.some(h => spokenMatch(h, q.answer[0])), expected: q.answer, given: heard, skipped: !heard.length };
+  }
   // 複選題：選的和答案要完全一樣（順序不拘），少選、多選都算錯
   if (q.multi){
     const a = new Set(q.answer.map(cmp)), g = new Set(got.map(cmp).filter(Boolean));

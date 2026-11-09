@@ -3,8 +3,14 @@
 
 // ===== 單字表 =====
 const WMODES = [['zh2en','中考英'],['en2zh','英考中'],['listen','聽考'],
-                ['cloze','例句填空'],['sense','詞義辨析'],['forms','動詞三態']];
+                ['cloze','例句填空'],['sense','詞義辨析'],['forms','動詞三態'],['speak','口說']];
 const WMODE_NAME = Object.fromEntries(WMODES);
+// 口說要用瀏覽器的語音辨識與麥克風，只有 HTTPS（或 localhost）的網址才開放
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+const speakOk = !!SpeechRec && window.isSecureContext;
+const speakWhyNot = !SpeechRec ? '這個瀏覽器不支援語音辨識' : '要用 https 開頭的網址才能使用麥克風';
+const SPEAK_TRIES = 3;                   // 每一題最多唸幾次
+let wsHeard = {};                        // 題目 id → 辨識到的內容（每次嘗試的所有候選）
 let wsSel = [];                    // 選取的字表 id（可多選）
 let wsMerged = { dup: 0, words: 0 };       // 跨字表合併時有幾個字重複被併起來
 let wsAllSets = [];                // 全部字表，新增表單要列出來當目標
@@ -13,8 +19,10 @@ const selParam = () => wsSel.join(',');
 
 const wsModesSel = () => [...el('wsModes').querySelectorAll('[aria-pressed="true"]')].map(b => b.dataset.m);
 
-el('wsModes').innerHTML = WMODES.map(([v,l]) =>
-  `<button class="tchip" data-m="${v}" aria-pressed="true">${l}</button>`).join('');
+// 口說預設不選：要小朋友唸的時候再點開；不能用時灰掉並說明原因
+el('wsModes').innerHTML = WMODES.map(([v,l]) => v === 'speak'
+  ? `<button class="tchip" data-m="speak" aria-pressed="false"${speakOk ? '' : ` disabled title="${speakWhyNot}"`}>${l}</button>`
+  : `<button class="tchip" data-m="${v}" aria-pressed="true">${l}</button>`).join('');
 el('wsModes').addEventListener('click', e => {
   const b = e.target.closest('.tchip'); if (!b) return;
   const on = b.getAttribute('aria-pressed') !== 'true';
@@ -130,7 +138,10 @@ function renderWordList(){
 }
 
 function renderWordQ(q, n){
-  const body = q.inputMode === 'choice'
+  const body = q.inputMode === 'speak'
+    ? `<div class="q-micbox"><button class="q-mic" type="button" data-mic="${q.id}"><span class="ico"></span><span class="lbl">按一下，開始唸</span></button>
+         <div class="q-heard" data-heard="${q.id}" aria-live="polite">還沒唸。唸完會顯示電腦聽到的內容，最多可以唸 ${SPEAK_TRIES} 次。</div></div>`
+    : q.inputMode === 'choice'
     ? `<div class="q-opts">${q.choices.map(c =>
         `<label class="q-opt"><input type="${q.multi ? 'checkbox' : 'radio'}" name="${q.id}" value="${esc(c.value)}"> ${esc(c.label)}</label>`).join('')}</div>`
     // 多格題（動詞三態要填過去式與過去分詞）要有對應數量的輸入框
@@ -140,6 +151,9 @@ function renderWordQ(q, n){
            placeholder="${(q.blanks || 1) > 1 ? `第 ${i + 1} 格` : '填入答案'}">`).join('')}</div>`;
   const head = q.mode === 'listen'
     ? `<button class="q-speak" type="button" data-say="${esc(q.speak)}"><span class="ico"></span>播放</button>`
+    : q.mode === 'speak'
+    ? `<div class="q-sent">${esc(q.question)}</div>
+       <button class="q-speak" type="button" data-say="${esc(q.speak)}"><span class="ico"></span>聽示範</button>`
     : q.mode === 'zh2en' ? `<div class="q-zh">${esc(q.question)}</div>`
     : q.question ? `<div class="q-sent">${esc(q.question)}</div>` : '';
   return `<article class="q" id="wq-${q.id}">
@@ -165,7 +179,7 @@ async function startWordQuiz(opts = {}){
         redoFrom: opts.redoFrom, redoIds: opts.redoIds }),
     }).then(r => r.json());
     if (d.error){ el('wsOut').innerHTML = `<p class="msg">${esc(d.message || d.error)}</p>`; return; }
-    wsQuiz = d;
+    wsQuiz = d; wsHeard = {};
     el('wsOut').innerHTML = d.questions.map((q,i) => renderWordQ(q, i+1)).join('');
     hardenAnswers(el('wsOut'));
     el('wsActions').hidden = false;
@@ -188,6 +202,49 @@ el('view-words').addEventListener('click', e => {
   Spk.speak(b.dataset.say, { onEnd: () => b.classList.remove('on') });
 });
 
+// ===== 口說：按麥克風 → 瀏覽器語音辨識 → 把聽到的內容記起來，交卷時一起送出 =====
+let wsRec = null;                         // 同一時間只有一題在聽
+function micIdle(btn){ btn.classList.remove('on'); btn.querySelector('.lbl').textContent =
+  (wsHeard[btn.dataset.mic]?.tries ?? 0) >= SPEAK_TRIES ? `已經唸了 ${SPEAK_TRIES} 次` : (wsHeard[btn.dataset.mic]?.tries ? '再唸一次' : '按一下，開始唸'); }
+
+function startMic(btn){
+  const id = btn.dataset.mic, box = document.querySelector(`[data-heard="${id}"]`);
+  const st = wsHeard[id] ??= { tries: 0, said: [] };
+  if (wsRec){ const was = wsRec; wsRec = null; try { was.rec.abort(); } catch {} if (was.btn === btn){ return; } }   // 再按同一顆＝取消
+  if (st.tries >= SPEAK_TRIES) return;
+  Spk.stop();                              // 示範還在唸的話先停，不然會被麥克風收進去
+  const rec = new SpeechRec();
+  rec.lang = 'en-US'; rec.interimResults = false; rec.maxAlternatives = 5; rec.continuous = false;
+  let got = false;
+  rec.onresult = e => {
+    got = true;
+    const alts = [...e.results[0]].map(a => a.transcript.trim()).filter(Boolean);
+    st.tries++; st.said.push(...alts);
+    box.innerHTML = `電腦聽到：<b>${esc(alts[0] ?? '')}</b>${alts.length > 1 ? `<span class="alts">（也可能是 ${esc(alts.slice(1, 3).join('、'))}）</span>` : ''}
+      <span class="tries">第 ${st.tries}／${SPEAK_TRIES} 次</span>`;
+  };
+  rec.onerror = e => {
+    got = true;                            // 錯誤訊息已經顯示，onend 不要再蓋掉
+    box.textContent = e.error === 'no-speech' ? '沒有聽到聲音，靠近一點再按一次。'
+      : e.error === 'not-allowed' || e.error === 'service-not-allowed' ? '沒有麥克風權限。請在網址列旁允許使用麥克風，再按一次。'
+      : e.error === 'network' ? '語音辨識需要連上網路。'
+      : e.error === 'aborted' ? box.textContent : `辨識失敗（${e.error}），再按一次。`;
+  };
+  rec.onend = () => {
+    if (wsRec?.rec === rec) wsRec = null;
+    if (!got) box.textContent = '沒有聽到聲音，靠近一點再按一次。';
+    micIdle(btn);
+  };
+  try { rec.start(); } catch { box.textContent = '麥克風開不起來，稍後再試。'; return; }
+  wsRec = { rec, btn };
+  btn.classList.add('on'); btn.querySelector('.lbl').textContent = '聽著…唸完會自動停（再按一次可取消）';
+  box.textContent = '請對著手機唸…';
+}
+el('view-words').addEventListener('click', e => {
+  const b = e.target.closest('[data-mic]');
+  if (b && !b.disabled) startMic(b);
+});
+
 /** 文字題答錯：顯示「你寫的」（有問題的字標紅）和錯在哪。輸入框太窄看不到整句，這裡完整列出。 */
 function diagHtml(r){
   if (!r.diag) return '';
@@ -200,8 +257,10 @@ async function submitWordQuiz(){
   if (!wsQuiz) return;
   el('wsSubmit').disabled = true;
   const answers = {};
+  if (wsRec){ try { wsRec.rec.abort(); } catch {} wsRec = null; }       // 交卷時還在聽就停掉
   for (const q of wsQuiz.questions)
-    answers[q.id] = q.inputMode === 'choice'
+    answers[q.id] = q.inputMode === 'speak' ? (wsHeard[q.id]?.said ?? [])
+      : q.inputMode === 'choice'
       ? (q.multi
         ? [...el('wsOut').querySelectorAll(`input[name="${q.id}"]:checked`)].map(x => x.value)   // 複選：勾了幾個就送幾個
         : [el('wsOut').querySelector(`input[name="${q.id}"]:checked`)?.value ?? ''])
@@ -215,18 +274,27 @@ async function submitWordQuiz(){
     if (d.error){ el('wsSubmit').disabled = false;
       quizMsg('wsActions', d.message || d.error); return; }
 
-    const wrong = [];
+    const wrong = [], speakWrong = [];
+    // 除了口說以外有作答的題數（全是口說題時不要說「全對，這些字會隔比較久才再考」）
+    const nonSpeak = d.results.filter(r => !r.skipped && wsQuiz.questions.find(x => x.id === r.id)?.mode !== 'speak').length;
     for (const r of d.results){
       const card = document.getElementById(`wq-${r.id}`);
       if (!card) continue;
       card.classList.add('graded', r.correct ? 'ok' : 'ng');
-      for (const i of card.querySelectorAll('input')) i.disabled = true;
-      if (!r.correct) wrong.push(r.term);
+      for (const i of card.querySelectorAll('input, [data-mic]')) i.disabled = true;
+      if (r.skipped){          // 口說沒唸：不計分，也不算錯
+        card.classList.remove('ok', 'ng');
+        card.insertAdjacentHTML('beforeend', `<div class="q-result"><span class="q-verdict">沒有唸，不計分</span>\n${esc(r.explain)}</div>`);
+        continue;
+      }
+      const spoke = wsQuiz.questions.find(x => x.id === r.id)?.mode === 'speak';
+      if (!r.correct) (spoke ? speakWrong : wrong).push(r.term);       // 口說不影響待加強，分開說
       card.insertAdjacentHTML('beforeend', `<div class="q-result">
         <span class="q-verdict">${r.correct ? '✓ 答對了' : '✗ 答錯了'}</span>${
-        r.correct ? '' : `${wsQuiz.questions.find(x => x.id === r.id)?.multi ? `你選了：${esc(r.given.join('　') || '（沒選）')}\n` : ''}${diagHtml(r)}正解：<span class="q-ans">${esc(r.expected.join('　'))}</span>\n`}${esc(r.explain)}</div>`);
+        spoke ? `${r.correct ? '' : `電腦聽到：${esc(r.given.slice(0, 4).join('、'))}\n再唸一次看看，注意每個音節：`}<span class="q-ans">${esc(r.expected.join('　'))}</span>\n`
+        : r.correct ? '' : `${wsQuiz.questions.find(x => x.id === r.id)?.multi ? `你選了：${esc(r.given.join('　') || '（沒選）')}\n` : ''}${diagHtml(r)}正解：<span class="q-ans">${esc(r.expected.join('　'))}</span>\n`}${esc(r.explain)}</div>`);
     }
-    const pct = Math.round(d.correct / d.total * 100);
+    const pct = d.total ? Math.round(d.correct / d.total * 100) : 0;
     el('wsSummary').innerHTML = `<div class="sum-score"><b>${d.correct}</b> / ${d.total} 答對（${pct}%）</div>`
       + (d.isFix
         ? `<div class="sum-break">這是訂正，<b>不列入正確率，也不會把那些字移出待加強</b> ——
@@ -234,11 +302,13 @@ async function submitWordQuiz(){
             ${wrong.length ? `還是錯的：${esc([...new Set(wrong)].join('、'))}` : '下一輪會再考這些字。'}</div>`
         : wrong.length ? `<div class="sum-break">答錯的字：${esc([...new Set(wrong)].join('、'))}
             —— 這些會馬上回到待加強，下一輪優先出現。</div>`
-          : `<div class="sum-break">全對。這些字會隔比較久才再考，先去練別的。</div>`);
+          : nonSpeak ? `<div class="sum-break">全對。這些字會隔比較久才再考，先去練別的。</div>` : '')
+      + (speakWrong.length ? `<div class="sum-break">口說要再唸：${esc([...new Set(speakWrong)].join('、'))}
+            —— 口說只記錄，不影響待加強。可以按「聽示範」再唸幾次。</div>` : '');
     el('wsSummary').hidden = false;
     wrongFirst(el('wsOut'), d.results, r => `wq-${r.id}`);
     // 記下答錯的字，訂正時只考這幾個
-    wsWrong = { quizId: wsQuiz.quizId, ids: d.results.filter(r => !r.correct).map(r => r.id) };
+    wsWrong = { quizId: wsQuiz.quizId, ids: d.results.filter(r => !r.correct && !r.skipped).map(r => r.id) };
     el('wsFix').hidden = !wsWrong.ids.length;
     el('wsFix').textContent = `訂正錯題（${wsWrong.ids.length} 題）`;
     el('wsFix').title = '把答錯的原題再做一次。不列入正確率與待加強。';

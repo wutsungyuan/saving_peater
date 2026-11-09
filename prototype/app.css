@@ -285,6 +285,19 @@ input[type="text"]{font-family:var(--font-ui);font-size:.92rem;padding:8px 11px;
   border-radius:999px;background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
 .q-speak .ico{width:0;height:0;border-style:solid;border-width:6px 0 6px 10px;
   border-color:transparent transparent transparent currentColor}
+/* 口說：麥克風鈕（錄音中變成紅點閃動）與「電腦聽到」 */
+.q-micbox{display:flex;flex-direction:column;gap:9px;align-items:flex-start}
+.q-mic{display:inline-flex;align-items:center;gap:8px;font-size:.95rem;padding:11px 20px;border-radius:999px;
+  background:var(--surface-2);border:1.5px solid var(--accent);color:var(--accent);font-weight:600}
+.q-mic .ico{width:11px;height:11px;border-radius:50%;background:currentColor}
+.q-mic.on{background:var(--accent);color:var(--on-accent)}
+.q-mic.on .ico{animation:micpulse 1s ease-in-out infinite}
+.q-mic:disabled{opacity:.5}
+@keyframes micpulse{50%{transform:scale(1.5);opacity:.5}}
+@media (prefers-reduced-motion:reduce){.q-mic.on .ico{animation:none}}
+.q-heard{font-size:.9rem;color:var(--muted);line-height:1.6}
+.q-heard b{color:var(--fg);font-family:var(--font-en)}
+.q-heard .alts,.q-heard .tries{margin-left:8px;font-size:.8rem}
 .q-zh{font-size:1.3rem;font-weight:600;color:var(--fg)}
 .q{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:16px 18px;
   display:flex;flex-direction:column;gap:11px}
