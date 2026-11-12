@@ -196,6 +196,8 @@ async function startWordQuiz(opts = {}){
 el('view-words').addEventListener('click', e => {
   const b = e.target.closest('[data-say]');
   if (!b) return;
+  // 麥克風開著時按示範：先取消收音，否則示範的聲音會被當成小朋友唸的，直接判對
+  cancelMic('剛才的錄音取消了（播示範時不能收音），要唸請再按一次麥克風。');
   if (b.classList.contains('on')){ Spk.stop(); return; }   // 再按一次停止
   for (const x of document.querySelectorAll('[data-say].on')) x.classList.remove('on');
   b.classList.add('on');
@@ -210,16 +212,21 @@ const MIC_MAX_MS = 15000;                // 再怎麼樣都不超過
 function micIdle(btn){ btn.classList.remove('on', 'hear'); btn.querySelector('.lbl').textContent =
   (wsHeard[btn.dataset.mic]?.tries ?? 0) >= SPEAK_TRIES ? `已經唸了 ${SPEAK_TRIES} 次` : (wsHeard[btn.dataset.mic]?.tries ? '再唸一次' : '按一下，開始唸'); }
 
+/** 正在聽的話取消這次收音（不算嘗試），回傳被取消的那一組；沒有在聽就什麼都不做 */
+function cancelMic(msg = '已取消。'){
+  const was = wsRec; if (!was) return null;
+  wsRec = null;
+  const wb = document.querySelector(`[data-heard="${was.btn.dataset.mic}"]`);
+  if (wb){ wb.textContent = msg; wb.dataset.msg = '1'; }          // msg 旗標：之後的 onend 不要把這句蓋掉
+  try { was.rec.abort(); } catch {}
+  return was;
+}
+
 function startMic(btn){
   const id = btn.dataset.mic, box = document.querySelector(`[data-heard="${id}"]`);
   const st = wsHeard[id] ??= { tries: 0, said: [] };
-  if (wsRec){
-    const was = wsRec; wsRec = null;
-    const wb = document.querySelector(`[data-heard="${was.btn.dataset.mic}"]`);
-    if (wb){ wb.textContent = '已取消。'; wb.dataset.msg = '1'; }
-    try { was.rec.abort(); } catch {}
-    if (was.btn === btn) return;                                  // 再按同一顆＝取消
-  }
+  const was = cancelMic();
+  if (was?.btn === btn) return;                                   // 再按同一顆＝取消
   if (st.tries >= SPEAK_TRIES) return;
   Spk.stop();                              // 示範還在唸的話先停，不然會被麥克風收進去
   const rec = new SpeechRec();
@@ -260,7 +267,7 @@ function startMic(btn){
   rec.onend = () => {
     clearTimeout(quietT); clearTimeout(waitT); clearTimeout(maxT); clearTimeout(hearT);
     if (wsRec?.rec === rec) wsRec = null;
-    if (!committed && interim && !errored) commit([interim]);      // 停得太早沒拿到最終結果：用最後聽到的
+    if (!committed && interim && !errored && !box.dataset.msg) commit([interim]);   // 停得太早沒拿到最終結果：用最後聽到的（取消的不算）
     if (!committed && !errored && !box.dataset.msg) box.textContent = heard ? '聽不太清楚，再唸一次。' : '沒有聽到聲音，靠近一點再按一次。';
     delete box.dataset.msg;
     micIdle(btn);
