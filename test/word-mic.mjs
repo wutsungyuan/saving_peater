@@ -1,6 +1,9 @@
+// 口說的麥克風流程（前端 prototype/js/words.js 的 startMic）：用假的語音辨識物件與假時鐘驗證。
+// 重點是 iPhone 上的行為：共用同一個辨識物件、結束後隔 0.5 秒才開下一次、完全沒聲音時換新的重開一次、
+// 聽到聲音後安靜自動收尾、取消／示範時不誤記。跑法：node --no-warnings test/word-mic.mjs
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-const src = readFileSync('C:/Users/yuan.wu/works/saving_peater-dev/prototype/js/words.js', 'utf8');
+const src = readFileSync(new URL('../prototype/js/words.js', import.meta.url), 'utf8');
 const a = src.indexOf('// ===== 口說：按麥克風');
 const b = src.indexOf("el('view-words').addEventListener('click', e => {\n  const b = e.target.closest('[data-mic]')");
 if (a < 0 || b < 0) throw new Error('找不到區塊');
