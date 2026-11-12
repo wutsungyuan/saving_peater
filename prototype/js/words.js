@@ -139,7 +139,7 @@ function renderWordList(){
 
 function renderWordQ(q, n){
   const body = q.inputMode === 'speak'
-    ? `<div class="q-micbox"><button class="q-mic" type="button" data-mic="${q.id}"><span class="ico"></span><span class="lbl">按一下，開始唸</span></button>
+    ? `<div class="q-micbox"><button class="q-mic" type="button" data-mic="${q.id}"><span class="ico"><i></i><i></i><i></i><i></i><i></i></span><span class="lbl">按一下，開始唸</span></button>
          <div class="q-heard" data-heard="${q.id}" aria-live="polite">還沒唸。唸完會顯示電腦聽到的內容，最多可以唸 ${SPEAK_TRIES} 次。</div></div>`
     : q.inputMode === 'choice'
     ? `<div class="q-opts">${q.choices.map(c =>
@@ -204,41 +204,77 @@ el('view-words').addEventListener('click', e => {
 
 // ===== 口說：按麥克風 → 瀏覽器語音辨識 → 把聽到的內容記起來，交卷時一起送出 =====
 let wsRec = null;                         // 同一時間只有一題在聽
-function micIdle(btn){ btn.classList.remove('on'); btn.querySelector('.lbl').textContent =
+const MIC_QUIET_MS = 1600;               // 聽到聲音後，安靜這麼久就自動收尾（iPhone 上瀏覽器自己常常不收）
+const MIC_WAIT_MS = 7000;                // 一直沒聽到任何聲音就放棄
+const MIC_MAX_MS = 15000;                // 再怎麼樣都不超過
+function micIdle(btn){ btn.classList.remove('on', 'hear'); btn.querySelector('.lbl').textContent =
   (wsHeard[btn.dataset.mic]?.tries ?? 0) >= SPEAK_TRIES ? `已經唸了 ${SPEAK_TRIES} 次` : (wsHeard[btn.dataset.mic]?.tries ? '再唸一次' : '按一下，開始唸'); }
 
 function startMic(btn){
   const id = btn.dataset.mic, box = document.querySelector(`[data-heard="${id}"]`);
   const st = wsHeard[id] ??= { tries: 0, said: [] };
-  if (wsRec){ const was = wsRec; wsRec = null; try { was.rec.abort(); } catch {} if (was.btn === btn){ return; } }   // 再按同一顆＝取消
+  if (wsRec){
+    const was = wsRec; wsRec = null;
+    const wb = document.querySelector(`[data-heard="${was.btn.dataset.mic}"]`);
+    if (wb){ wb.textContent = '已取消。'; wb.dataset.msg = '1'; }
+    try { was.rec.abort(); } catch {}
+    if (was.btn === btn) return;                                  // 再按同一顆＝取消
+  }
   if (st.tries >= SPEAK_TRIES) return;
   Spk.stop();                              // 示範還在唸的話先停，不然會被麥克風收進去
   const rec = new SpeechRec();
-  rec.lang = 'en-US'; rec.interimResults = false; rec.maxAlternatives = 5; rec.continuous = false;
-  let got = false;
-  rec.onresult = e => {
-    got = true;
-    const alts = [...e.results[0]].map(a => a.transcript.trim()).filter(Boolean);
-    st.tries++; st.said.push(...alts);
-    box.innerHTML = `電腦聽到：<b>${esc(alts[0] ?? '')}</b>${alts.length > 1 ? `<span class="alts">（也可能是 ${esc(alts.slice(1, 3).join('、'))}）</span>` : ''}
+  rec.lang = 'en-US'; rec.interimResults = true; rec.maxAlternatives = 5; rec.continuous = false;
+  const lbl = btn.querySelector('.lbl');
+  let committed = false, errored = false, heard = false, interim = '', quietT, waitT, maxT, hearT;
+  const stop = () => { try { rec.stop(); } catch {} };          // stop：把已經聽到的送去辨識，不是丟掉
+  const commit = alts => {                                        // 記下這一次嘗試（可能有好幾個候選）
+    if (committed || !alts.length) return;
+    committed = true; st.tries++; st.said.push(...alts);
+    box.innerHTML = `電腦聽到：<b>${esc(alts[0])}</b>${alts.length > 1 ? `<span class="alts">（也可能是 ${esc(alts.slice(1, 3).join('、'))}）</span>` : ''}
       <span class="tries">第 ${st.tries}／${SPEAK_TRIES} 次</span>`;
   };
+  // 有收到聲音：按鈕上的聲波跳動，並重新計「安靜多久就收尾」
+  const hear = () => {
+    heard = true; btn.classList.add('hear'); lbl.textContent = '聽到了，唸完會自動停';
+    clearTimeout(waitT); clearTimeout(quietT); clearTimeout(hearT);
+    quietT = setTimeout(stop, MIC_QUIET_MS);
+    hearT = setTimeout(() => btn.classList.remove('hear'), 450);   // 一陣子沒新聲音，聲波就停下來
+  };
+  rec.onaudiostart = () => { if (!heard) lbl.textContent = '麥克風開了，請開始唸'; };
+  rec.onsoundstart = rec.onspeechstart = hear;
+  rec.onresult = e => {
+    const r = e.results[e.resultIndex ?? 0]; if (!r) return;
+    const alts = [...r].map(a => a.transcript.trim()).filter(Boolean);
+    hear();
+    if (r.isFinal) commit(alts);
+    else if (alts[0]){ interim = alts[0]; box.innerHTML = `聽到：<b>${esc(interim)}</b>…`; }   // 邊唸邊顯示
+  };
   rec.onerror = e => {
-    got = true;                            // 錯誤訊息已經顯示，onend 不要再蓋掉
+    if (e.error === 'aborted') return;
+    errored = true;                        // 錯誤訊息已經顯示，onend 不要再蓋掉
     box.textContent = e.error === 'no-speech' ? '沒有聽到聲音，靠近一點再按一次。'
       : e.error === 'not-allowed' || e.error === 'service-not-allowed' ? '沒有麥克風權限。請在網址列旁允許使用麥克風，再按一次。'
       : e.error === 'network' ? '語音辨識需要連上網路。'
-      : e.error === 'aborted' ? box.textContent : `辨識失敗（${e.error}），再按一次。`;
+      : `辨識失敗（${e.error}），再按一次。`;
   };
   rec.onend = () => {
+    clearTimeout(quietT); clearTimeout(waitT); clearTimeout(maxT); clearTimeout(hearT);
     if (wsRec?.rec === rec) wsRec = null;
-    if (!got) box.textContent = '沒有聽到聲音，靠近一點再按一次。';
+    if (!committed && interim && !errored) commit([interim]);      // 停得太早沒拿到最終結果：用最後聽到的
+    if (!committed && !errored && !box.dataset.msg) box.textContent = heard ? '聽不太清楚，再唸一次。' : '沒有聽到聲音，靠近一點再按一次。';
+    delete box.dataset.msg;
     micIdle(btn);
   };
   try { rec.start(); } catch { box.textContent = '麥克風開不起來，稍後再試。'; return; }
   wsRec = { rec, btn };
-  btn.classList.add('on'); btn.querySelector('.lbl').textContent = '聽著…唸完會自動停（再按一次可取消）';
+  btn.classList.add('on'); lbl.textContent = '等待麥克風…';
   box.textContent = '請對著手機唸…';
+  waitT = setTimeout(() => {               // 一直沒聽到聲音：不要讓它無止境開著
+    if (heard) return;
+    box.textContent = '沒有聽到聲音，靠近一點再按一次。'; box.dataset.msg = '1';
+    try { rec.abort(); } catch {}
+  }, MIC_WAIT_MS);
+  maxT = setTimeout(stop, MIC_MAX_MS);
 }
 el('view-words').addEventListener('click', e => {
   const b = e.target.closest('[data-mic]');

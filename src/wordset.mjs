@@ -475,18 +475,22 @@ function numWords(n){
   if (n < 100) return TENS[Math.floor(n / 10)] + (n % 10 ? ` ${ONES[n % 10]}` : '');
   return `${ONES[Math.floor(n / 100)]} hundred` + (n % 100 ? ` ${numWords(n % 100)}` : '');
 }
-// 所有格：片語寫 one's／sb's 時，唸 my、your、his… 都算對
-const POSS = new Set(['my','your','his','her','its','our','their','ones','someones','somebodys','sbs']);
-const SOMEONE = new Set(['sb','sth','someone','somebody','something','him','her','them','me','you','us','it']);
+// 所有格：字表寫 one's／sb's（記成 @poss）時，唸 my、your、his… 都算對；
+// 辨識常把 one's 聽成 one 或 once，也算。只有「題目」那一邊是 @poss 才放寬，題目本身是 one、it 時不放寬
+const POSS_HEARD = new Set(['@poss','my','your','his','her','its','our','their','one','once','ones','someone','somebody']);
+// sb／sth：唸 someone、him、them… 都算
+const SOME_EXPECTED = new Set(['sb','sth','someone','somebody','something']);
+const SOME_HEARD = new Set(['sb','sth','someone','somebody','something','him','her','them','me','you','us','it']);
 
 function spokenTokens(s){
   return String(s ?? '').toLowerCase()
     .replace(/\([^)]*\)/g, ' ')                         // 字表裡的 (be) 之類不唸
+    .replace(/\b(?:one|someone|somebody|sb)['’]s\b/g, ' @poss ')
     .replace(/\d{1,3}/g, m => ` ${numWords(Number(m))} `)
-    .replace(/['’]/g, '').replace(/[^a-z\s]/g, ' ')     // 撇號去掉（don't→dont、one's→ones）、連字號與標點當空格
+    .replace(/['’]/g, '').replace(/[^a-z@\s]/g, ' ')    // 撇號去掉（don't→dont）、連字號與標點當空格
     .split(/\s+/).filter(Boolean);
 }
-const tokEq = (e, g) => e === g || (POSS.has(e) && POSS.has(g)) || (SOMEONE.has(e) && SOMEONE.has(g));
+const tokEq = (e, g) => e === g || (e === '@poss' && POSS_HEARD.has(g)) || (SOME_EXPECTED.has(e) && SOME_HEARD.has(g));
 
 /** 聽到的 heard 算不算唸對 term。字表裡 a/b 寫法（color/colour）唸哪個都算。 */
 export function spokenMatch(heard, term){

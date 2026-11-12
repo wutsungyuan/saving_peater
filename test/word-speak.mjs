@@ -10,6 +10,12 @@ chk('空白算錯', !spokenMatch('', 'lesson') && !spokenMatch('   ', 'lesson'))
 chk('片語逐字比對', spokenMatch('get butterflies in my stomach', "get butterflies in one's stomach"));
 chk('片語少一個字算錯', !spokenMatch('get butterflies in stomach', "get butterflies in one's stomach"));
 chk("one's 唸 your／his 都算對", spokenMatch("get butterflies in your stomach", "get butterflies in one's stomach") && spokenMatch("get butterflies in his stomach", "get butterflies in one's stomach"));
+// 實機（iPhone）：one's 被聽成 one、once
+chk("one's 被聽成 one／once 也算對（實機辨識結果）", spokenMatch('Get butterflies in one stomach', "get butterflies in one's stomach") && spokenMatch('Get butterflies in once stomach', "get butterflies in one's stomach"));
+chk('不因此放寬別的字：題目是數字 one 時，my 不算', !spokenMatch('my', 'one') && spokenMatch('one', 'one') && spokenMatch('1', 'one'));
+chk('不因此放寬別的字：題目是 it 時，him 不算', !spokenMatch('him', 'it') && spokenMatch('it', 'it'));
+chk('真的單字 ones 不被當成所有格', !spokenMatch('my', 'ones') && spokenMatch('ones', 'ones'));
+chk('題目寫 someone\'s 也一樣', spokenMatch('take someone hand', "take someone's hand") && spokenMatch('take my hand', "take someone's hand"));
 chk('sb 唸 someone／him 算對', spokenMatch('look after someone', 'look after sb') && spokenMatch('look after him', 'look after sb'));
 chk('其他字不能亂代換', !spokenMatch('look after the', 'look after sb'));
 chk('辨識出阿拉伯數字：2 ＝ two', spokenMatch('2', 'two') && spokenMatch('15', 'fifteen') && spokenMatch('21', 'twenty-one') && spokenMatch('100', 'one hundred'));
